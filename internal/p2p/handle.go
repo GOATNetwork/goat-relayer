@@ -27,7 +27,7 @@ func handleHandshake(s network.Stream) {
 	}
 }
 
-func publishMessage(ctx context.Context, msg Message) {
+func PublishMessage(ctx context.Context, msg Message) {
 	msgBytes, err := json.Marshal(msg)
 	if err != nil {
 		log.Errorf("Failed to marshal message: %v", err)
@@ -44,7 +44,7 @@ func publishMessage(ctx context.Context, msg Message) {
 	}
 }
 
-func handlePubSubMessages(ctx context.Context, sub *pubsub.Subscription, node host.Host) {
+func handlePubSubMessages(ctx context.Context, sub *pubsub.Subscription, node host.Host, signChan chan SignatureMessage) {
 	for {
 		msg, err := sub.Next(ctx)
 		if err != nil {
@@ -66,6 +66,16 @@ func handlePubSubMessages(ctx context.Context, sub *pubsub.Subscription, node ho
 		log.Infof("Received message via pubsub: ID=%d, Content=%s", receivedMsg.MessageType, receivedMsg.Content)
 
 		switch receivedMsg.MessageType {
+		case MessageTypeSignature:
+			sigBytes := []byte(receivedMsg.Content)
+			select {
+			case signChan <- SignatureMessage{
+				PeerID:    msg.ReceivedFrom.String(),
+				Signature: sigBytes,
+			}:
+			default:
+				log.Warnf("Unknown message type: %d", receivedMsg.MessageType)
+			}
 		// case MessageTypeKeygen:
 		// 	tssKeyCh <- tss.KeygenMessage{Content: receivedMsg.Content}
 		// case MessageTypeSigning:

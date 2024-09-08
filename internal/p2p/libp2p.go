@@ -38,12 +38,14 @@ const (
 var messageTopic *pubsub.Topic
 
 type LibP2PService struct {
-	db *db.DatabaseManager
+	db       *db.DatabaseManager
+	signChan chan SignatureMessage
 }
 
 func NewLibP2PService(db *db.DatabaseManager) *LibP2PService {
 	return &LibP2PService{
-		db: db,
+		db:       db,
+		signChan: make(chan SignatureMessage),
 	}
 }
 
@@ -100,7 +102,7 @@ func (lp *LibP2PService) Start(ctx context.Context) {
 		log.Fatalf("Failed to subscribe to heartbeat topic: %v", err)
 	}
 
-	go handlePubSubMessages(ctx, sub, node)
+	go handlePubSubMessages(ctx, sub, node, lp.signChan)
 	go handleHeartbeatMessages(ctx, hbSub, node)
 	go startHeartbeat(ctx, node, hbTopic)
 
@@ -110,7 +112,7 @@ func (lp *LibP2PService) Start(ctx context.Context) {
 			MessageType: MessageTypeKeygen,
 			Content:     "Hello, goat voter libp2p PubSub network with handshake!",
 		}
-		publishMessage(ctx, msg)
+		PublishMessage(ctx, msg)
 	}()
 
 	<-ctx.Done()

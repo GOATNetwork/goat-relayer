@@ -15,6 +15,8 @@ type State struct {
 	layer2State  Layer2State
 	btcHeadState BtcHeadState
 	walletState  WalletState
+
+	btcHeadChan chan *db.BtcBlock
 }
 
 // InitializeState initializes the state by reading from the DB
@@ -22,7 +24,6 @@ func InitializeState(db *db.DatabaseManager) *State {
 	state := &State{}
 
 	// TODO Load layer2State, btcHeadState, walletState from db when start up
-
 	return state
 }
 
@@ -32,4 +33,8 @@ func (s *State) GetL2Info() db.L2Info {
 	defer s.layer2Mu.RUnlock()
 
 	return *s.layer2State.L2Info
+}
+
+func (s *State) SubscribeBtcBlocks() <-chan *db.BtcBlock {
+	return s.btcHeadChan
 }

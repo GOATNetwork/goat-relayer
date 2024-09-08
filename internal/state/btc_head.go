@@ -18,6 +18,7 @@ func (s *State) AddUnconfirmBtcBlock(block *db.BtcBlock) error {
 
 func (s *State) UpdateConfirmBtcBlock(block *db.BtcBlock) error {
 	// TODO
+	s.btcHeadChan <- block
 	return nil
 }
 
