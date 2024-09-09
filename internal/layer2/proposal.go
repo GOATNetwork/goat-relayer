@@ -13,35 +13,43 @@ import (
 )
 
 type Proposal struct {
-	state     *state.State
 	blsHelper *bls.SignatureHelper
+	state     *state.State
 }
 
 func NewProposal(state *state.State, blsHelper *bls.SignatureHelper, p2pService *p2p.LibP2PService) *Proposal {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	p := &Proposal{
-		state:     state,
 		blsHelper: blsHelper,
+		state:     state,
 	}
+
+	btcHeadChan := make(chan interface{}, 100)
+	state.GetEventBus().Subscribe("btcHeadStateUpdated", btcHeadChan)
+
+	go p.handleBtcBlocks(ctx, btcHeadChan)
+
 	return p
 }
 
-func (p *Proposal) Start(ctx context.Context) {
-	go p.handleBtcBlocks(ctx)
-}
-
-func (p *Proposal) handleBtcBlocks(ctx context.Context) {
-	btcBlockChan := p.state.SubscribeBtcBlocks()
+func (p *Proposal) handleBtcBlocks(ctx context.Context, btcHeadChan chan interface{}) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case block := <-btcBlockChan:
-			p.handleNewBlock(ctx, block)
+		case data := <-btcHeadChan:
+			block, ok := data.(db.BtcBlock)
+			if !ok {
+				continue
+			}
+			p.sendTxMsgNewBlockHashes(ctx, &block)
 		}
 	}
 }
 
-func (p *Proposal) handleNewBlock(ctx context.Context, block *db.BtcBlock) {
+func (p *Proposal) sendTxMsgNewBlockHashes(ctx context.Context, block *db.BtcBlock) {
 	voters := make(bitmap.Bitmap, 256)
 
 	votes := &relayertypes.Votes{
@@ -67,5 +75,5 @@ func (p *Proposal) handleNewBlock(ctx context.Context, block *db.BtcBlock) {
 }
 
 func (p *Proposal) submitToConsensus(ctx context.Context, msg *bitcointypes.MsgNewBlockHashes) {
-	// todo
+	// TODO: integrate consensus tx send
 }

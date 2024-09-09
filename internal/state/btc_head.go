@@ -17,8 +17,11 @@ func (s *State) AddUnconfirmBtcBlock(block *db.BtcBlock) error {
 }
 
 func (s *State) UpdateConfirmBtcBlock(block *db.BtcBlock) error {
+	s.btcHeadMu.Lock()
+	defer s.btcHeadMu.Unlock()
+
 	// TODO
-	s.btcHeadChan <- block
+	s.eventBus.Publish("btcHeadStateUpdated", block)
 	return nil
 }
 

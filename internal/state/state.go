@@ -7,6 +7,8 @@ import (
 )
 
 type State struct {
+	eventBus *EventBus
+
 	// Separate mutexes for different sub-modules
 	layer2Mu  sync.RWMutex
 	btcHeadMu sync.RWMutex
@@ -15,13 +17,13 @@ type State struct {
 	layer2State  Layer2State
 	btcHeadState BtcHeadState
 	walletState  WalletState
-
-	btcHeadChan chan *db.BtcBlock
 }
 
 // InitializeState initializes the state by reading from the DB
-func InitializeState(db *db.DatabaseManager) *State {
-	state := &State{}
+func InitializeState(db *db.DatabaseManager, eventBus *EventBus) *State {
+	state := &State{
+		eventBus: eventBus,
+	}
 
 	// TODO Load layer2State, btcHeadState, walletState from db when start up
 	return state
@@ -35,6 +37,6 @@ func (s *State) GetL2Info() db.L2Info {
 	return *s.layer2State.L2Info
 }
 
-func (s *State) SubscribeBtcBlocks() <-chan *db.BtcBlock {
-	return s.btcHeadChan
+func (s *State) GetEventBus() *EventBus {
+	return s.eventBus
 }
