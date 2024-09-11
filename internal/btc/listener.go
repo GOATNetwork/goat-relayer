@@ -15,7 +15,6 @@ type BTCListener struct {
 	libp2p *p2p.LibP2PService
 	dbm    *db.DatabaseManager
 	state  *state.State
-	cache  *BTCCache
 
 	notifier *BTCNotifier
 }
@@ -42,14 +41,15 @@ func NewBTCListener(libp2p *p2p.LibP2PService, state *state.State, dbm *db.Datab
 		libp2p:   libp2p,
 		dbm:      dbm,
 		state:    state,
-		cache:    cache,
 		notifier: notifier,
 	}
 }
 
 func (bl *BTCListener) Start(ctx context.Context) {
+	go bl.notifier.cache.Start(ctx)
+	go bl.notifier.poller.Start(ctx)
 	go bl.notifier.Start(ctx)
-	go bl.cache.Start(ctx)
+
 	log.Info("BTCListener started all modules")
 
 	<-ctx.Done()

@@ -85,7 +85,7 @@ func (bn *BTCNotifier) listenForBTCBlocks(ctx context.Context) {
 }
 
 func (bn *BTCNotifier) checkConfirmations(ctx context.Context) {
-	checkInterval := 10 * time.Minute
+	checkInterval := 10 * time.Second
 	requiredConfirmations := uint64(6) // Can be adjusted as needed
 
 	ticker := time.NewTicker(checkInterval)
@@ -105,17 +105,17 @@ func (bn *BTCNotifier) checkConfirmations(ctx context.Context) {
 
 			confirmedHeight := uint64(bestHeight) - requiredConfirmations + 1
 			for height := bn.currentHeight - requiredConfirmations; height <= confirmedHeight; height++ {
-				block, err := bn.poller.GetBlock(height)
+				blockHash, err := bn.poller.GetBlockHash(height)
 				if err != nil {
 					log.Printf("Error getting block at height %d from cache: %v", height, err)
 					continue
 				}
 
 				bn.poller.confirmChan <- &BtcBlockExt{
-					MsgBlock: *block,
+					Hash:        blockHash,
 					blockNumber: height,
 				}
-				log.Infof("Starting to submit block at height %d to consensus", height)
+				log.Infof("Starting to submit block hash at height %d to consensus", height)
 			}
 		}
 	}
