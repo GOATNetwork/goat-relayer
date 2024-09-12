@@ -111,9 +111,17 @@ func (p *BTCPoller) GetBlock(height uint64) (*db.BtcBlockData, error) {
 }
 
 func (p *BTCPoller) handleConfirmedBlock(block *BtcBlockExt) {
+	normalInterval := uint64(16)
+	catchUpInterval := uint64(1)
 	// Logic for handling confirmed blocks
 	blockHash := block.BlockHash()
 	log.Infof("Handling confirmed block: %d, hash:%s", block.blockNumber, blockHash.String())
+
+	latestBtcHeight := p.state.GetL2Info().LatestBtcHeight
+	interval := normalInterval
+	if block.blockNumber-latestBtcHeight <= 16 {
+		interval = catchUpInterval
+	}
 
 	// it use state to manange received block
 	// then start sig one by one,
@@ -124,19 +132,21 @@ func (p *BTCPoller) handleConfirmedBlock(block *BtcBlockExt) {
 	}, block.blockNumber, blockHash.String())
 
 	// rules: state.GetL2Info().LatestBtcHeight+1, multiple block hash
-	log.Infof("Publish to SigStart bus, block: %d, hash:%s", block.blockNumber, blockHash.String())
-	epochVoter := p.state.GetEpochVoter()
-	p.state.EventBus.Publish(state.SigStart, types.MsgSignNewBlock{
-		MsgSign: types.MsgSign{
-			RequestId:    fmt.Sprintf("BTCHEAD:%d", block.blockNumber),
-			Sequence:     epochVoter.Seqeuence,
-			Epoch:        epochVoter.Epoch,
-			IsProposer:   true,
-			VoterAddress: epochVoter.Proposer,
-			SigData:      nil,
-			CreateTime:   time.Now().Unix(),
-		},
-		StartBlockNumber: block.blockNumber,
-		BlockHash:        [][]byte{blockHash.CloneBytes()},
-	})
+	if latestBtcHeight+interval == block.blockNumber {
+		log.Infof("Publish to SigStart bus, block: %d, hash:%s", block.blockNumber, blockHash.String())
+		epochVoter := p.state.GetEpochVoter()
+		p.state.EventBus.Publish(state.SigStart, types.MsgSignNewBlock{
+			MsgSign: types.MsgSign{
+				RequestId:    fmt.Sprintf("BTCHEAD:%d", block.blockNumber),
+				Sequence:     epochVoter.Seqeuence,
+				Epoch:        epochVoter.Epoch,
+				IsProposer:   true,
+				VoterAddress: epochVoter.Proposer,
+				SigData:      nil,
+				CreateTime:   time.Now().Unix(),
+			},
+			StartBlockNumber: block.blockNumber,
+			BlockHash:        [][]byte{blockHash.CloneBytes()},
+		})
+	}
 }

@@ -45,15 +45,6 @@ func (s *Signer) handleSigStart(ctx context.Context, event interface{}) {
 			return
 		}
 
-		if s.state.GetL2Info().LatestBtcHeight+1 > e.StartBlockNumber {
-			log.Errorf("Error SigStart startBlockNumber %d, request id %s", e.StartBlockNumber, e.RequestId)
-			return
-		}
-
-		if len(s.state.GetBtcHeadSigQueue()) > 0 {
-			log.Errorf("Error SigStart startBlockNumber %d, request id %s", e.StartBlockNumber, e.RequestId)
-			return
-		}
 		btcHeadSigQueue := s.state.GetBtcHeadSigQueue()
 		var blockHashes [][]byte
 		for _, btcBlock := range btcHeadSigQueue {
