@@ -16,6 +16,20 @@ func (s *State) AddUnconfirmBtcBlock(block *db.BtcBlock) error {
 	return nil
 }
 
+func (s *State) UpdateSigBtcBlock(block *db.BtcBlock, height uint64, hash string) error {
+	s.btcHeadMu.Lock()
+	defer s.btcHeadMu.Unlock()
+
+	var btcBlock db.BtcBlock
+	result := s.dbm.GetBtcLightDB().Where("height = ?", height).FirstOrCreate(&btcBlock)
+	if result.Error != nil {
+		return result.Error
+	}
+	s.btcHeadState.SigQueue = append(s.btcHeadState.SigQueue, block)
+
+	return nil
+}
+
 func (s *State) UpdateProcessedBtcBlock(block uint64, height uint64, hash string) error {
 	s.btcHeadMu.Lock()
 	defer s.btcHeadMu.Unlock()

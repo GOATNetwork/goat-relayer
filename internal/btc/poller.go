@@ -115,25 +115,28 @@ func (p *BTCPoller) handleConfirmedBlock(block *BtcBlockExt) {
 	blockHash := block.BlockHash()
 	log.Infof("Handling confirmed block: %d, hash:%s", block.blockNumber, blockHash.String())
 
-	// TODO: it needs to use state to manange received block
+	// it use state to manange received block
 	// then start sig one by one,
+	p.state.UpdateSigBtcBlock(&db.BtcBlock{
+		Height: block.blockNumber,
+		Hash:   blockHash.String(),
+		Status: "pending",
+	}, block.blockNumber, blockHash.String())
+
 	// rules: state.GetL2Info().LatestBtcHeight+1, multiple block hash
-	// TODO below is test 1 block
-	if p.state.GetL2Info().LatestBtcHeight+1 == block.blockNumber {
-		log.Infof("Publish to SigStart bus, block: %d, hash:%s", block.blockNumber, blockHash.String())
-		epochVoter := p.state.GetEpochVoter()
-		p.state.EventBus.Publish(state.SigStart, types.MsgSignNewBlock{
-			MsgSign: types.MsgSign{
-				RequestId:    fmt.Sprintf("BTCHEAD:%d", block.blockNumber),
-				Sequence:     epochVoter.Seqeuence,
-				Epoch:        epochVoter.Epoch,
-				IsProposer:   true,
-				VoterAddress: epochVoter.Proposer,
-				SigData:      nil,
-				CreateTime:   time.Now().Unix(),
-			},
-			StartBlockNumber: block.blockNumber,
-			BlockHash:        [][]byte{blockHash.CloneBytes()},
-		})
-	}
+	log.Infof("Publish to SigStart bus, block: %d, hash:%s", block.blockNumber, blockHash.String())
+	epochVoter := p.state.GetEpochVoter()
+	p.state.EventBus.Publish(state.SigStart, types.MsgSignNewBlock{
+		MsgSign: types.MsgSign{
+			RequestId:    fmt.Sprintf("BTCHEAD:%d", block.blockNumber),
+			Sequence:     epochVoter.Seqeuence,
+			Epoch:        epochVoter.Epoch,
+			IsProposer:   true,
+			VoterAddress: epochVoter.Proposer,
+			SigData:      nil,
+			CreateTime:   time.Now().Unix(),
+		},
+		StartBlockNumber: block.blockNumber,
+		BlockHash:        [][]byte{blockHash.CloneBytes()},
+	})
 }

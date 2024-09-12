@@ -160,3 +160,11 @@ func (s *State) GetL2Info() db.L2Info {
 
 	return *s.layer2State.L2Info
 }
+
+// GetBtcHeadSigQueue reads the BtcHeadSigQueue from memory
+func (s *State) GetBtcHeadSigQueue() []*db.BtcBlock {
+	s.btcHeadMu.RLock()
+	defer s.btcHeadMu.RUnlock()
+
+	return s.btcHeadState.SigQueue
+}
