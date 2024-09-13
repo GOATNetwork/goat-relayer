@@ -2,41 +2,13 @@ package btc
 
 import (
 	"bytes"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
+
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/goatnetwork/goat-relayer/internal/db"
 )
 
-func GenerateSPVProof(msgTx *wire.MsgTx) (string, error) {
-	dbm := db.NewDatabaseManager()
-	btcCacheDb := dbm.GetBtcCacheDB()
-
-	txHash := msgTx.TxHash()
-
-	var btcTXOutput db.BtcTXOutput
-	if err := btcCacheDb.Where("tx_hash = ?", txHash).First(&btcTXOutput).Error; err != nil {
-		return "", fmt.Errorf("failed to retrieve block data from database: %v", err)
-	}
-
-	blockHashBytes := btcTXOutput.PkScript[:32] // Assuming the block hash is the first 32 bytes of PkScript
-	blockHash, err := chainhash.NewHash(blockHashBytes)
-	if err != nil {
-		return "", fmt.Errorf("failed to create hash from block hash bytes: %v", err)
-	}
-
-	var blockData db.BtcBlockData
-	if err := btcCacheDb.Where("block_hash = ?", blockHash.String()).First(&blockData).Error; err != nil {
-		return "", fmt.Errorf("failed to retrieve block header from database: %v", err)
-	}
-
-	var txHashes []chainhash.Hash
-	if err := json.Unmarshal([]byte(blockData.TxHashes), &txHashes); err != nil {
-		return "", fmt.Errorf("failed to unmarshal tx hashes: %v", err)
-	}
-
+func GenerateSPVProof(txHash string, txHashes []string) ([]byte, []byte, uint32, error) {
 	// Find the transaction's position in the block
 	var txIndex int
 	for i, hash := range txHashes {
@@ -46,23 +18,25 @@ func GenerateSPVProof(msgTx *wire.MsgTx) (string, error) {
 		}
 	}
 
-	// Generate Merkle proof
+	// Generate merkle root and proof
 	txHashesPtrs := make([]*chainhash.Hash, len(txHashes))
-	for i := range txHashes {
-		txHashesPtrs[i] = &txHashes[i]
+	for i, hashStr := range txHashes {
+		hash, err := chainhash.NewHashFromStr(hashStr)
+		if err != nil {
+			return nil, nil, 0, fmt.Errorf("failed to parse transaction hash: %v", err)
+		}
+		txHashesPtrs[i] = hash
 	}
 	var proof []*chainhash.Hash
 	merkleRoot := ComputeMerkleRootAndProof(txHashesPtrs, txIndex, &proof)
 
-	// Serialize Merkle proof
+	// Serialize immediate proof
 	var buf bytes.Buffer
-	buf.Write(txHash[:])
 	for _, p := range proof {
 		buf.Write(p[:])
 	}
-	buf.Write(merkleRoot[:])
 
-	return hex.EncodeToString(buf.Bytes()), nil
+	return merkleRoot.CloneBytes(), buf.Bytes(), uint32(txIndex), nil
 }
 
 func SerializeNoWitnessTx(rawTransaction []byte) ([]byte, error) {
