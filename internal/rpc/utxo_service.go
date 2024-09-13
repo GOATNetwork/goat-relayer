@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"net"
+	"time"
+
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/state"
-	"net"
-	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
@@ -52,12 +53,12 @@ func (us *UTXOServiceImpl) StartUTXOService(btcListener btc.BTCListener) {
 
 type UtxoServer struct {
 	pb.UnimplementedBitcoinLightWalletServer
-	l2State *state.State
+	state *state.State
 }
 
 func NewUtxoServer(layer2State *state.State) *UtxoServer {
 	return &UtxoServer{
-		l2State: layer2State,
+		state: layer2State,
 	}
 }
 
@@ -68,7 +69,13 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 		return nil, err
 	}
 
-	// todo save to db
+	if err := btc.VerifyTransaction(req.RawTransaction); err != nil {
+		return nil, err
+	}
+
+	s.state.AddUnconfirmDeposit(req.TransactionId, hex.EncodeToString(req.RawTransaction), hex.EncodeToString(req.EvmAddress))
+
+	// TODO send Deposit to channel or eventbus -> UnconfirmedChannel Deposit(TxHash + RawTx + EvmAddress)
 
 	txID := tx.TxHash().String()
 	evmAddress := common.BytesToAddress(req.EvmAddress).String()
@@ -86,7 +93,7 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 		UpdatedAt: time.Now(),
 	}
 
-	err := s.l2State.UpdateUTXO(utxo)
+	err := s.state.UpdateUTXO(utxo)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +104,7 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 }
 
 func (s *UtxoServer) QueryDepositAddress(ctx context.Context, req *pb.QueryDepositAddressRequest) (*pb.QueryDepositAddressResponse, error) {
-	l2Info := s.l2State.GetL2Info()
+	l2Info := s.state.GetL2Info()
 
 	publicKey, err := hex.DecodeString(l2Info.DepositKey)
 	if err != nil {

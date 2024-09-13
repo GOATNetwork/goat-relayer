@@ -74,3 +74,19 @@ func SerializeNoWitnessTx(rawTransaction []byte) ([]byte, error) {
 
 	return buf.Bytes(), nil
 }
+
+func VerifyTransaction(rawTransaction []byte) error {
+	if len(rawTransaction) == 0 {
+		return fmt.Errorf("raw transaction is empty")
+	}
+
+	// TODO: Implement more detailed verification
+
+	tx := wire.NewMsgTx(wire.TxVersion)
+	err := tx.Deserialize(bytes.NewReader(rawTransaction))
+	if err != nil {
+		return fmt.Errorf("failed to parse raw transaction: %v", err)
+	}
+
+	return nil
+}

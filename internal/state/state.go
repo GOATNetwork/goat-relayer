@@ -172,3 +172,11 @@ func (s *State) GetUtxo() db.Utxo {
 
 	return *s.walletState.Utxo
 }
+
+// GetDepositState reads the DepositState from memory
+func (s *State) GetDepositState() DepositState {
+	s.depositMu.RLock()
+	defer s.depositMu.RUnlock()
+
+	return s.depositState
+}
