@@ -67,6 +67,16 @@ type BtcBlock struct {
 	UpdatedAt time.Time `gorm:"not null" json:"updated_at"`
 }
 
+// Deposit model (for managing deposits)
+type Deposit struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	TxHash    string    `gorm:"not null" json:"tx_hash"`
+	RawTx     string    `gorm:"not null" json:"raw_tx"`
+	EvmAddr   string    `gorm:"not null" json:"evm_addr"`
+	Status    string    `gorm:"not null" json:"status"` // "unconfirm", "confirmed", "signing", "pending", "processed"
+	UpdatedAt time.Time `gorm:"not null" json:"updated_at"`
+}
+
 // Utxo model (wallet UTXO)
 type Utxo struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`

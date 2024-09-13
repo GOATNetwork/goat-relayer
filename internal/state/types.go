@@ -25,3 +25,10 @@ type WalletState struct {
 	SentVout       []*db.Vout
 	Utxo           *db.Utxo
 }
+
+// DepositState to manage deposit state
+type DepositState struct {
+	Latest         db.Deposit
+	UnconfirmQueue []*db.Deposit
+	SigQueue       []*db.Deposit
+}

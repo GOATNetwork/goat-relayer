@@ -18,10 +18,12 @@ type State struct {
 	layer2Mu  sync.RWMutex
 	btcHeadMu sync.RWMutex
 	walletMu  sync.RWMutex
+	depositMu sync.RWMutex
 
 	layer2State  Layer2State
 	btcHeadState BtcHeadState
 	walletState  WalletState
+	depositState DepositState
 }
 
 // InitializeState initializes the state by reading from the DB
