@@ -6,8 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/state"
 	"net"
+	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
@@ -65,17 +68,31 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 		return nil, err
 	}
 
-	_, err := btc.GenerateSPVProof(&tx)
+	// todo save to db
+
+	txID := tx.TxHash().String()
+	evmAddress := common.BytesToAddress(req.EvmAddress).String()
+
+	utxo := &db.Utxo{
+		Uid:       "",
+		Txid:      txID,
+		OutIndex:  0,
+		Amount:    0,
+		Receiver:  "",
+		Sender:    "",
+		EvmAddr:   evmAddress,
+		Source:    "deposit",
+		Status:    "confirmed",
+		UpdatedAt: time.Now(),
+	}
+
+	err := s.l2State.UpdateUTXO(utxo)
 	if err != nil {
-		log.Errorf("Failed to generate SPV proof: %v", err)
 		return nil, err
 	}
 
-	// TODO: Send the transaction to the consensus layer
-
 	return &pb.NewTransactionResponse{
-		TransactionId: "txhash",
-		ErrorMessage:  "",
+		ErrorMessage: "Confirming transaction",
 	}, nil
 }
 

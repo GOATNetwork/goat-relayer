@@ -74,6 +74,8 @@ func (libp2p *LibP2PService) handlePubSubMessages(ctx context.Context, sub *pubs
 			libp2p.state.EventBus.Publish(state.SigReceive, receivedMsg.Data)
 		case MessageTypeSigResp:
 			libp2p.state.EventBus.Publish(state.SigReceive, receivedMsg.Data)
+		case MessageTypeDepositReq:
+			libp2p.state.EventBus.Publish(state.SigReceive, receivedMsg.Data)
 		default:
 			log.Warnf("Unknown message type: %d", receivedMsg.MessageType)
 		}

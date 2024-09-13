@@ -40,12 +40,15 @@ func (s *Signer) handleSigStart(ctx context.Context, event interface{}) {
 	case types.MsgSignNewBlock:
 		log.Debugf("Event handleSigStart is of type MsgSignNewBlock, request id %s", e.RequestId)
 		if err := s.handleSigStartNewBlock(ctx, e); err != nil {
-			log.Errorf("Error handleSigStart, %v", err)
+			log.Errorf("Error handleSigStart MsgSignNewBlock, %v", err)
 			// feedback SigFailed
 			s.state.EventBus.Publish(state.SigFailed, e)
 		}
 	case types.MsgSignDeposit:
 		log.Debugf("Event handleSigStart is of type MsgSignDeposit, request id %s", e.RequestId)
+		if err := s.handleSigStartNewDeposit(ctx, e); err != nil {
+			log.Errorf("Error handleSigStart MsgSignDeposit, %v", err)
+		}
 	default:
 		log.Debug("Unknown event handleSigStart type")
 	}
@@ -59,12 +62,15 @@ func (s *Signer) handleSigReceive(ctx context.Context, event interface{}) {
 	case types.MsgSignNewBlock:
 		log.Debugf("Event handleSigReceive is of type MsgSignNewBlock, request id %s", e.RequestId)
 		if err := s.handleSigReceiveNewBlock(ctx, e); err != nil {
-			log.Errorf("Error handleSigReceive, %v", err)
+			log.Errorf("Error handleSigReceive MsgSignNewBlock, %v", err)
 			// feedback SigFailed
 			s.state.EventBus.Publish(state.SigFailed, e)
 		}
 	case types.MsgSignDeposit:
 		log.Debugf("Event handleSigReceive is of type MsgSignDeposit, request id %s", e.RequestId)
+		if err := s.handleSigReceiveNewDeposit(ctx, e); err != nil {
+			log.Errorf("Error handleSigReceive MsgSignDeposit, %v", err)
+		}
 	default:
 		log.Debug("Unknown event handleSigReceive type")
 	}
@@ -146,6 +152,31 @@ func (s *Signer) handleSigStartNewBlock(ctx context.Context, e types.MsgSignNewB
 	s.state.EventBus.Publish(state.SigFinish, e)
 
 	log.Infof("SigStart proposer submit NewBlock to RPC ok, request id: %s", e.RequestId)
+	return nil
+}
+
+func (s *Signer) handleSigStartNewDeposit(ctx context.Context, e types.MsgSignDeposit) error {
+	// p2p broadcast
+	p2pMsg := p2p.Message{
+		MessageType: p2p.MessageTypeSigReq,
+		RequestId:   e.RequestId,
+		Data:        e.Deposit,
+	}
+
+	ctx1, cancel := context.WithCancel(ctx)
+	defer cancel()
+	p2p.PublishMessage(ctx1, p2pMsg)
+
+	isProposer := s.IsProposer()
+	if isProposer {
+		log.Info("SigStart proposer submit NewDeposits to consensus")
+		err := s.retrySubmit(ctx, e.RequestId, e.Deposit, config.AppConfig.L2SubmitRetry)
+		if err != nil {
+			log.Errorf("SigStart proposer submit NewDeposit to RPC error, request id: %s, err: %v", e.RequestId, err)
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -247,6 +278,23 @@ func (s *Signer) handleSigReceiveNewBlock(ctx context.Context, e types.MsgSignNe
 	}
 }
 
+func (s *Signer) handleSigReceiveNewDeposit(ctx context.Context, e types.MsgSignDeposit) error {
+	isProposer := s.IsProposer()
+	if !isProposer {
+		log.Debugf("Current l2 context, catching up: %v, self address: %s, proposer: %s", s.state.GetL2Info().Syncing, s.address, s.state.GetEpochVoter().Proposer)
+		return nil
+	}
+
+	err := s.retrySubmit(ctx, e.RequestId, e.Deposit, config.AppConfig.L2SubmitRetry)
+	if err != nil {
+		log.Errorf("SigReceive proposer submit NewDeposit to RPC error, request id: %s, err: %v", e.RequestId, err)
+		return err
+	}
+	log.Infof("SigReceive proposer submit NewDeposits to RPC ok, request id: %s", e.RequestId)
+
+	return nil
+}
+
 func (s *Signer) retrySubmit(ctx context.Context, requestId string, msg interface{}, retries int) error {
 	var err error
 	for i := 0; i <= retries; i++ {
@@ -259,7 +307,7 @@ func (s *Signer) retrySubmit(ctx context.Context, requestId string, msg interfac
 		} else if i == retries {
 			return err
 		}
-		log.Warnf("Retrying to submit NewBlock to RPC, attempt %d, request id: %s", i+1, requestId)
+		log.Warnf("Retrying to submit msg to RPC, attempt %d, request id: %s", i+1, requestId)
 
 		select {
 		case <-ctx.Done():

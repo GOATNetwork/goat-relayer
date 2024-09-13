@@ -23,4 +23,5 @@ type WalletState struct {
 	SendOrderQueue []*db.SendOrder
 	SentVin        []*db.Vin
 	SentVout       []*db.Vout
+	Utxo           *db.Utxo
 }

@@ -12,16 +12,13 @@ service BitcoinLightWallet {
 
 message NewTransactionRequest {
   string transaction_id = 1;
-  uint64 block_height = 2;
-  bytes block_hash = 3;
-  bytes raw_transaction = 4;
+  bytes raw_transaction = 2;
   // evm_address is the user wallet address in goat evm
-  bytes evm_address = 5;
+  bytes evm_address = 3;
 }
 
 message NewTransactionResponse {
-  string transaction_id = 1;
-  string error_message = 2;
+  string error_message = 1;
 }
 
 message QueryDepositAddressRequest {}
