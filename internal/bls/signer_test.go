@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestSignatureHelperWithTwoNodes(t *testing.T) {
+func TestBlsTwoAggregate(t *testing.T) {
 	sk1 := goatcryp.GenPrivKey()
 	sk2 := goatcryp.GenPrivKey()
 

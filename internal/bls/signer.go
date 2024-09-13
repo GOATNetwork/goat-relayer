@@ -74,7 +74,7 @@ func (s *Signer) Start(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
-				log.Info("Layer2Listener stoping...")
+				log.Info("Signer stoping...")
 				return
 			case event := <-s.sigStartCh:
 				log.Debugf("Received sigStart event: %v\n", event)
