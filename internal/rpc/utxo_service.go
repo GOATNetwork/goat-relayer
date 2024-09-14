@@ -61,10 +61,15 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 	}
 
 	if err := btc.VerifyTransaction(req.RawTransaction); err != nil {
+		log.Errorf("Failed to verify transaction: %v", err)
 		return nil, err
 	}
 
-	s.state.AddUnconfirmDeposit(req.TransactionId, hex.EncodeToString(req.RawTransaction), req.EvmAddress)
+	err := s.state.AddUnconfirmDeposit(req.TransactionId, hex.EncodeToString(req.RawTransaction), req.EvmAddress)
+	if err != nil {
+		log.Errorf("Failed to add unconfirmed deposit: %v", err)
+		return nil, err
+	}
 
 	return &pb.NewTransactionResponse{
 		ErrorMessage: "Confirming transaction",
