@@ -230,7 +230,7 @@ func (lis *Layer2Listener) Start(ctx context.Context) {
 			if latestBlock > l2LatestBlock {
 				l2LatestBlock = latestBlock
 				// Update l2 info
-				err = lis.processChainStatus(latestBlock, status.SyncInfo.CatchingUp)
+				err = lis.processChainStatus(latestBlock, l2Confirmations, status.SyncInfo.CatchingUp)
 				if err != nil {
 					log.Errorf("Error processChainStatus: %v", err)
 					time.Sleep(l2RequestInterval)

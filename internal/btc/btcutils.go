@@ -81,6 +81,12 @@ func VerifyTransaction(rawTransaction []byte) error {
 	}
 
 	// TODO: Implement more detailed verification
+	// type 0:
+	// |-- extract receiver, txout=0?, get receiver, evm_address, goat
+	// |-- compare public key, find txout
+	// type 1
+	// |-- find by receiver, txout=0
+	// |-- find OP_RETURN, txout=1, get evm_address
 
 	tx := wire.NewMsgTx(wire.TxVersion)
 	err := tx.Deserialize(bytes.NewReader(rawTransaction))

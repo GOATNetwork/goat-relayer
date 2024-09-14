@@ -6,8 +6,8 @@ import (
 )
 
 func (s *State) UpdateUTXO(utxo *db.Utxo) error {
-	s.layer2Mu.Lock()
-	defer s.layer2Mu.Unlock()
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
 
 	err := s.saveUTXO(utxo)
 	if err != nil {

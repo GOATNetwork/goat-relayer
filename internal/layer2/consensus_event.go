@@ -43,8 +43,8 @@ func (lis *Layer2Listener) processEvent(block uint64, event abcitypes.Event) err
 	}
 }
 
-func (lis *Layer2Listener) processChainStatus(latestHeight uint64, catchingUp bool) error {
-	if err := lis.state.UpdateL2ChainStatus(latestHeight, catchingUp); err != nil {
+func (lis *Layer2Listener) processChainStatus(latestHeight, l2Confirmations uint64, catchingUp bool) error {
+	if err := lis.state.UpdateL2ChainStatus(latestHeight, l2Confirmations, catchingUp); err != nil {
 		log.Errorf("Abci process chain status error: %v", err)
 		return err
 	}

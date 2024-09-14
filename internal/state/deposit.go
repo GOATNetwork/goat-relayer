@@ -75,7 +75,7 @@ func (s *State) SaveConfirmDeposit(txHash string, rawTx string, evmAddr string) 
 		}
 		deposit.UpdatedAt = time.Now()
 	}
-	result := s.dbm.GetBtcLightDB().Save(deposit)
+	result := s.dbm.GetBtcCacheDB().Save(deposit)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -104,7 +104,7 @@ func (s *State) UpdateProcessedDeposit(txHash string, rawTx string, evmAddr stri
 	deposit.Status = "processed"
 
 	// TODO update height <= height
-	result := s.dbm.GetBtcLightDB().Save(deposit)
+	result := s.dbm.GetBtcCacheDB().Save(deposit)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -136,12 +136,13 @@ func (s *State) UpdateProcessedDeposit(txHash string, rawTx string, evmAddr stri
 
 // GetDepositForSign
 func (s *State) GetDepositForSign(size int) ([]*db.Deposit, error) {
-	s.btcHeadMu.RLock()
-	defer s.btcHeadMu.RUnlock()
+	s.depositMu.RLock()
+	defer s.depositMu.RUnlock()
 
 	from := s.depositState.Latest.TxHash
 	var deposits []*db.Deposit
-	result := s.dbm.GetBtcLightDB().Where("tx_hash > ?", from).Order("tx_hash asc").Limit(size).Find(&deposits)
+	// TODO shoud use int to compare
+	result := s.dbm.GetBtcCacheDB().Where("tx_hash > ?", from).Order("tx_hash asc").Limit(size).Find(&deposits)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -150,15 +151,15 @@ func (s *State) GetDepositForSign(size int) ([]*db.Deposit, error) {
 
 // GetCurrentDeposit
 func (s *State) GetCurrentDeposit() (db.Deposit, error) {
-	s.btcHeadMu.RLock()
-	defer s.btcHeadMu.RUnlock()
+	s.depositMu.RLock()
+	defer s.depositMu.RUnlock()
 
 	return s.depositState.Latest, nil
 }
 
 func (s *State) queryDepositByTxHash(txHash string) (*db.Deposit, error) {
 	var deposit db.Deposit
-	result := s.dbm.GetBtcLightDB().Where("tx_hash = ?", txHash).First(&deposit)
+	result := s.dbm.GetBtcCacheDB().Where("tx_hash = ?", txHash).First(&deposit)
 	if result.Error != nil {
 		return nil, result.Error
 	}

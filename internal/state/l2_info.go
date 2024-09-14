@@ -17,12 +17,12 @@ func (s *State) GetEpochVoter() db.EpochVoter {
 	return *s.layer2State.EpochVoter
 }
 
-func (s *State) UpdateL2ChainStatus(latestBlock uint64, catchingUp bool) error {
+func (s *State) UpdateL2ChainStatus(latestBlock, l2Confirmations uint64, catchingUp bool) error {
 	s.layer2Mu.Lock()
 	defer s.layer2Mu.Unlock()
 
 	l2Info := s.layer2State.L2Info
-	if !catchingUp && l2Info.Height+1 < latestBlock {
+	if !catchingUp && l2Info.Height+l2Confirmations+1 < latestBlock {
 		// if cache height + 1 < latest, mark it as catching up
 		log.Debugf("State UpdateL2ChainStatus mask catching up, cache height: %d, chain height: %d", l2Info.Height, latestBlock)
 		catchingUp = true

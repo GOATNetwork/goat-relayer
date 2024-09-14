@@ -156,25 +156,21 @@ func (s *Signer) handleSigStartNewBlock(ctx context.Context, e types.MsgSignNewB
 }
 
 func (s *Signer) handleSigStartNewDeposit(ctx context.Context, e types.MsgSignDeposit) error {
-	// p2p broadcast
-	p2pMsg := p2p.Message{
-		MessageType: p2p.MessageTypeSigReq,
-		RequestId:   e.RequestId,
-		Data:        e.Deposit,
-	}
-
-	ctx1, cancel := context.WithCancel(ctx)
-	defer cancel()
-	p2p.PublishMessage(ctx1, p2pMsg)
-
+	// do not send p2p here, it doesn't need to aggregate sign here
 	isProposer := s.IsProposer()
 	if isProposer {
 		log.Info("SigStart proposer submit NewDeposits to consensus")
+		// TODO test
 		err := s.retrySubmit(ctx, e.RequestId, e.Deposit, config.AppConfig.L2SubmitRetry)
 		if err != nil {
 			log.Errorf("SigStart proposer submit NewDeposit to RPC error, request id: %s, err: %v", e.RequestId, err)
+			// feedback SigFailed, deposit should module subscribe it to save UTXO or mark confirm
+			s.state.EventBus.Publish(state.SigFailed, e)
 			return err
 		}
+
+		// feedback SigFinish, deposit should module subscribe it to save UTXO or mark confirm
+		s.state.EventBus.Publish(state.SigFinish, e)
 	}
 
 	return nil
@@ -279,19 +275,7 @@ func (s *Signer) handleSigReceiveNewBlock(ctx context.Context, e types.MsgSignNe
 }
 
 func (s *Signer) handleSigReceiveNewDeposit(ctx context.Context, e types.MsgSignDeposit) error {
-	isProposer := s.IsProposer()
-	if !isProposer {
-		log.Debugf("Current l2 context, catching up: %v, self address: %s, proposer: %s", s.state.GetL2Info().Syncing, s.address, s.state.GetEpochVoter().Proposer)
-		return nil
-	}
-
-	err := s.retrySubmit(ctx, e.RequestId, e.Deposit, config.AppConfig.L2SubmitRetry)
-	if err != nil {
-		log.Errorf("SigReceive proposer submit NewDeposit to RPC error, request id: %s, err: %v", e.RequestId, err)
-		return err
-	}
-	log.Infof("SigReceive proposer submit NewDeposits to RPC ok, request id: %s", e.RequestId)
-
+	// not occur
 	return nil
 }
 

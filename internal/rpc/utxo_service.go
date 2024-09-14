@@ -6,11 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net"
-	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/state"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -75,28 +72,37 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 
 	s.state.AddUnconfirmDeposit(req.TransactionId, hex.EncodeToString(req.RawTransaction), hex.EncodeToString(req.EvmAddress))
 
+	// TODO: p2p broadcast, build message
+	// p2pMsg := p2p.Message{
+	// 	MessageType: p2p.MessageTypeDepositReceive,
+	// 	RequestId:   e.RequestId,
+	// 	Data:        e.Deposit,
+	// }
+	// p2p.PublishMessage(ctx, p2pMsg)
+
 	// TODO send Deposit to channel or eventbus -> UnconfirmedChannel Deposit(TxHash + RawTx + EvmAddress)
 
-	txID := tx.TxHash().String()
-	evmAddress := common.BytesToAddress(req.EvmAddress).String()
+	// TODO should save this when submit to consensus
+	// txid := tx.TxHash().String()
+	// evmAddress := common.BytesToAddress(req.EvmAddress).String()
 
-	utxo := &db.Utxo{
-		Uid:       "",
-		Txid:      txID,
-		OutIndex:  0,
-		Amount:    0,
-		Receiver:  "",
-		Sender:    "",
-		EvmAddr:   evmAddress,
-		Source:    "deposit",
-		Status:    "confirmed",
-		UpdatedAt: time.Now(),
-	}
+	// utxo := &db.Utxo{
+	// 	Uid:       "",
+	// 	Txid:      txid,
+	// 	OutIndex:  0,
+	// 	Amount:    0,
+	// 	Receiver:  "",
+	// 	Sender:    "",
+	// 	EvmAddr:   evmAddress,
+	// 	Source:    "deposit",
+	// 	Status:    "confirmed",
+	// 	UpdatedAt: time.Now(),
+	// }
 
-	err := s.state.UpdateUTXO(utxo)
-	if err != nil {
-		return nil, err
-	}
+	// err := s.state.UpdateUTXO(utxo)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	return &pb.NewTransactionResponse{
 		ErrorMessage: "Confirming transaction",
