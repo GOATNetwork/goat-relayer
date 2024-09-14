@@ -5,13 +5,9 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"net"
-	"time"
-
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/state"
+	"net"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
@@ -24,41 +20,31 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type UTXOService interface {
-	StartUTXOService(btc.BTCListener)
+type UtxoServer struct {
+	pb.UnimplementedBitcoinLightWalletServer
+	state *state.State
 }
 
-type UTXOServiceImpl struct {
-	btc.BTCListener
-}
-
-func (us *UTXOServiceImpl) StartUTXOService(btcListener btc.BTCListener) {
-	us.BTCListener = btcListener
-
+func (s *UtxoServer) Start(ctx context.Context) {
 	addr := ":" + config.AppConfig.HTTPPort
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
-	s := grpc.NewServer()
-	pb.RegisterBitcoinLightWalletServer(s, &UtxoServer{})
-	reflection.Register(s)
+	server := grpc.NewServer()
+	pb.RegisterBitcoinLightWalletServer(server, &UtxoServer{})
+	reflection.Register(server)
 
 	log.Infof("gRPC server is running on port %s", config.AppConfig.HTTPPort)
-	if err := s.Serve(lis); err != nil {
+	if err := server.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
 }
 
-type UtxoServer struct {
-	pb.UnimplementedBitcoinLightWalletServer
-	state *state.State
-}
-
-func NewUtxoServer(layer2State *state.State) *UtxoServer {
+func NewUtxoServer(state *state.State) *UtxoServer {
 	return &UtxoServer{
-		state: layer2State,
+		state: state,
 	}
 }
 
@@ -74,29 +60,6 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 	}
 
 	s.state.AddUnconfirmDeposit(req.TransactionId, hex.EncodeToString(req.RawTransaction), hex.EncodeToString(req.EvmAddress))
-
-	// TODO send Deposit to channel or eventbus -> UnconfirmedChannel Deposit(TxHash + RawTx + EvmAddress)
-
-	txID := tx.TxHash().String()
-	evmAddress := common.BytesToAddress(req.EvmAddress).String()
-
-	utxo := &db.Utxo{
-		Uid:       "",
-		Txid:      txID,
-		OutIndex:  0,
-		Amount:    0,
-		Receiver:  "",
-		Sender:    "",
-		EvmAddr:   evmAddress,
-		Source:    "deposit",
-		Status:    "confirmed",
-		UpdatedAt: time.Now(),
-	}
-
-	err := s.state.UpdateUTXO(utxo)
-	if err != nil {
-		return nil, err
-	}
 
 	return &pb.NewTransactionResponse{
 		ErrorMessage: "Confirming transaction",

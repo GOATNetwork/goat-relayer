@@ -27,7 +27,7 @@ type Application struct {
 	HTTPServer      *http.HTTPServer
 	LibP2PService   *p2p.LibP2PService
 	BTCListener     *btc.BTCListener
-	UTXOService     *rpc.UTXOService
+	UTXOService     *rpc.UtxoServer
 }
 
 func NewApplication() *Application {
@@ -40,6 +40,7 @@ func NewApplication() *Application {
 	signer := bls.NewSigner(libP2PService, layer2Listener, state)
 	httpServer := http.NewHTTPServer(libP2PService, state, dbm)
 	btcListener := btc.NewBTCListener(libP2PService, state, dbm)
+	utxoService := rpc.NewUtxoServer(state)
 
 	return &Application{
 		DatabaseManager: dbm,
@@ -49,6 +50,7 @@ func NewApplication() *Application {
 		LibP2PService:   libP2PService,
 		HTTPServer:      httpServer,
 		BTCListener:     btcListener,
+		UTXOService:     utxoService,
 	}
 }
 
@@ -91,6 +93,12 @@ func (app *Application) Run() {
 		app.BTCListener.Start(ctx)
 	}()
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		app.UTXOService.Start(ctx)
+	}()
+
 	<-stop
 	log.Info("Receiving exit signal...")
 
@@ -98,6 +106,4 @@ func (app *Application) Run() {
 
 	wg.Wait()
 	log.Info("Server stopped")
-
-	// app.UTXOService.StartUTXOService(app.BTCListener)
 }
