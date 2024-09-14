@@ -26,7 +26,7 @@ type UtxoServer struct {
 }
 
 func (s *UtxoServer) Start(ctx context.Context) {
-	addr := ":" + config.AppConfig.HTTPPort
+	addr := ":" + config.AppConfig.RPCPort
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
@@ -36,7 +36,7 @@ func (s *UtxoServer) Start(ctx context.Context) {
 	pb.RegisterBitcoinLightWalletServer(server, &UtxoServer{})
 	reflection.Register(server)
 
-	log.Infof("gRPC server is running on port %s", config.AppConfig.HTTPPort)
+	log.Infof("gRPC server is running on port %s", config.AppConfig.RPCPort)
 	if err := server.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
@@ -59,7 +59,7 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 		return nil, err
 	}
 
-	s.state.AddUnconfirmDeposit(req.TransactionId, hex.EncodeToString(req.RawTransaction), hex.EncodeToString(req.EvmAddress))
+	s.state.AddUnconfirmDeposit(req.TransactionId, hex.EncodeToString(req.RawTransaction), req.EvmAddress)
 
 	return &pb.NewTransactionResponse{
 		ErrorMessage: "Confirming transaction",
