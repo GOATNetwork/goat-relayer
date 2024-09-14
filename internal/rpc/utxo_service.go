@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/goatnetwork/goat-relayer/internal/layer2"
 	"github.com/goatnetwork/goat-relayer/internal/state"
 	"net"
 
@@ -22,7 +23,8 @@ import (
 
 type UtxoServer struct {
 	pb.UnimplementedBitcoinLightWalletServer
-	state *state.State
+	state          *state.State
+	layer2Listener *layer2.Layer2Listener
 }
 
 func (s *UtxoServer) Start(ctx context.Context) {
@@ -42,9 +44,10 @@ func (s *UtxoServer) Start(ctx context.Context) {
 	}
 }
 
-func NewUtxoServer(state *state.State) *UtxoServer {
+func NewUtxoServer(state *state.State, layer2Listener *layer2.Layer2Listener) *UtxoServer {
 	return &UtxoServer{
-		state: state,
+		state:          state,
+		layer2Listener: layer2Listener,
 	}
 }
 
@@ -67,15 +70,18 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 }
 
 func (s *UtxoServer) QueryDepositAddress(ctx context.Context, req *pb.QueryDepositAddressRequest) (*pb.QueryDepositAddressResponse, error) {
-	l2Info := s.state.GetL2Info()
+	//l2Info := s.state.GetL2Info()
+	//
+	//publicKey, err := hex.DecodeString(l2Info.DepositKey)
+	//if err != nil {
+	//	return nil, err
+	//}
 
-	publicKey, err := hex.DecodeString(l2Info.DepositKey)
-	if err != nil {
-		return nil, err
-	}
+	pubkeyResponse := s.layer2Listener.QueryPubKey(ctx)
+	pubKey := pubkeyResponse.PublicKey.GetSecp256K1()
 
 	network := &chaincfg.MainNetParams
-	p2wpkh, err := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(publicKey), network)
+	p2wpkh, err := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(pubKey), network)
 	if err != nil {
 		return nil, err
 	}
