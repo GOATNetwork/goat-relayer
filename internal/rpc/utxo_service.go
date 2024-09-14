@@ -54,18 +54,23 @@ func NewUtxoServer(state *state.State, layer2Listener *layer2.Layer2Listener) *U
 }
 
 func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionRequest) (*pb.NewTransactionResponse, error) {
+	decodeString, err := hex.DecodeString(req.RawTransaction)
+	if err != nil {
+		return nil, err
+	}
+
 	var tx wire.MsgTx
-	if err := json.NewDecoder(bytes.NewReader(req.RawTransaction)).Decode(&tx); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(decodeString)).Decode(&tx); err != nil {
 		log.Errorf("Failed to decode transaction: %v", err)
 		return nil, err
 	}
 
-	if err := btc.VerifyTransaction(req.RawTransaction); err != nil {
+	if err := btc.VerifyTransaction(decodeString); err != nil {
 		log.Errorf("Failed to verify transaction: %v", err)
 		return nil, err
 	}
 
-	err := s.state.AddUnconfirmDeposit(req.TransactionId, hex.EncodeToString(req.RawTransaction), req.EvmAddress)
+	err = s.state.AddUnconfirmDeposit(req.TransactionId, req.RawTransaction, req.EvmAddress)
 	if err != nil {
 		log.Errorf("Failed to add unconfirmed deposit: %v", err)
 		return nil, err

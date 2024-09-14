@@ -12,7 +12,7 @@ service BitcoinLightWallet {
 
 message NewTransactionRequest {
   string transaction_id = 1;
-  bytes raw_transaction = 2;
+  string raw_transaction = 2;
   // evm_address is the user wallet address in goat evm
   string evm_address = 3;
 }
