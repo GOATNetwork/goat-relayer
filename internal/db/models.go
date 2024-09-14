@@ -67,29 +67,20 @@ type BtcBlock struct {
 	UpdatedAt time.Time `gorm:"not null" json:"updated_at"`
 }
 
-// Deposit model (for managing deposits)
-type Deposit struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	TxHash    string    `gorm:"not null" json:"tx_hash"`
-	RawTx     string    `gorm:"not null" json:"raw_tx"`
-	EvmAddr   string    `gorm:"not null" json:"evm_addr"`
-	Status    string    `gorm:"not null" json:"status"` // "unconfirm", "confirmed", "signing", "pending", "processed"
-	UpdatedAt time.Time `gorm:"not null" json:"updated_at"`
-}
-
 // Utxo model (wallet UTXO)
 type Utxo struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Uid       string    `gorm:"not null" json:"uid"`
-	Txid      string    `gorm:"not null;index:unique_txid_out_index,unique" json:"txid"`
-	OutIndex  uint      `gorm:"not null;index:unique_txid_out_index,unique" json:"out_index"`
-	Amount    float64   `gorm:"type:decimal(20,8)" json:"amount"` // BTC precision up to 8 decimal places
-	Receiver  string    `gorm:"not null" json:"receiver"`         // it is MPC address here
-	Sender    string    `gorm:"not null" json:"sender"`
-	EvmAddr   string    `json:"evm_addr"`               // deposit to L2
-	Source    string    `gorm:"not null" json:"source"` // "deposit", "unknown"
-	Status    string    `gorm:"not null" json:"status"` // "unconfirm", "confirmed", "pending", "spent"
-	UpdatedAt time.Time `gorm:"not null" json:"updated_at"`
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	Uid          string    `gorm:"not null" json:"uid"`
+	Txid         string    `gorm:"not null;index:unique_txid_out_index,unique" json:"txid"`
+	OutIndex     uint      `gorm:"not null;index:unique_txid_out_index,unique" json:"out_index"`
+	Amount       float64   `gorm:"type:decimal(20,8)" json:"amount"` // BTC precision up to 8 decimal places
+	Receiver     string    `gorm:"not null" json:"receiver"`         // it is MPC address here, or taproot (need collect)
+	Sender       string    `gorm:"not null" json:"sender"`
+	EvmAddr      string    `json:"evm_addr"`                      // deposit to L2
+	Source       string    `gorm:"not null" json:"source"`        // "deposit", "unknown"
+	ReceiverType string    `gorm:"not null" json:"receiver_type"` // "P2PKH", "PTR", "P2SH-P2WPKH", "P2WPKH"
+	Status       string    `gorm:"not null" json:"status"`        // "unconfirm", "confirmed", "pending", "spent"
+	UpdatedAt    time.Time `gorm:"not null" json:"updated_at"`
 }
 
 // Withdraw model (for managing withdrawals)
@@ -174,6 +165,16 @@ type BtcTXOutput struct {
 	PkScript []byte `json:"pk_script"`
 }
 
+// Deposit model (for managing deposits)
+type Deposit struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	TxHash    string    `gorm:"not null" json:"tx_hash"`
+	RawTx     string    `gorm:"not null" json:"raw_tx"`
+	EvmAddr   string    `gorm:"not null" json:"evm_addr"`
+	Status    string    `gorm:"not null" json:"status"` // "unconfirm", "confirmed", "signing", "pending", "processed"
+	UpdatedAt time.Time `gorm:"not null" json:"updated_at"`
+}
+
 func (dm *DatabaseManager) autoMigrate() {
 	if err := dm.l2SyncDb.AutoMigrate(&L2SyncStatus{}); err != nil {
 		log.Fatalf("Failed to migrate database 1: %v", err)
@@ -187,7 +188,7 @@ func (dm *DatabaseManager) autoMigrate() {
 	if err := dm.walletDb.AutoMigrate(&Utxo{}, &Withdraw{}, &SendOrder{}, &Vin{}, &Vout{}); err != nil {
 		log.Fatalf("Failed to migrate database 4: %v", err)
 	}
-	if err := dm.btcCacheDb.AutoMigrate(&BtcSyncStatus{}, &BtcBlockData{}, &BtcTXOutput{}); err != nil {
+	if err := dm.btcCacheDb.AutoMigrate(&BtcSyncStatus{}, &BtcBlockData{}, &BtcTXOutput{}, &Deposit{}); err != nil {
 		log.Fatalf("Failed to migrate database 5: %v", err)
 	}
 }

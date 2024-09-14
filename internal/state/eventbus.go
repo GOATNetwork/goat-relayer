@@ -7,15 +7,17 @@ import (
 type EventType int
 
 const (
-	SigStart EventType = iota
+	EventUnkown EventType = iota
+	SigStart
 	SigReceive
 	SigFinish
 	SigFailed
 	SigTimeout
+	DepositReceive
 )
 
 func (e EventType) String() string {
-	return [...]string{"SigStart", "SigReceive", "SigFinish", "SigFailed", "SigTimeout"}[e]
+	return [...]string{"EventUnkown", "SigStart", "SigReceive", "SigFinish", "SigFailed", "SigTimeout", "DepositReceive"}[e]
 }
 
 type EventBus struct {

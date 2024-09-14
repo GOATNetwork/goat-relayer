@@ -18,5 +18,5 @@ const (
 	MessageTypeUnknown MessageType = iota
 	MessageTypeSigReq
 	MessageTypeSigResp
-	MessageTypeDepositReq
+	MessageTypeDepositReceive
 )
