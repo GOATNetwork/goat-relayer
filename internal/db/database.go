@@ -8,6 +8,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 type DatabaseManager struct {
@@ -31,7 +32,9 @@ func (dm *DatabaseManager) initDB() {
 	}
 
 	l2SyncPath := filepath.Join(dbDir, "l2_sync.db")
-	l2SyncDb, err := gorm.Open(sqlite.Open(l2SyncPath), &gorm.Config{})
+	l2SyncDb, err := gorm.Open(sqlite.Open(l2SyncPath), &gorm.Config{
+		Logger: gormlogger.Default.LogMode(gormlogger.Warn),
+	})
 	if err != nil {
 		log.Fatalf("Failed to connect to database 1: %v", err)
 	}
@@ -39,7 +42,9 @@ func (dm *DatabaseManager) initDB() {
 	log.Debugf("Database 1 connected successfully, path: %s", l2SyncPath)
 
 	l2InfoPath := filepath.Join(dbDir, "l2_info.db")
-	l2InfoDb, err := gorm.Open(sqlite.Open(l2InfoPath), &gorm.Config{})
+	l2InfoDb, err := gorm.Open(sqlite.Open(l2InfoPath), &gorm.Config{
+		Logger: gormlogger.Default.LogMode(gormlogger.Warn),
+	})
 	if err != nil {
 		log.Fatalf("Failed to connect to database 2: %v", err)
 	}
@@ -47,7 +52,9 @@ func (dm *DatabaseManager) initDB() {
 	log.Debugf("Database 2 connected successfully, path: %s", l2InfoPath)
 
 	btcLightPath := filepath.Join(dbDir, "btc_light.db")
-	btcLightDb, err := gorm.Open(sqlite.Open(btcLightPath), &gorm.Config{})
+	btcLightDb, err := gorm.Open(sqlite.Open(btcLightPath), &gorm.Config{
+		Logger: gormlogger.Default.LogMode(gormlogger.Warn),
+	})
 	if err != nil {
 		log.Fatalf("Failed to connect to database 3: %v", err)
 	}
@@ -55,7 +62,9 @@ func (dm *DatabaseManager) initDB() {
 	log.Debugf("Database 3 connected successfully, path: %s", btcLightPath)
 
 	walletPath := filepath.Join(dbDir, "wallet_order.db")
-	walletDb, err := gorm.Open(sqlite.Open(walletPath), &gorm.Config{})
+	walletDb, err := gorm.Open(sqlite.Open(walletPath), &gorm.Config{
+		Logger: gormlogger.Default.LogMode(gormlogger.Warn),
+	})
 	if err != nil {
 		log.Fatalf("Failed to connect to database 4: %v", err)
 	}
@@ -63,7 +72,9 @@ func (dm *DatabaseManager) initDB() {
 	log.Debugf("Database 4 connected successfully, path: %s", walletPath)
 
 	btcCachePath := filepath.Join(dbDir, "btc_cache.db")
-	btcCacheDb, err := gorm.Open(sqlite.Open(btcCachePath), &gorm.Config{})
+	btcCacheDb, err := gorm.Open(sqlite.Open(btcCachePath), &gorm.Config{
+		Logger: gormlogger.Default.LogMode(gormlogger.Warn),
+	})
 	if err != nil {
 		log.Fatalf("Failed to connect to database 5: %v", err)
 	}

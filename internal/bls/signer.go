@@ -77,10 +77,10 @@ func (s *Signer) Start(ctx context.Context) {
 				log.Info("Signer stoping...")
 				return
 			case event := <-s.sigStartCh:
-				log.Debugf("Received sigStart event: %v\n", event)
+				log.Debugf("Received sigStart event: %v", event)
 				s.handleSigStart(ctx, event)
 			case event := <-s.sigReceiveCh:
-				log.Debugf("Received sigReceive event: %v\n", event)
+				log.Debugf("Received sigReceive event: %v", event)
 				s.handleSigReceive(ctx, event)
 			}
 		}

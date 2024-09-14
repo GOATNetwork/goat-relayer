@@ -107,6 +107,49 @@ func (s *State) UpdateL2InfoFirstBlock(block uint64, info *db.L2Info, voters []*
 	return nil
 }
 
+func (s *State) UpdateL2InfoVoters(block, epoch, sequence uint64, proposer string, voters []*db.Voter) error {
+	s.layer2Mu.Lock()
+	defer s.layer2Mu.Unlock()
+
+	if len(voters) == 0 {
+		log.Errorf("Give zero voters")
+		return errors.New("zero voters")
+	}
+
+	err := s.saveVoters(voters)
+	if err != nil {
+		log.Errorf("Save voters error: %v", err)
+		return err
+	}
+	s.layer2State.Voters = voters
+
+	epochVoter := s.layer2State.EpochVoter
+	if epochVoter.Height <= block {
+		epochVoter.UpdatedAt = time.Now()
+		epochVoter.Height = block
+		epochVoter.Epoch = epoch
+		epochVoter.Sequence = sequence
+		epochVoter.Proposer = proposer
+
+		addrArray := make([]string, 0)
+		keyArray := make([]string, 0)
+		for _, voter := range voters {
+			addrArray = append(addrArray, voter.VoteAddr)
+			keyArray = append(keyArray, voter.VoteKey)
+		}
+		epochVoter.VoteAddrList = strings.Join(addrArray, ",")
+		epochVoter.VoteKeyList = strings.Join(keyArray, ",")
+
+		err := s.saveEpochVoter(epochVoter)
+		if err != nil {
+			return err
+		}
+
+		s.layer2State.EpochVoter = epochVoter
+	}
+	return nil
+}
+
 func (s *State) UpdateL2InfoWallet(block uint64, walletType string, walletKey string) error {
 	s.layer2Mu.Lock()
 	defer s.layer2Mu.Unlock()
@@ -223,6 +266,7 @@ func (s *State) saveL2Info(l2Info *db.L2Info) error {
 }
 
 func (s *State) saveVoters(voters []*db.Voter) error {
+	s.dbm.GetL2InfoDB().Where("1 = 1").Delete(&db.Voter{})
 	result := s.dbm.GetL2InfoDB().Save(voters)
 	if result.Error != nil {
 		log.Errorf("State saveVoters error: %v", result.Error)

@@ -1,7 +1,9 @@
 package layer2
 
 import (
+	"context"
 	"strconv"
+	"time"
 
 	"github.com/goatnetwork/goat-relayer/internal/db"
 
@@ -62,6 +64,36 @@ func (lis *Layer2Listener) processEndBlock(block uint64) error {
 
 func (lis *Layer2Listener) processFirstBlock(info *db.L2Info, voters []*db.Voter, epoch, sequence uint64) error {
 	return lis.state.UpdateL2InfoFirstBlock(1, info, voters, epoch, sequence)
+}
+
+func (lis *Layer2Listener) processBlockVoters(block uint64) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	respRelayer, err := lis.QueryRelayer(ctx)
+	if err != nil {
+		return err
+	}
+	// respVoters, err := lis.QueryVotersOfRelayer(ctx)
+	// if err != nil {
+	// 	return err
+	// }
+	voters := []*db.Voter{}
+	for _, voterAddress := range respRelayer.Relayer.Voters {
+		voters = append(voters, &db.Voter{
+			VoteAddr:  voterAddress,
+			VoteKey:   "", // hex.EncodeToString(voter.VoteKey)
+			Height:    block,
+			UpdatedAt: time.Now(),
+		})
+	}
+
+	err = lis.state.UpdateL2InfoVoters(block, respRelayer.Relayer.Epoch, respRelayer.Sequence, respRelayer.Relayer.Proposer,  voters)
+	if err != nil {
+		log.Errorf("Abci voters update error, %v", err)
+	} else {
+		log.Debugf("Abci voters update, len %d, addr: %s", len(voters), lis.state.GetEpochVoter().VoteAddrList)
+	}
+	return err
 }
 
 func (lis *Layer2Listener) processFinalizeWithdrawal(block uint64, attributes []abcitypes.EventAttribute) error {
@@ -248,8 +280,14 @@ func (lis *Layer2Listener) processElectedProposerEvent(block uint64, attributes 
 			proposer = value
 		}
 	}
-
 	log.Infof("Abci ElectedProposer: %s in Epoch: %s, block: %d", proposer, epoch, block)
+
+	// query and update voters
+	err := lis.processBlockVoters(block)
+	if err != nil {
+		return err
+	}
+
 	u64, _ := strconv.ParseUint(epoch, 10, 64)
 	return lis.state.UpdateL2InfoEpoch(block, u64, proposer)
 }

@@ -157,7 +157,7 @@ func (lis *Layer2Listener) SubmitToConsensus(ctx context.Context, msg interface{
 	}
 
 	// Retry logic: retry querying the transaction up to 5 times with 5 seconds delay between each retry
-	maxRetries := 5
+	maxRetries := 10
 	var resultTx *coretypes.ResultTx
 	for i := 0; i < maxRetries; i++ {
 		resultTx, err = lis.goatRpcClient.Tx(ctx, hashBytes, false)

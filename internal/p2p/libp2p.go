@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	libp2p "github.com/libp2p/go-libp2p"
@@ -16,7 +18,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	tcp "github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	"github.com/multiformats/go-multiaddr"
@@ -48,37 +49,19 @@ func NewLibP2PService(state *state.State) *LibP2PService {
 }
 
 func (lp *LibP2PService) Start(ctx context.Context) {
-	// Start libp2p node
-	// tssKeyInCh := make(chan tss.KeygenMessage)
-	// tssKeyOutCh := make(chan tsslib.Message)
-	// tssKeyEndCh := make(chan *keygen.LocalPartySaveData)
-	// tssSignInCh := make(chan tss.SigningMessage)
-	// tssSignOutCh := make(chan tsslib.Message)
-	// tssSignEndCh := make(chan *common.SignatureData)
-
 	node, ps, err := createNodeWithPubSub(ctx)
 	if err != nil {
 		log.Fatalf("Failed to create libp2p node: %v", err)
 	}
-
-	// Print self boot node info
 	printNodeAddrInfo(node)
 
-	// Set handshake
 	node.SetStreamHandler(protocol.ID(handshakeProtocol), func(s network.Stream) {
 		log.Println("New handshake stream")
-		handleHandshake(s)
+		handleHandshake(s, node)
 		s.Close()
 	})
 
-	bootNodeAddrs := strings.Split(config.AppConfig.Libp2pBootNodes, ",")
-	// Connect to bootnodes and handshake
-	for _, addr := range bootNodeAddrs {
-		if addr == "" {
-			continue
-		}
-		connectToBootNode(ctx, node, addr)
-	}
+	go lp.connectToBootNodes(ctx, node)
 
 	messageTopic, err = ps.Join(messageTopicName)
 	if err != nil {
@@ -117,19 +100,126 @@ func (lp *LibP2PService) Start(ctx context.Context) {
 	<-ctx.Done()
 
 	log.Info("LibP2PService is stopping...")
-
 	if err := node.Close(); err != nil {
 		log.Errorf("Error closing libp2p node: %v", err)
 	}
-
 	log.Info("LibP2PService has stopped.")
+}
 
-	// close(tssKeyInCh)
-	// close(tssKeyOutCh)
-	// close(tssKeyEndCh)
-	// close(tssSignInCh)
-	// close(tssSignOutCh)
-	// close(tssSignEndCh)
+func (lp *LibP2PService) connectToBootNodes(ctx context.Context, node host.Host) {
+	bootNodeAddrs := strings.Split(config.AppConfig.Libp2pBootNodes, ",")
+	var wg sync.WaitGroup
+
+	for _, addr := range bootNodeAddrs {
+		if addr == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(addr string) {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					log.Infof("Context cancelled, stopping connection attempts to %s", addr)
+					return
+				default:
+					err := lp.connectToBootNode(ctx, node, addr)
+					if err != nil {
+						log.Errorf("Failed to connect to bootnode %s: %v", addr, err)
+						time.Sleep(10 * time.Second)
+					} else {
+						log.Infof("Successfully connected to bootnode %s", addr)
+						lp.monitorConnection(ctx, node, addr)
+						return
+					}
+				}
+			}
+		}(addr)
+	}
+
+	wg.Wait()
+}
+
+func (lp *LibP2PService) connectToBootNode(ctx context.Context, node host.Host, addr string) error {
+	peerInfo, err := parseAddr(addr)
+	if err != nil {
+		return fmt.Errorf("failed to parse bootnode address %s: %v", addr, err)
+	}
+
+	if err := node.Connect(ctx, *peerInfo); err != nil {
+		return fmt.Errorf("failed to connect to bootnode %s: %v", addr, err)
+	}
+
+	s, err := node.NewStream(ctx, peerInfo.ID, protocol.ID(handshakeProtocol))
+	if err != nil {
+		return fmt.Errorf("failed to create handshake stream with %s: %v", addr, err)
+	}
+	defer s.Close()
+
+	err = sendHandshake(s)
+	if err != nil {
+		return fmt.Errorf("failed to send handshake to %s: %v", addr, err)
+	}
+
+	return nil
+}
+
+func (lp *LibP2PService) monitorConnection(ctx context.Context, node host.Host, addr string) {
+	peerInfo, err := parseAddr(addr)
+	if err != nil {
+		log.Errorf("Failed to parse bootnode address %s: %v", addr, err)
+		return
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Infof("Context cancelled, stopping monitoring of %s", addr)
+			return
+		default:
+			if node.Network().Connectedness(peerInfo.ID) != network.Connected {
+				log.Warnf("Disconnected from %s, attempting to reconnect", addr)
+				err := lp.connectToBootNode(ctx, node, addr)
+				if err != nil {
+					log.Errorf("Failed to reconnect to %s: %v", addr, err)
+					time.Sleep(5 * time.Second)
+					continue
+				}
+				log.Infof("Successfully reconnected to %s", addr)
+			}
+			time.Sleep(20 * time.Second)
+		}
+	}
+}
+
+func parseAddr(addrStr string) (*peer.AddrInfo, error) {
+	addr, err := multiaddr.NewMultiaddr(addrStr)
+	if err != nil {
+		return nil, err
+	}
+	return peer.AddrInfoFromP2pAddr(addr)
+}
+
+func sendHandshake(s network.Stream) error {
+	handshakeMsg := []byte(expectedHandshake)
+
+	_, err := s.Write(handshakeMsg)
+	if err != nil {
+		return err
+	}
+
+	// verify handshake
+	buf := make([]byte, len(handshakeMsg))
+	_, err = s.Read(buf)
+	if err != nil {
+		return err
+	}
+
+	if !bytes.Equal(buf, handshakeMsg) {
+		return fmt.Errorf("invalid handshake response")
+	}
+
+	return nil
 }
 
 func createNodeWithPubSub(ctx context.Context) (host.Host, *pubsub.PubSub, error) {
@@ -154,43 +244,6 @@ func createNodeWithPubSub(ctx context.Context) (host.Host, *pubsub.PubSub, error
 	}
 
 	return node, ps, nil
-}
-
-func connectToBootNode(ctx context.Context, node host.Host, bootNodeAddr string) {
-	multiAddr, err := multiaddr.NewMultiaddr(bootNodeAddr)
-	if err != nil {
-		log.Printf("Failed to parse bootnode address: %v", err)
-		return
-	}
-
-	peerInfo, err := peer.AddrInfoFromP2pAddr(multiAddr)
-	if err != nil {
-		log.Printf("Failed to get peer info from address: %v", err)
-		return
-	}
-
-	node.Peerstore().AddAddrs(peerInfo.ID, peerInfo.Addrs, peerstore.PermanentAddrTTL)
-	if err := node.Connect(ctx, *peerInfo); err != nil {
-		log.Errorf("Failed to connect to bootnode: %v", err)
-	} else {
-		log.Infof("Connected to bootnode: %s", peerInfo.ID.String())
-
-		// Handshake after connect
-		s, err := node.NewStream(ctx, peerInfo.ID, protocol.ID(handshakeProtocol))
-		if err != nil {
-			log.Errorf("Failed to create handshake stream to peer %s: %v", peerInfo.ID, err)
-			return
-		}
-
-		_, err = s.Write([]byte(expectedHandshake))
-		if err != nil {
-			log.Errorf("Failed to send handshake to peer %s: %v", peerInfo.ID, err)
-			s.Reset()
-			return
-		}
-
-		s.Close()
-	}
 }
 
 func loadOrCreatePrivateKey(fileName string) (crypto.PrivKey, error) {

@@ -3,6 +3,7 @@ package p2p
 type Message struct {
 	MessageType MessageType `json:"msg_type"`
 	RequestId   string      `json:"request_id"`
+	DataType    string      `json:"data_type"`
 	Data        interface{} `json:"data"`
 }
 

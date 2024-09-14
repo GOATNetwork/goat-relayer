@@ -53,7 +53,7 @@ func InitConfig() {
 	viper.SetDefault("GOATCHAIN_DENOM", "ugoat")
 	viper.SetDefault("RELAYER_PRIVATE_KEY", "")
 	viper.SetDefault("RELAYER_BLS_SK", "")
-	viper.SetDefault("BLS_SIG_TIMEOUT", "600s")
+	viper.SetDefault("BLS_SIG_TIMEOUT", "300s")
 
 	logLevel, err := logrus.ParseLevel(strings.ToLower(viper.GetString("LOG_LEVEL")))
 	if err != nil {
@@ -111,6 +111,9 @@ func InitConfig() {
 		RelayerBlsSk:           viper.GetString("RELAYER_BLS_SK"),
 		BlsSigTimeout:          viper.GetDuration("BLS_SIG_TIMEOUT"),
 	}
+
+	logrus.Infof("Init config, BlsSigTimeout %v, L2RequestInterval %v, RelayerAddress %s",
+		AppConfig.BlsSigTimeout, AppConfig.L2RequestInterval, AppConfig.RelayerAddress)
 
 	// logrus.SetFormatter(&logrus.JSONFormatter{})
 	logrus.SetOutput(os.Stdout)

@@ -182,6 +182,7 @@ func (lis *Layer2Listener) Start(ctx context.Context) {
 	l2MaxBlockRange := uint64(config.AppConfig.L2MaxBlockRange)
 	// clientTimeout := time.Second * 10
 	var l2LatestBlock uint64
+	hasVoterUpdate := false
 
 	for {
 		select {
@@ -245,6 +246,18 @@ func (lis *Layer2Listener) Start(ctx context.Context) {
 					"fromBlock": fromBlock,
 					"toBlock":   toBlock,
 				}).Info("Syncing L2 goat events")
+
+				if !hasVoterUpdate && fromBlock > 1 {
+					err := lis.processBlockVoters(fromBlock)
+					if err != nil {
+						log.Errorf("Error processBlockVoters at block %d: %v", fromBlock, err)
+						time.Sleep(l2RequestInterval)
+						continue
+					} else {
+						hasVoterUpdate = true
+						log.Infof("Goat chain voters synced at block %d", fromBlock)
+					}
+				}
 
 				//// Filter evm event
 				// filterQuery := ethereum.FilterQuery{
