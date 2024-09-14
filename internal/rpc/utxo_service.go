@@ -8,6 +8,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/goatnetwork/goat-relayer/internal/layer2"
 	"github.com/goatnetwork/goat-relayer/internal/state"
+	bitcointypes "github.com/goatnetwork/goat/x/bitcoin/types"
+	"google.golang.org/grpc/credentials/insecure"
 	"net"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -77,7 +79,19 @@ func (s *UtxoServer) QueryDepositAddress(ctx context.Context, req *pb.QueryDepos
 	//	return nil, err
 	//}
 
-	pubkeyResponse := s.layer2Listener.QueryPubKey(ctx)
+	//pubkeyResponse := s.layer2Listener.QueryPubKey(ctx)
+
+	grpcConn, err := grpc.NewClient(config.AppConfig.GoatChainGRPCURI, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+
+	client := bitcointypes.NewQueryClient(grpcConn)
+	pubkeyResponse, err := client.Pubkey(ctx, &bitcointypes.QueryPubkeyRequest{})
+	if err != nil {
+		log.Errorf("Error while querying relayer status: %v", err)
+	}
+
 	pubKey := pubkeyResponse.PublicKey.GetSecp256K1()
 
 	network := &chaincfg.MainNetParams
