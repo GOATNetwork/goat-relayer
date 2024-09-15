@@ -12,7 +12,7 @@ require (
 	github.com/ethereum/go-ethereum v1.14.8
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-errors/errors v1.4.2
-	github.com/goatnetwork/goat v0.0.0-20240914141712-68ed07179650
+	github.com/goatnetwork/goat v0.0.0-20240914145519-dcec432f253f
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/kelindar/bitmap v1.5.2
 	github.com/libp2p/go-libp2p v0.36.2

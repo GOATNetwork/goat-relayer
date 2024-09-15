@@ -372,6 +372,8 @@ github.com/goatnetwork/goat v0.0.0-20240908132927-a6d89a61ec0c h1:LRoAO5GatCBfRo
 github.com/goatnetwork/goat v0.0.0-20240908132927-a6d89a61ec0c/go.mod h1:9Tr0u0QstZLQlDVg6P9kIjTHrPZ64JAhC9Lp9CBlqRI=
 github.com/goatnetwork/goat v0.0.0-20240914141712-68ed07179650 h1:hGuUFfeFLsvShuhATarjCuioXc8JKVtNnlDmltRQKE4=
 github.com/goatnetwork/goat v0.0.0-20240914141712-68ed07179650/go.mod h1:dO6vl3YTDod10sUbJA2hF4o2qPDr1YYsUpSOAV7GF5g=
+github.com/goatnetwork/goat v0.0.0-20240914145519-dcec432f253f h1:w3w4AF9xMVG26SVkkxjF42HKuGepqFiBQTQxXrzPEUk=
+github.com/goatnetwork/goat v0.0.0-20240914145519-dcec432f253f/go.mod h1:dO6vl3YTDod10sUbJA2hF4o2qPDr1YYsUpSOAV7GF5g=
 github.com/gobwas/httphead v0.0.0-20180130184737-2c6c146eadee h1:s+21KNqlpePfkah2I+gwHF8xmJWRjooY+5248k6m4A0=
 github.com/gobwas/httphead v0.0.0-20180130184737-2c6c146eadee/go.mod h1:L0fX3K22YWvt/FAX9NnzrNzcI4wNYi9Yku4O0LKYflo=
 github.com/gobwas/pool v0.2.0 h1:QEmUOlnSjWtnpRGHF3SauEiOsy82Cup83Vf2LcMlnc8=

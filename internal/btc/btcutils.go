@@ -75,8 +75,8 @@ func SerializeNoWitnessTx(rawTransaction []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func VerifyTransaction(rawTransaction []byte) error {
-	if len(rawTransaction) == 0 {
+func VerifyTransaction(tx wire.MsgTx, txHash string, evmAddress string) error {
+	if tx.TxID() != txHash {
 		return fmt.Errorf("raw transaction is empty")
 	}
 
@@ -87,12 +87,6 @@ func VerifyTransaction(rawTransaction []byte) error {
 	// type 1
 	// |-- find by receiver, txout=0
 	// |-- find OP_RETURN, txout=1, get evm_address
-
-	tx := wire.NewMsgTx(wire.TxVersion)
-	err := tx.Deserialize(bytes.NewReader(rawTransaction))
-	if err != nil {
-		return fmt.Errorf("failed to parse raw transaction: %v", err)
-	}
 
 	return nil
 }

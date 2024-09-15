@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"encoding/json"
+	"net"
+
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/goatnetwork/goat-relayer/internal/layer2"
 	"github.com/goatnetwork/goat-relayer/internal/state"
 	bitcointypes "github.com/goatnetwork/goat/x/bitcoin/types"
 	"google.golang.org/grpc/credentials/insecure"
-	"net"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
@@ -54,18 +54,18 @@ func NewUtxoServer(state *state.State, layer2Listener *layer2.Layer2Listener) *U
 }
 
 func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionRequest) (*pb.NewTransactionResponse, error) {
-	decodeString, err := hex.DecodeString(req.RawTransaction)
+	rawTxBytes, err := hex.DecodeString(req.RawTransaction)
 	if err != nil {
 		return nil, err
 	}
 
 	var tx wire.MsgTx
-	if err := json.NewDecoder(bytes.NewReader(decodeString)).Decode(&tx); err != nil {
+	if err := tx.Deserialize(bytes.NewReader(rawTxBytes)); err != nil {
 		log.Errorf("Failed to decode transaction: %v", err)
 		return nil, err
 	}
 
-	if err := btc.VerifyTransaction(decodeString); err != nil {
+	if err := btc.VerifyTransaction(tx, req.TransactionId, req.EvmAddress); err != nil {
 		log.Errorf("Failed to verify transaction: %v", err)
 		return nil, err
 	}
