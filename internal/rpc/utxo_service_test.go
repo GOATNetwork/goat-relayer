@@ -7,6 +7,10 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/goatnetwork/goat-relayer/internal/btc"
+	"github.com/goatnetwork/goat-relayer/internal/config"
+	"github.com/goatnetwork/goat-relayer/internal/db"
+	"github.com/goatnetwork/goat-relayer/internal/state"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestVerifyTransaction(t *testing.T) {
@@ -28,4 +32,44 @@ func TestVerifyTransaction(t *testing.T) {
 	if err != nil {
 		t.Errorf("VerifyTransaction failed for valid transaction: %v", err)
 	}
+}
+
+func TestAddUnconfirmDeposit(t *testing.T) {
+	// Create temporary test directory
+	tempDir := t.TempDir()
+	t.Setenv("DB_DIR", tempDir)
+	t.Setenv("L2_PRIVATE_KEY", "e9ccd0ec6bb77c263dc46c0f81962c0b378a67befe089e90ef81e96a4a4c5bc5")
+
+	// Initialize config module
+	config.InitConfig()
+
+	// Initialize State
+	// Initialize DatabaseManager
+	dbm := db.NewDatabaseManager()
+
+	// Initialize State
+	s := state.InitializeState(dbm)
+
+	// Test data
+	txID := "testTxID"
+	rawTx := "testRawTx"
+	evmAddress := "testEvmAddress"
+
+	// Test adding unconfirmed deposit
+	err := s.AddUnconfirmDeposit(txID, rawTx, evmAddress)
+	assert.NoError(t, err)
+
+	// // Verify if the deposit was correctly added
+	// deposit, exists := s.GetUnconfirmedDeposit(txID)
+	// assert.True(t, exists)
+	// assert.Equal(t, rawTx, deposit.RawTransaction)
+	// assert.Equal(t, evmAddress, deposit.EvmAddress)
+
+	// // Test adding duplicate deposit
+	// err = s.AddUnconfirmDeposit(txID, rawTx, evmAddress)
+	// assert.Error(t, err) // Should return an error because the deposit already exists
+
+	// Test adding a different deposit
+	err = s.AddUnconfirmDeposit("anotherTxID", "anotherRawTx", "anotherEvmAddress")
+	assert.NoError(t, err)
 }

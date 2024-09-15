@@ -37,7 +37,7 @@ func (s *State) AddUnconfirmDeposit(txHash string, rawTx string, evmAddr string)
 		RawTx:     rawTx,
 		EvmAddr:   evmAddr,
 	}
-	result := s.dbm.GetBtcLightDB().Save(deposit)
+	result := s.dbm.GetBtcCacheDB().Save(deposit)
 	if result.Error != nil {
 		return result.Error
 	}

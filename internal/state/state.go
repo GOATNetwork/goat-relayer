@@ -30,18 +30,21 @@ type State struct {
 func InitializeState(dbm *db.DatabaseManager) *State {
 	// Load layer2State, btcHeadState, walletState from db when start up
 	var (
-		l2Info            db.L2Info
-		epochVoter        db.EpochVoter
-		currentEpoch      uint64
-		voters            []*db.Voter
-		voterQueue        []*db.VoterQueue
-		latestBtcBlock    db.BtcBlock
-		unconfirmBtcQueue []*db.BtcBlock
-		sigBtcQueue       []*db.BtcBlock
-		sendOrderQueue    []*db.SendOrder
-		vinQueue          []*db.Vin
-		voutQueue         []*db.Vout
-		utxo              *db.Utxo
+		l2Info                db.L2Info
+		epochVoter            db.EpochVoter
+		currentEpoch          uint64
+		voters                []*db.Voter
+		voterQueue            []*db.VoterQueue
+		latestBtcBlock        db.BtcBlock
+		unconfirmBtcQueue     []*db.BtcBlock
+		sigBtcQueue           []*db.BtcBlock
+		latestDepositBlock    db.Deposit
+		unconfirmDepositQueue []*db.Deposit
+		sigDepositQueue       []*db.Deposit
+		sendOrderQueue        []*db.SendOrder
+		vinQueue              []*db.Vin
+		voutQueue             []*db.Vout
+		utxo                  *db.Utxo
 	)
 
 	l2InfoDb := dbm.GetL2InfoDB()
@@ -153,6 +156,11 @@ func InitializeState(dbm *db.DatabaseManager) *State {
 			SentVin:        vinQueue,
 			SentVout:       voutQueue,
 			Utxo:           utxo,
+		},
+		depositState: DepositState{
+			Latest:         latestDepositBlock,
+			UnconfirmQueue: unconfirmDepositQueue,
+			SigQueue:       sigDepositQueue,
 		},
 	}
 }
