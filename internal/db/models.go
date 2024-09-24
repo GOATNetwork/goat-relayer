@@ -194,12 +194,13 @@ type BtcTXOutput struct {
 
 // Deposit model (for managing deposits)
 type Deposit struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	TxHash    string    `gorm:"not null" json:"tx_hash"`
-	RawTx     string    `gorm:"not null" json:"raw_tx"`
-	EvmAddr   string    `gorm:"not null" json:"evm_addr"`
-	Status    string    `gorm:"not null" json:"status"` // "unconfirm", "confirmed", "signing", "pending", "processed"
-	UpdatedAt time.Time `gorm:"not null" json:"updated_at"`
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	TxHash      string    `gorm:"not null" json:"tx_hash"`
+	RawTx       string    `gorm:"not null" json:"raw_tx"`
+	EvmAddr     string    `gorm:"not null" json:"evm_addr"`
+	SignVersion uint32    `gorm:"not null" json:"sign_version"`
+	Status      string    `gorm:"not null" json:"status"` // "unconfirm", "confirmed", "signing", "pending", "processed"
+	UpdatedAt   time.Time `gorm:"not null" json:"updated_at"`
 }
 
 func (dm *DatabaseManager) autoMigrate() {

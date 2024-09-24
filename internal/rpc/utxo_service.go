@@ -3,13 +3,10 @@ package rpc
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/goatnetwork/goat-relayer/internal/btc"
 	"github.com/goatnetwork/goat-relayer/internal/types"
 
 	"net"
@@ -70,22 +67,24 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 		return nil, err
 	}
 
-	if err := btc.VerifyTransaction(tx, req.TransactionId, req.EvmAddress); err != nil {
-		log.Errorf("Failed to verify transaction: %v", err)
+	isTrue, signVersion, err := s.VerifyDeposit(tx, req.EvmAddress)
+	if err != nil || !isTrue {
+		log.Errorf("Failed to verify deposit: %v", err)
 		return nil, err
 	}
 
-	err = s.state.AddUnconfirmDeposit(req.TransactionId, req.RawTransaction, req.EvmAddress)
+	err = s.state.AddUnconfirmDeposit(req.TransactionId, req.RawTransaction, req.EvmAddress, signVersion)
 	if err != nil {
 		log.Errorf("Failed to add unconfirmed deposit: %v", err)
 		return nil, err
 	}
 
 	deposit := types.MsgUtxoDeposit{
-		RawTx:     req.RawTransaction,
-		TxId:      req.TransactionId,
-		EvmAddr:   req.EvmAddress,
-		Timestamp: time.Now().Unix(),
+		RawTx:       req.RawTransaction,
+		TxId:        req.TransactionId,
+		EvmAddr:     req.EvmAddress,
+		SignVersion: signVersion,
+		Timestamp:   time.Now().Unix(),
 	}
 
 	p2p.PublishMessage(context.Background(), p2p.Message{
@@ -101,25 +100,9 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 }
 
 func (s *UtxoServer) QueryDepositAddress(ctx context.Context, req *pb.QueryDepositAddressRequest) (*pb.QueryDepositAddressResponse, error) {
-	l2Info := s.state.GetL2Info()
-
-	var err error
-	var pubKey []byte
-	if l2Info.DepositKey == "" {
-		depositPubKey, err := s.state.GetDepositKeyByBtcBlock(0)
-		if err != nil {
-			return nil, err
-		}
-		pubKey, err = base64.StdEncoding.DecodeString(depositPubKey.PubKey)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		pubKeyStr := strings.Split(l2Info.DepositKey, ",")[1]
-		pubKey, err = base64.StdEncoding.DecodeString(pubKeyStr)
-		if err != nil {
-			return nil, err
-		}
+	pubKey, err := s.getPubKey()
+	if err != nil {
+		return nil, err
 	}
 
 	var network *chaincfg.Params

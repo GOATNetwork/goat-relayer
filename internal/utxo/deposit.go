@@ -36,5 +36,5 @@ func (d *Deposit) Start(ctx context.Context) {
 	d.state.EventBus.Subscribe(state.DepositReceive, d.confirmDepositCh)
 	// TODO wait for btc & goat chain complete blocks sync
 	go d.depositLoop(ctx)
-	go d.ProcessConfirmedDeposit(ctx)
+	go d.processConfirmedDeposit(ctx)
 }

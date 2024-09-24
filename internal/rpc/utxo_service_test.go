@@ -30,7 +30,7 @@ func TestVerifyTransaction(t *testing.T) {
 
 	err = btc.VerifyTransaction(tx, txHash, evmAddress)
 	if err != nil {
-		t.Errorf("VerifyTransaction failed for valid transaction: %v", err)
+		t.Errorf("VerifyDeposit failed for valid transaction: %v", err)
 	}
 }
 
@@ -54,9 +54,10 @@ func TestAddUnconfirmDeposit(t *testing.T) {
 	txID := "testTxID"
 	rawTx := "testRawTx"
 	evmAddress := "testEvmAddress"
+	signVersion := uint32(1)
 
 	// Test adding unconfirmed deposit
-	err := s.AddUnconfirmDeposit(txID, rawTx, evmAddress)
+	err := s.AddUnconfirmDeposit(txID, rawTx, evmAddress, signVersion)
 	assert.NoError(t, err)
 
 	// // Verify if the deposit was correctly added
@@ -70,6 +71,6 @@ func TestAddUnconfirmDeposit(t *testing.T) {
 	// assert.Error(t, err) // Should return an error because the deposit already exists
 
 	// Test adding a different deposit
-	err = s.AddUnconfirmDeposit("anotherTxID", "anotherRawTx", "anotherEvmAddress")
+	err = s.AddUnconfirmDeposit("anotherTxID", "anotherRawTx", "anotherEvmAddress", uint32(0))
 	assert.NoError(t, err)
 }

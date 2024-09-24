@@ -2,8 +2,11 @@ package types
 
 import (
 	"encoding/hex"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/txscript"
 	"slices"
 
+	"crypto/sha256"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
@@ -112,4 +115,34 @@ func GenerateP2WPKHAddress(pubKey []byte, net *chaincfg.Params) (*btcutil.Addres
 	}
 
 	return address, nil
+}
+
+func GenerateV0P2WSHAddress(pubKey []byte, evmAddress string, net *chaincfg.Params) (*btcutil.AddressWitnessScriptHash, error) {
+	posPubkey, err := btcec.ParsePubKey(pubKey)
+	if err != nil {
+		return nil, err
+	}
+	addr, err := hex.DecodeString(evmAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	redeemScript, err := txscript.NewScriptBuilder().
+		AddData(addr[:]).
+		AddOp(txscript.OP_DROP).
+		AddData(posPubkey.SerializeCompressed()).
+		AddOp(txscript.OP_CHECKSIG).Script()
+	if err != nil {
+		log.Errorf("build redeem script err: %v", err)
+		return nil, err
+	}
+
+	witnessProg := sha256.Sum256(redeemScript)
+	p2wsh, err := btcutil.NewAddressWitnessScriptHash(witnessProg[:], net)
+	if err != nil {
+		log.Errorf("build v0 p2wsh err: %v", err)
+		return nil, err
+	}
+
+	return p2wsh, nil
 }

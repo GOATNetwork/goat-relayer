@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/goatnetwork/goat-relayer/internal/bls"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/types"
@@ -30,10 +28,8 @@ type DepositTransaction struct {
 	BlockHeight uint64
 	BlockHeader []byte
 	TxHashList  []string
+	SignVersion uint32
 }
-
-var deduplicateChannel = make(chan DepositTransaction)
-var confirmedChannel = make(chan DepositTransaction)
 
 func (d *Deposit) depositLoop(ctx context.Context) {
 	for {
@@ -47,58 +43,53 @@ func (d *Deposit) depositLoop(ctx context.Context) {
 				log.Errorf("Invalid deposit data type")
 				continue
 			}
-			err := d.state.AddUnconfirmDeposit(depositData.TxId, depositData.RawTx, depositData.EvmAddr)
+			err := d.state.AddUnconfirmDeposit(depositData.TxId, depositData.RawTx, depositData.EvmAddr, depositData.SignVersion)
 			if err != nil {
 				log.Errorf("Failed to add unconfirmed deposit: %v", err)
 				continue
 			}
-			deduplicateChannel <- DepositTransaction{
-				TxHash:     depositData.TxId,
-				RawTx:      depositData.RawTx,
-				EvmAddress: depositData.EvmAddr,
+		}
+	}
+}
+
+func (d *Deposit) processConfirmedDeposit(ctx context.Context) {
+	for {
+		queues := d.state.GetDepositState().UnconfirmQueue
+		if len(queues) != 0 {
+			for _, queue := range queues {
+				tx := DepositTransaction{
+					TxHash:      queue.TxHash,
+					RawTx:       queue.RawTx,
+					EvmAddress:  queue.EvmAddr,
+					SignVersion: queue.SignVersion,
+				}
+				go d.confirmingDeposit(ctx, tx, 0)
 			}
+		} else {
+			time.Sleep(5 * time.Second)
 		}
 	}
 }
 
-func deduplicate(dedupChan <-chan DepositTransaction, confirmChan chan<- DepositTransaction) {
-	seen := make(map[string]struct{})
-
-	for input := range dedupChan {
-		if _, exists := seen[input.TxHash]; !exists {
-			seen[input.TxHash] = struct{}{}
-			confirmChan <- input
-		}
-	}
-}
-
-func (d *Deposit) ProcessConfirmedDeposit(ctx context.Context) {
-	go deduplicate(deduplicateChannel, confirmedChannel)
-
-	for tx := range confirmedChannel {
-		go confirmingDeposit(ctx, tx, 0, d.state, d.signer)
-	}
-}
-
-func confirmingDeposit(ctx context.Context, tx DepositTransaction, attempt int, state *internalstate.State, signer *bls.Signer) {
+func (d *Deposit) confirmingDeposit(ctx context.Context, tx DepositTransaction, attempt int) {
 	if attempt > 7 {
 		log.Errorf("Confirmed deposit discarded after 7 attempts, txHahs: %s", tx.TxHash)
 		return
 	}
 
-	block, err := state.QueryBlockByTxHash(tx.TxHash)
+	block, err := d.state.QueryBlockByTxHash(tx.TxHash)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// if tx not found, retry
 			log.Info("Confirmed deposit not found, retrying...")
 		} else {
 			// if tx validate or other error found, add attempt
-			log.Infof("Confirmed deposit error, attempt %d retrying...", attempt)
+			log.Infof("Confirmed deposit error: %v, attempt %d retrying...", err, attempt)
 			attempt++
 		}
 		// TODO sleep how long?
 		time.Sleep(5 * time.Second)
-		confirmingDeposit(ctx, tx, attempt, state, signer)
+		d.confirmingDeposit(ctx, tx, attempt)
 		return
 	}
 
@@ -127,16 +118,16 @@ func confirmingDeposit(ctx context.Context, tx DepositTransaction, attempt int, 
 		return
 	}
 
-	isProposer := signer.IsProposer()
+	isProposer := d.signer.IsProposer()
 	if isProposer {
-		l2Info := state.GetL2Info()
+		l2Info := d.state.GetL2Info()
 		depositKey, err := hex.DecodeString(l2Info.DepositKey)
 		if err != nil {
 			log.Errorf("DecodeString DepositKey err: %v", err)
 			return
 		}
 
-		proposer := state.GetEpochVoter().Proposer
+		proposer := d.state.GetEpochVoter().Proposer
 
 		requestId := fmt.Sprintf("DEPOSIT:%s:%s", config.AppConfig.RelayerAddress, tx.TxHash)
 
@@ -145,12 +136,12 @@ func confirmingDeposit(ctx context.Context, tx DepositTransaction, attempt int, 
 			log.Errorf("newMsgSignDeposit err: %v", err)
 			return
 		}
-		state.EventBus.Publish(internalstate.SigStart, *msgSignDeposit)
+		d.state.EventBus.Publish(internalstate.SigStart, *msgSignDeposit)
 
-		log.Infof("proposer submit MsgNewDeposits to consensus success, request id: %s", requestId)
+		log.Infof("p2p publish msgSignDeposit success, request id: %s", requestId)
 	}
 	// update Deposit status to confirmed
-	err = state.SaveConfirmDeposit(tx.TxHash, tx.RawTx, tx.EvmAddress)
+	err = d.state.SaveConfirmDeposit(tx.TxHash, tx.RawTx, tx.EvmAddress)
 	if err != nil {
 		log.Errorf("SaveConfirmDeposit err: %v", err)
 		return
@@ -182,7 +173,7 @@ func newMsgSignDeposit(tx DepositTransaction, proposer string, pubKey []byte, me
 
 	return &types.MsgSignDeposit{
 		Proposer:          proposer,
-		Version:           1,
+		Version:           tx.SignVersion,
 		BlockNumber:       tx.BlockHeight,
 		BlockHeader:       tx.BlockHeader,
 		TxHash:            txHash.CloneBytes(),

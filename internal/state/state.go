@@ -126,7 +126,7 @@ func InitializeState(dbm *db.DatabaseManager) *State {
 
 	go func() {
 		defer wg.Done()
-		if err := btcCacheDb.Where("status = ?", "processed").Order("id").First(&latestDeposit).Error; err != nil {
+		if err := btcCacheDb.Where("status = ?", "processed").Order("id desc").First(&latestDeposit).Error; err != nil {
 			log.Warnf("Failed to load latest processed deposit: %v", err)
 		}
 	}()

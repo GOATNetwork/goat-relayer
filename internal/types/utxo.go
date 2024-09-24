@@ -20,10 +20,11 @@ var (
 // MsgUtxoDeposit defines deposit UTXO broadcast to p2p which received in relayer rpc
 // TODO columns
 type MsgUtxoDeposit struct {
-	RawTx     string `json:"raw_tx"`
-	TxId      string `json:"tx_id"`
-	EvmAddr   string `json:"evm_addr"`
-	Timestamp int64  `json:"timestamp"`
+	RawTx       string `json:"raw_tx"`
+	TxId        string `json:"tx_id"`
+	SignVersion uint32 `json:"sign_version"`
+	EvmAddr     string `json:"evm_addr"`
+	Timestamp   int64  `json:"timestamp"`
 }
 
 type BtcBlockExt struct {
@@ -92,4 +93,31 @@ func IsUtxoGoatDepositV1(tx *wire.MsgTx, tssAddress []btcutil.Address, net *chai
 		}
 	}
 	return false, ""
+}
+
+func IsUtxoGoatDepositV0(tx *wire.MsgTx, evmAddress string, pubKey []byte, net *chaincfg.Params) bool {
+	// Ensure there are at least 2 outputs
+	if len(tx.TxOut) < 2 {
+		return false
+	}
+
+	// Extract addresses from tx.TxOut[0]
+	_, addresses, requireSigs, err := txscript.ExtractPkScriptAddrs(tx.TxOut[0].PkScript, net)
+	if err != nil || addresses == nil || requireSigs > 1 {
+		log.Debugf("Cannot extract PkScript addresses from TxOut[0]: %v", err)
+		return false
+	}
+
+	address, err := GenerateV0P2WSHAddress(pubKey, evmAddress, net)
+	if err != nil {
+		log.Errorf("Cannot generate v0 P2WSH address: %v", err)
+		return false
+	}
+
+	// Check if any of the addresses match tssAddress
+	if address.EncodeAddress() == addresses[0].EncodeAddress() {
+		return true
+	}
+
+	return false
 }
