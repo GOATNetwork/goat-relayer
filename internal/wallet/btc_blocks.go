@@ -7,6 +7,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
@@ -67,8 +68,10 @@ func (w *WalletServer) blockScanLoop(ctx context.Context) {
 				var vouts []*db.Vout
 				// isUtxo means it will save to utxo table
 				// isVin means it will save to vin|vout table
+
 				isUtxo, isVin := false, false
 				isWithdrawl, isDeposit, isConsolidation := false, false, false
+				sender, receiver := "", ""
 				for _, vin := range tx.TxIn {
 					_, addresses, requireSigs, err := txscript.ExtractPkScriptAddrs(vin.SignatureScript, network)
 					if err != nil {
@@ -76,15 +79,23 @@ func (w *WalletServer) blockScanLoop(ctx context.Context) {
 						continue
 					}
 					if addresses == nil {
-						log.Errorf("Error extracting input address nil")
-						continue
+						if (vin.PreviousOutPoint.Hash == chainhash.Hash{} && vin.PreviousOutPoint.Index == 0xffffffff) {
+							sender = "coinbase"
+							log.Debugf("Detect coinbase tx")
+							break
+						} else {
+							log.Errorf("Error extracting input address nil")
+							continue
+						}
 					}
+					sender = addresses[0].EncodeAddress()
+
 					if requireSigs > 1 {
 						// ignore multi sigs
 						continue
 					}
 
-					if addresses[0].EncodeAddress() == p2pkhAddress.EncodeAddress() || addresses[0].EncodeAddress() == p2wpkhAddress.EncodeAddress() {
+					if sender == p2pkhAddress.EncodeAddress() || sender == p2wpkhAddress.EncodeAddress() {
 						// should save vin db logic
 						isVin = true
 						// if TxOut len is 1 and receiver is self p2pkh|p2wpkh, it is consolidation
@@ -125,17 +136,18 @@ func (w *WalletServer) blockScanLoop(ctx context.Context) {
 						continue
 					}
 					if addresses == nil {
-						log.Errorf("Error extracting output address nil")
+						log.Debugf("Extracting output address nil")
 						continue
 					}
+					receiver = addresses[0].EncodeAddress()
 					if requireSigs > 1 {
 						// ignore multi sigs
 						continue
 					}
 
-					if addresses[0].EncodeAddress() == p2pkhAddress.EncodeAddress() {
+					if receiver == p2pkhAddress.EncodeAddress() {
 						receiverType = "P2PKH"
-					} else if addresses[0].EncodeAddress() == p2wpkhAddress.EncodeAddress() {
+					} else if receiver == p2wpkhAddress.EncodeAddress() {
 						receiverType = "P2WPKH"
 					}
 					if receiverType == "P2PKH" || receiverType == "P2WPKH" {
@@ -147,9 +159,9 @@ func (w *WalletServer) blockScanLoop(ctx context.Context) {
 							PkScript:      vout.PkScript,
 							OutIndex:      idx,
 							Amount:        vout.Value,
-							Receiver:      addresses[0].EncodeAddress(),
+							Receiver:      receiver,
 							WalletVersion: "1",
-							Sender:        vins[0].Sender,
+							Sender:        sender,
 							EvmAddr:       evmAddr,
 							Source:        "unknown",
 							ReceiverType:  receiverType,
@@ -166,8 +178,8 @@ func (w *WalletServer) blockScanLoop(ctx context.Context) {
 						OutIndex:   idx,
 						WithdrawId: "",
 						Amount:     vout.Value,
-						Receiver:   addresses[0].EncodeAddress(),
-						Sender:     vins[0].Sender,
+						Receiver:   receiver,
+						Sender:     sender,
 						Source:     "unknown",
 						Status:     "confirmed",
 						UpdatedAt:  time.Now(),

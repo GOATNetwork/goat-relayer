@@ -52,7 +52,7 @@ func (s *State) AddUtxo(utxo *db.Utxo) error {
 	if utxo.Status == "confirmed" {
 		// check deposit table (from layer2)
 		var depositResult db.DepositResult
-		err := s.dbm.GetBtcCacheDB().Where("tx_id=? and tx_out=?", utxo.Txid, utxo.OutIndex).First(&depositResult).Error
+		err := s.dbm.GetWalletDB().Where("tx_id=? and tx_out=?", utxo.Txid, utxo.OutIndex).First(&depositResult).Error
 		if err != nil && err != gorm.ErrRecordNotFound {
 			return err
 		}
