@@ -78,7 +78,7 @@ func (w *WalletServer) blockScanLoop(ctx context.Context) {
 						log.Errorf("Error extracting input address, %v", err)
 						continue
 					}
-					if addresses == nil {
+					if len(addresses) == 0 {
 						if (vin.PreviousOutPoint.Hash == chainhash.Hash{} && vin.PreviousOutPoint.Index == 0xffffffff) {
 							sender = "coinbase"
 							log.Debugf("Detect coinbase tx")
@@ -135,7 +135,7 @@ func (w *WalletServer) blockScanLoop(ctx context.Context) {
 						log.Errorf("Error extracting output address, %v", err)
 						continue
 					}
-					if addresses == nil {
+					if len(addresses) == 0 {
 						log.Debugf("Extracting output address nil")
 						continue
 					}
