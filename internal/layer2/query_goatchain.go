@@ -39,6 +39,10 @@ func (lis *Layer2Listener) QueryVotersOfRelayer(ctx context.Context) (*relayerty
 }
 
 func (lis *Layer2Listener) QueryPubKey(ctx context.Context) (*bitcointypes.QueryPubkeyResponse, error) {
+	if err := lis.checkAndReconnect(); err != nil {
+		log.Errorf("check and reconnect goat client faild: %v", err)
+		return nil, err
+	}
 	client := bitcointypes.NewQueryClient(lis.goatGrpcConn)
 	response, err := client.Pubkey(ctx, &bitcointypes.QueryPubkeyRequest{})
 	if err != nil {
