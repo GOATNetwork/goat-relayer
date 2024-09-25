@@ -87,12 +87,15 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 		Timestamp:   time.Now().Unix(),
 	}
 
-	p2p.PublishMessage(context.Background(), p2p.Message{
+	err = p2p.PublishMessage(context.Background(), p2p.Message{
 		MessageType: p2p.MessageTypeDepositReceive,
 		RequestId:   fmt.Sprintf("DEPOSIT:%s:%s", config.AppConfig.RelayerAddress, deposit.TxId),
 		DataType:    "MsgUtxoDeposit",
 		Data:        deposit,
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	return &pb.NewTransactionResponse{
 		ErrorMessage: "Confirming transaction",

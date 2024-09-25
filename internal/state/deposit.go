@@ -83,19 +83,12 @@ func (s *State) SaveConfirmDeposit(txHash string, rawTx string, evmAddr string) 
 UpdateProcessedDeposit
 when utxo committer process a deposit to consensus, save to processed
 */
-func (s *State) UpdateProcessedDeposit(txHash string, rawTx string, evmAddr string) error {
+func (s *State) UpdateProcessedDeposit(txHash string) error {
 	s.depositMu.Lock()
 	defer s.depositMu.Unlock()
 
 	deposit, err := s.queryDepositByTxHash(txHash)
 	if err != nil {
-		// query db failed, update cache
-		s.depositState.Latest = db.Deposit{
-			TxHash:    txHash,
-			RawTx:     rawTx,
-			EvmAddr:   evmAddr,
-			UpdatedAt: time.Now(),
-		}
 		return err
 	}
 	deposit.Status = "processed"

@@ -38,12 +38,12 @@ func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue boo
 				return false, 100, err
 			}
 
-			isTrue, _ := types.IsUtxoGoatDepositV1(&tx, []btcutil.Address{p2wpkh}, network)
+			isTrue, _ = types.IsUtxoGoatDepositV1(&tx, []btcutil.Address{p2wpkh}, network)
 			if isTrue {
 				return true, 1, nil
 			}
 		} else if pkScript[:4] == "0020" {
-			isTrue := types.IsUtxoGoatDepositV0(&tx, evmAddress, pubKey, network)
+			isTrue = types.IsUtxoGoatDepositV0(&tx, evmAddress, pubKey, network)
 			if isTrue {
 				return true, 0, nil
 			}

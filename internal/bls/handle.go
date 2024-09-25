@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"strings"
 	"time"
 
@@ -48,7 +49,7 @@ func (s *Signer) handleSigStart(ctx context.Context, event interface{}) {
 	case types.MsgSignDeposit:
 		log.Debugf("Event handleDepositReceive is of type MsgSignDeposit, request id %s", e.RequestId)
 		if err := s.handleSigStartNewDeposit(ctx, e); err != nil {
-			log.Errorf("Error handleDepositReceive MsgSignDeposit, %v", err)
+			log.Errorf("Error handleSigStart MsgSignDeposit, %v", err)
 		}
 	default:
 		log.Debug("Unknown event handleSigStart type")
@@ -257,8 +258,7 @@ func (s *Signer) handleSigStartNewDeposit(ctx context.Context, e types.MsgSignDe
 	// do not send p2p here, it doesn't need to aggregate sign here
 	isProposer := s.IsProposer()
 	if isProposer {
-		log.Info("DepositReceive proposer submit NewDeposits to consensus")
-		// TODO test
+		log.Info("proposer submit NewDeposits to consensus")
 
 		headers := make(map[uint64][]byte)
 		headers[e.BlockNumber] = e.BlockHeader
@@ -289,15 +289,25 @@ func (s *Signer) handleSigStartNewDeposit(ctx context.Context, e types.MsgSignDe
 
 		err = s.RetrySubmit(ctx, e.RequestId, msgDeposits, config.AppConfig.L2SubmitRetry)
 		if err != nil {
-			log.Errorf("DepositReceive proposer submit NewDeposit to RPC error, request id: %s, err: %v", e.RequestId, err)
+			log.Errorf("proposer submit NewDeposit to consensus error, request id: %s, err: %v", e.RequestId, err)
 			// feedback SigFailed, deposit should module subscribe it to save UTXO or mark confirm
 			s.state.EventBus.Publish(state.SigFailed, e)
 			return err
 		}
 
+		hash, err := chainhash.NewHash(e.TxHash)
+		if err != nil {
+			return err
+		}
+
+		err = s.state.UpdateProcessedDeposit(hash.String())
+		if err != nil {
+			return err
+		}
+
 		// feedback SigFinish, deposit should module subscribe it to save UTXO or mark confirm
 		s.state.EventBus.Publish(state.SigFinish, e)
-		log.Infof("DepositReceive proposer submit MsgNewDeposit to consensus ok, request id: %s", e.RequestId)
+		log.Infof("proposer submit MsgNewDeposit to consensus ok, request id: %s", e.RequestId)
 	}
 	return nil
 }
