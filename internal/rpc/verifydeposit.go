@@ -69,7 +69,7 @@ func (s *UtxoServer) getPubKey() ([]byte, error) {
 
 	var err error
 	var pubKey []byte
-	if l2Info.DepositKey == "" {
+	if l2Info.DepositKey == "," || l2Info.DepositKey == "" {
 		depositPubKey, err := s.state.GetDepositKeyByBtcBlock(0)
 		if err != nil {
 			return nil, err

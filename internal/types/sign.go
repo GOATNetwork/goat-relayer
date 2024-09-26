@@ -22,6 +22,12 @@ type MsgSignNewBlock struct {
 type MsgSignDeposit struct {
 	MsgSign
 
+	DepositTX     []*DepositTX `json:"deposit_tx"`
+	RelayerPubkey []byte       `json:"relayer_pubkey"`
+	Proposer      string       `json:"proposer"`
+}
+
+type DepositTX struct {
 	BlockHeader       []byte `json:"block_header"`
 	BlockNumber       uint64 `json:"block_number"`
 	Version           uint32 `json:"version,omitempty"`
@@ -32,6 +38,4 @@ type MsgSignDeposit struct {
 	NoWitnessTx       []byte `json:"no_witness_tx,omitempty"`
 	OutputIndex       uint32 `json:"output_index"`
 	EvmAddress        []byte `json:"evm_address"`
-	RelayerPubkey     []byte `json:"relayer_pubkey"`
-	Proposer          string `json:"proposer"`
 }

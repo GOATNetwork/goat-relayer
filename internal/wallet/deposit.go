@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	bitcointypes "github.com/goatnetwork/goat/x/bitcoin/types"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/types"
 
 	"time"
@@ -110,39 +110,98 @@ func (w *WalletServer) confirmingDeposit(ctx context.Context, tx DepositTransact
 		return
 	}
 
-	isProposer := w.signer.IsProposer()
-	if isProposer {
-		l2Info := w.state.GetL2Info()
-		depositKey, err := hex.DecodeString(l2Info.DepositKey)
-		if err != nil {
-			log.Errorf("DecodeString DepositKey err: %v", err)
-			return
-		}
-
-		proposer := w.state.GetEpochVoter().Proposer
-
-		requestId := fmt.Sprintf("DEPOSIT:%s:%s", config.AppConfig.RelayerAddress, tx.TxHash)
-
-		msgSignDeposit, err := newMsgSignDeposit(tx, proposer, depositKey, merkleRoot, proof, txIndex)
-		if err != nil {
-			log.Errorf("NewMsgSignDeposit err: %v", err)
-			return
-		}
-		w.state.EventBus.Publish(internalstate.SigStart, *msgSignDeposit)
-
-		log.Infof("P2P publish msgSignDeposit success, request id: %s", requestId)
-	}
-	// update Deposit status to confirmed
-	err = w.state.SaveConfirmDeposit(tx.TxHash, tx.RawTx, tx.EvmAddress)
-	if err != nil {
-		log.Errorf("SaveConfirmDeposit err: %v", err)
-		return
+	w.deposit <- DepositParams{
+		Tx:         tx,
+		MerkleRoot: merkleRoot,
+		Proof:      proof,
+		TxIndex:    txIndex,
 	}
 
-	log.Infof("Confirmed deposit success, blockHeight: %v", tx.BlockHeight)
+	log.Infof("Confirmed deposit success, txHash: %v", tx.TxHash)
 }
 
-func newMsgSignDeposit(tx DepositTransaction, proposer string, pubKey []byte, merkleRoot []byte, proof []byte, txIndex uint32) (*types.MsgSignDeposit, error) {
+func (w *WalletServer) processBatchDeposit(ch chan DepositParams) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			var deposits []DepositParams
+			for len(deposits) < 16 {
+				select {
+				case param := <-ch:
+					deposits = append(deposits, param)
+				default:
+					break
+				}
+				if len(deposits) >= 16 {
+					break
+				}
+			}
+
+			if len(deposits) == 0 {
+				continue
+			}
+
+			isProposer := w.signer.IsProposer()
+			// Proposer handle batch deposit
+			if isProposer {
+				l2Info := w.state.GetL2Info()
+				depositKey, err := hex.DecodeString(l2Info.DepositKey)
+				if err != nil {
+					log.Errorf("DecodeString DepositKey err: %v", err)
+					continue
+				}
+
+				proposer := w.state.GetEpochVoter().Proposer
+
+				var msgDepositTXs []*types.DepositTX
+				for _, deposit := range deposits {
+					txHash, err := chainhash.NewHashFromStr(deposit.Tx.TxHash)
+					if err != nil {
+						log.Errorf("NewHashFromStr err: %v", err)
+						continue
+					}
+
+					// verify merkle proof
+					success := bitcointypes.VerifyMerkelProof(txHash.CloneBytes(), deposit.MerkleRoot[:], deposit.Proof, deposit.TxIndex)
+					if !success {
+						log.Errorf("VerifyMerkelProof failed, txHash: %s", txHash.String())
+						continue
+					}
+
+					msgDepositTX, err := newMsgDepositTX(deposit.Tx, deposit.MerkleRoot, deposit.Proof, deposit.TxIndex)
+					if err != nil {
+						log.Errorf("NewMsgSignDeposit err: %v", err)
+						continue
+					}
+					msgDepositTXs = append(msgDepositTXs, msgDepositTX)
+				}
+
+				msgSignDeposit := types.MsgSignDeposit{
+					DepositTX:     msgDepositTXs,
+					Proposer:      proposer,
+					RelayerPubkey: depositKey,
+				}
+
+				w.state.EventBus.Publish(internalstate.SigStart, msgSignDeposit)
+
+				log.Infof("P2P publish msgSignDeposit success for %d amount deposits", len(msgDepositTXs))
+			}
+
+			// Update Deposit status to confirmed
+			for _, deposit := range deposits {
+				err := w.state.SaveConfirmDeposit(deposit.Tx.TxHash, deposit.Tx.RawTx, deposit.Tx.EvmAddress)
+				if err != nil {
+					log.Errorf("SaveConfirmDeposit err: %v, txHash: %s", err, deposit.Tx.TxHash)
+				}
+			}
+		}
+	}
+}
+
+func newMsgDepositTX(tx DepositTransaction, merkleRoot []byte, proof []byte, txIndex uint32) (*types.DepositTX, error) {
 	address := common.HexToAddress(tx.EvmAddress).Bytes()
 
 	txHash, err := chainhash.NewHashFromStr(tx.TxHash)
@@ -163,8 +222,7 @@ func newMsgSignDeposit(tx DepositTransaction, proposer string, pubKey []byte, me
 	headers := make(map[uint64][]byte)
 	headers[tx.BlockHeight] = tx.BlockHeader
 
-	return &types.MsgSignDeposit{
-		Proposer:          proposer,
+	return &types.DepositTX{
 		Version:           tx.SignVersion,
 		BlockNumber:       tx.BlockHeight,
 		BlockHeader:       tx.BlockHeader,
@@ -175,6 +233,5 @@ func newMsgSignDeposit(tx DepositTransaction, proposer string, pubKey []byte, me
 		OutputIndex:       0,
 		IntermediateProof: proof,
 		EvmAddress:        address,
-		RelayerPubkey:     pubKey,
 	}, nil
 }

@@ -259,25 +259,28 @@ func (s *Signer) handleSigStartNewDeposit(ctx context.Context, e types.MsgSignDe
 	if isProposer {
 		log.Info("Proposer submit NewDeposits to consensus")
 
+		pubKey := relayertypes.DecodePublicKey(e.RelayerPubkey)
 		headers := make(map[uint64][]byte)
-		headers[e.BlockNumber] = e.BlockHeader
+		deposits := make([]*bitcointypes.Deposit, len(e.DepositTX))
+
+		for i, tx := range e.DepositTX {
+			headers[tx.BlockNumber] = tx.BlockHeader
+			deposits[i] = &bitcointypes.Deposit{
+				Version:           tx.Version,
+				BlockNumber:       tx.BlockNumber,
+				TxIndex:           tx.TxIndex,
+				NoWitnessTx:       tx.NoWitnessTx,
+				OutputIndex:       tx.OutputIndex,
+				IntermediateProof: tx.IntermediateProof,
+				EvmAddress:        tx.EvmAddress,
+				RelayerPubkey:     pubKey,
+			}
+		}
+
 		headersBytes, err := json.Marshal(headers)
 		if err != nil {
 			log.Errorf("Failed to marshal headers: %v", err)
 			return err
-		}
-
-		pubKey := relayertypes.DecodePublicKey(e.RelayerPubkey)
-		deposits := make([]*bitcointypes.Deposit, 1)
-		deposits[0] = &bitcointypes.Deposit{
-			Version:           e.Version,
-			BlockNumber:       e.BlockNumber,
-			TxIndex:           e.TxIndex,
-			NoWitnessTx:       e.NoWitnessTx,
-			OutputIndex:       e.OutputIndex,
-			IntermediateProof: e.IntermediateProof,
-			EvmAddress:        e.EvmAddress,
-			RelayerPubkey:     pubKey,
 		}
 
 		msgDeposits := &bitcointypes.MsgNewDeposits{
@@ -296,7 +299,7 @@ func (s *Signer) handleSigStartNewDeposit(ctx context.Context, e types.MsgSignDe
 
 		// feedback SigFinish, deposit should module subscribe it to save UTXO or mark confirm
 		s.state.EventBus.Publish(state.SigFinish, e)
-		log.Infof("Proposer submit MsgNewDeposit to consensus ok, request id: %s", e.RequestId)
+		log.Info("Proposer submit MsgNewDeposit to consensus success")
 	}
 	return nil
 }
