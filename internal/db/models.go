@@ -203,6 +203,13 @@ type Deposit struct {
 	UpdatedAt   time.Time `gorm:"not null" json:"updated_at"`
 }
 
+type P2WSHInfo struct {
+	ID             uint   `gorm:"primaryKey" json:"id"`
+	DepositAddress string `gorm:"not null" json:"deposit_address"`
+	EvmAddress     string `gorm:"not null" json:"evm_address"`
+	TxID           string `gorm:"not null" json:"tx_id"` // transaction id
+}
+
 func (dm *DatabaseManager) autoMigrate() {
 	if err := dm.l2SyncDb.AutoMigrate(&L2SyncStatus{}); err != nil {
 		log.Fatalf("Failed to migrate database 1: %v", err)
@@ -213,7 +220,7 @@ func (dm *DatabaseManager) autoMigrate() {
 	if err := dm.btcLightDb.AutoMigrate(&BtcBlock{}); err != nil {
 		log.Fatalf("Failed to migrate database 3: %v", err)
 	}
-	if err := dm.walletDb.AutoMigrate(&Utxo{}, &Withdraw{}, &SendOrder{}, &Vin{}, &Vout{}, &DepositResult{}); err != nil {
+	if err := dm.walletDb.AutoMigrate(&Utxo{}, &Withdraw{}, &SendOrder{}, &Vin{}, &Vout{}, &DepositResult{}, &P2WSHInfo{}); err != nil {
 		log.Fatalf("Failed to migrate database 4: %v", err)
 	}
 	if err := dm.btcCacheDb.AutoMigrate(&BtcSyncStatus{}, &BtcBlockData{}, &BtcTXOutput{}, &Deposit{}); err != nil {

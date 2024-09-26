@@ -201,3 +201,21 @@ func (s *State) QueryBlockByTxHash(txHash string) (block *db.BtcBlockData, err e
 
 	return &btcBlockData, nil
 }
+
+// AddP2WSHInfo save p2wsh(v0) info in db
+func (s *State) AddP2WSHInfo(depositAddr string, evmAddr string, txId string) error {
+	s.depositMu.Lock()
+	defer s.depositMu.Unlock()
+
+	info := &db.P2WSHInfo{
+		DepositAddress: depositAddr,
+		EvmAddress:     evmAddr,
+		TxID:           txId,
+	}
+	result := s.dbm.GetWalletDB().Save(info)
+	if result.Error != nil {
+		return result.Error
+	}
+
+	return nil
+}

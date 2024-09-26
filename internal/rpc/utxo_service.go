@@ -67,10 +67,19 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 		return nil, err
 	}
 
-	isTrue, signVersion, err := s.VerifyDeposit(tx, req.EvmAddress)
+	isTrue, signVersion, depositAddr, err := s.VerifyDeposit(tx, req.EvmAddress)
 	if err != nil || !isTrue {
 		log.Errorf("Failed to verify deposit: %v", err)
 		return nil, err
+	}
+
+	// if signVersion == 0, save p2wsh info
+	if signVersion == 0 {
+		err := s.state.AddP2WSHInfo(depositAddr, req.EvmAddress, req.TransactionId)
+		if err != nil {
+			log.Errorf("Failed to add p2wsh info: %v", err)
+			return nil, err
+		}
 	}
 
 	err = s.state.AddUnconfirmDeposit(req.TransactionId, req.RawTransaction, req.EvmAddress, signVersion)

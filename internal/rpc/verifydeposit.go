@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue bool, signVersion uint32, err error) {
+func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue bool, signVersion uint32, depositAddr string, err error) {
 	var network *chaincfg.Params
 	switch config.AppConfig.BTCNetworkType {
 	case "":
@@ -25,12 +25,13 @@ func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue boo
 		network = &chaincfg.TestNet3Params
 	}
 
+	// invalid version: 100
+	version := uint32(100)
 	pubKey, err := s.getPubKey()
 	if err != nil {
-		return false, 100, err
+		return false, 100, "", err
 	}
 
-	version := uint32(100)
 	for _, out := range tx.TxOut {
 		pkScript := hex.EncodeToString(out.PkScript)
 		if pkScript[:4] == "0014" {
@@ -45,23 +46,28 @@ func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue boo
 	}
 
 	if version == 1 {
-		p2wpkh, err := types.GenerateP2WPKHAddress(pubKey, network)
+		p2wpkhAddr, err := types.GenerateP2WPKHAddress(pubKey, network)
 		if err != nil {
-			return false, 100, err
+			return false, 100, "", err
 		}
 
-		isTrue, _ = types.IsUtxoGoatDepositV1(&tx, []btcutil.Address{p2wpkh}, network)
+		isTrue, _ = types.IsUtxoGoatDepositV1(&tx, []btcutil.Address{p2wpkhAddr}, network)
 		if isTrue {
-			return true, 1, nil
+			return true, 1, p2wpkhAddr.EncodeAddress(), nil
 		}
 	} else if version == 0 {
-		isTrue = types.IsUtxoGoatDepositV0(&tx, evmAddress, pubKey, network)
+		p2wshAddr, err := types.GenerateV0P2WSHAddress(pubKey, evmAddress, network)
+		if err != nil {
+			return false, 100, "", err
+		}
+
+		isTrue = types.IsUtxoGoatDepositV0(&tx, p2wshAddr, network)
 		if isTrue {
-			return true, 0, nil
+			return true, 0, p2wshAddr.EncodeAddress(), nil
 		}
 	}
 
-	return false, 100, errors.New("invalid deposit address")
+	return false, 100, "", errors.New("invalid deposit address")
 }
 
 func (s *UtxoServer) getPubKey() ([]byte, error) {

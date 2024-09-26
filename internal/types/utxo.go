@@ -102,7 +102,7 @@ func IsUtxoGoatDepositV1(tx *wire.MsgTx, tssAddress []btcutil.Address, net *chai
 	return false, ""
 }
 
-func IsUtxoGoatDepositV0(tx *wire.MsgTx, evmAddress string, pubKey []byte, net *chaincfg.Params) bool {
+func IsUtxoGoatDepositV0(tx *wire.MsgTx, depositAddr btcutil.Address, net *chaincfg.Params) bool {
 	// Ensure there are at least 2 outputs
 	if len(tx.TxOut) < 2 {
 		return false
@@ -115,14 +115,8 @@ func IsUtxoGoatDepositV0(tx *wire.MsgTx, evmAddress string, pubKey []byte, net *
 		return false
 	}
 
-	address, err := GenerateV0P2WSHAddress(pubKey, evmAddress, net)
-	if err != nil {
-		log.Errorf("Cannot generate v0 P2WSH address: %v", err)
-		return false
-	}
-
 	// Check if any of the addresses match tssAddress
-	if address.EncodeAddress() == addresses[0].EncodeAddress() {
+	if depositAddr.EncodeAddress() == addresses[0].EncodeAddress() {
 		return true
 	}
 
