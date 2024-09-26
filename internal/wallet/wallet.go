@@ -16,20 +16,20 @@ type WalletServer struct {
 	signer *bls.Signer
 	once   sync.Once
 
-	depositCh chan interface{}
-	blockCh   chan interface{}
-	deposit    chan DepositParams
+	depositCh      chan interface{}
+	blockCh        chan interface{}
+	depositBatchCh chan DepositInfo
 }
 
 func NewWalletServer(libp2p *p2p.LibP2PService, st *state.State, signer *bls.Signer) *WalletServer {
 
 	return &WalletServer{
-		libp2p:     libp2p,
-		state:      st,
-		signer:     signer,
-		depositCh:  make(chan interface{}, 100),
-		blockCh:    make(chan interface{}, state.BTC_BLOCK_CHAN_LENGTH),
-		deposit:    make(chan DepositParams, 100),
+		libp2p:         libp2p,
+		state:          st,
+		signer:         signer,
+		depositCh:      make(chan interface{}, 100),
+		blockCh:        make(chan interface{}, state.BTC_BLOCK_CHAN_LENGTH),
+		depositBatchCh: make(chan DepositInfo, 100),
 	}
 }
 
@@ -40,7 +40,7 @@ func (w *WalletServer) Start(ctx context.Context) {
 	go w.blockScanLoop(ctx)
 	go w.depositLoop(ctx)
 	go w.processConfirmedDeposit(ctx)
-	go w.processBatchDeposit(w.deposit)
+	go w.processBatchDeposit(w.depositBatchCh)
 
 	log.Info("WalletServer started.")
 

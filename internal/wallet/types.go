@@ -11,7 +11,7 @@ type DepositTransaction struct {
 	SignVersion uint32
 }
 
-type DepositParams struct {
+type DepositInfo struct {
 	Tx         DepositTransaction
 	MerkleRoot []byte
 	Proof      []byte

@@ -110,7 +110,7 @@ func (w *WalletServer) confirmingDeposit(ctx context.Context, tx DepositTransact
 		return
 	}
 
-	w.deposit <- DepositParams{
+	w.depositBatchCh <- DepositInfo{
 		Tx:         tx,
 		MerkleRoot: merkleRoot,
 		Proof:      proof,
@@ -120,14 +120,14 @@ func (w *WalletServer) confirmingDeposit(ctx context.Context, tx DepositTransact
 	log.Infof("Confirmed deposit success, txHash: %v", tx.TxHash)
 }
 
-func (w *WalletServer) processBatchDeposit(ch chan DepositParams) {
+func (w *WalletServer) processBatchDeposit(ch chan DepositInfo) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			var deposits []DepositParams
+			var deposits []DepositInfo
 			for len(deposits) < 16 {
 				select {
 				case param := <-ch:
@@ -145,7 +145,7 @@ func (w *WalletServer) processBatchDeposit(ch chan DepositParams) {
 			}
 
 			isProposer := w.signer.IsProposer()
-			// Proposer handle batch deposit
+			// Proposer handle batch deposits
 			if isProposer {
 				pubKey, err := w.state.GetPubKey()
 				if err != nil {
