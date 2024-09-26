@@ -133,14 +133,14 @@ func GenerateV0P2WSHAddress(pubKey []byte, evmAddress string, net *chaincfg.Para
 		AddData(posPubkey.SerializeCompressed()).
 		AddOp(txscript.OP_CHECKSIG).Script()
 	if err != nil {
-		log.Errorf("build redeem script err: %v", err)
+		log.Errorf("Build redeem script err: %v", err)
 		return nil, err
 	}
 
 	witnessProg := sha256.Sum256(redeemScript)
 	p2wsh, err := btcutil.NewAddressWitnessScriptHash(witnessProg[:], net)
 	if err != nil {
-		log.Errorf("build v0 p2wsh err: %v", err)
+		log.Errorf("Build v0 p2wsh err: %v", err)
 		return nil, err
 	}
 

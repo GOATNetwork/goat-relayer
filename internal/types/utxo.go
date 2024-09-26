@@ -2,8 +2,11 @@ package types
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/goatnetwork/goat/x/bitcoin/types"
+	relayer "github.com/goatnetwork/goat/x/relayer/types"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -102,16 +105,22 @@ func IsUtxoGoatDepositV1(tx *wire.MsgTx, tssAddress []btcutil.Address, net *chai
 	return false, ""
 }
 
-func IsUtxoGoatDepositV0(tx *wire.MsgTx, depositAddr btcutil.Address, net *chaincfg.Params) bool {
-	// Ensure there are at least 2 outputs
-	if len(tx.TxOut) < 2 {
-		return false
-	}
-
+func IsUtxoGoatDepositV0(pubkey *relayer.PublicKey, tx *wire.MsgTx, evmAddress string, depositAddr btcutil.Address, net *chaincfg.Params) bool {
 	// Extract addresses from tx.TxOut[0]
 	_, addresses, requireSigs, err := txscript.ExtractPkScriptAddrs(tx.TxOut[0].PkScript, net)
 	if err != nil || addresses == nil || requireSigs > 1 {
 		log.Debugf("Cannot extract PkScript addresses from TxOut[0]: %v", err)
+		return false
+	}
+
+	evmAddr, err := hex.DecodeString(evmAddress)
+	if err != nil {
+		return false
+	}
+
+	// Check if the script is valid
+	err = types.VerifyDespositScriptV0(pubkey, evmAddr, tx.TxOut[0].PkScript)
+	if err != nil {
 		return false
 	}
 

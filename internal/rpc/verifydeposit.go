@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/types"
+	relayertypes "github.com/goatnetwork/goat/x/relayer/types"
 	"strings"
 )
 
@@ -61,7 +62,9 @@ func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue boo
 			return false, 100, "", err
 		}
 
-		isTrue = types.IsUtxoGoatDepositV0(&tx, p2wshAddr, network)
+		key := relayertypes.DecodePublicKey(pubKey)
+
+		isTrue = types.IsUtxoGoatDepositV0(key, &tx, evmAddress, p2wshAddr, network)
 		if isTrue {
 			return true, 0, p2wshAddr.EncodeAddress(), nil
 		}
