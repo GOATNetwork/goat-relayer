@@ -43,7 +43,7 @@ Step 3,
 
 ## Data flow
 User Deposit 1 
-> Deposit -> Utxo (P2PKH)
+> Deposit -> Utxo (P2WPKH)
 
 User Deposit 0 
 > Deposit -> Utxo (P2WSH)
@@ -52,13 +52,26 @@ Other Transfer *
 > Transfer -> Utxo (P2PKH)
 
 Consolidation * child collection of Other Transfer
-> Utxo (P2WSH) -> Utxo (P2PKH)
+> Utxo (P2WSH|P2WPKH|P2PKH) -> Utxo (P2WPKH)
 
 Withdrawal
 > Utxo (P2PKH) ->  Withdraw + Utxo (P2PKH)
 
 ## Consolidation
-
+- UTXO Value < 0.5 BTC
+- Total >= 500
+- Max Vin 50
+- Vout 1 P2WPKH
+- ==
+- Max Queue 10
+- Max Network Fee qurom 10000 sat/vbyte
 
 ## Withdrawal
-
+- Max Vout 150
+- Max Vin 50
+- NeworkFee <= User MaxTxFee <= 1.25 * NetworkFee
+- Single UTXO value <= 50 BTC (sum wallet value)
+- Add a smallest value UTXO
+- ==
+- Max Queue 10
+- Max Network Fee qurom 10000 sat/vbyte

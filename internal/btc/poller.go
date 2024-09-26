@@ -40,6 +40,9 @@ type BTCPoller struct {
 	state       *state.State
 	confirmChan chan *types.BtcBlockExt
 
+	lastStartHeight   uint64
+	lastStartHeightMu sync.Mutex
+
 	sigFailChan    chan interface{}
 	sigFinishChan  chan interface{}
 	sigTimeoutChan chan interface{}
@@ -53,6 +56,8 @@ func NewBTCPoller(state *state.State, db *gorm.DB) *BTCPoller {
 		state:       state,
 		db:          db,
 		confirmChan: make(chan *types.BtcBlockExt, 64),
+
+		lastStartHeight: state.GetL2Info().StartBtcHeight,
 
 		sigFailChan:    make(chan interface{}, 10),
 		sigFinishChan:  make(chan interface{}, 10),
@@ -261,6 +266,14 @@ func (p *BTCPoller) initSig() {
 	}
 
 	// 4. build sig msg
+	if blocks[0].Height <= p.lastStartHeight {
+		log.Debugf("BTCPoller initSig ignore, btc block height %d smaller than last sig queue start height %d", blocks[0].Height, p.lastStartHeight)
+		return
+	}
+	p.lastStartHeightMu.Lock()
+	p.lastStartHeight = blocks[0].Height
+	p.lastStartHeightMu.Unlock()
+
 	requestId := fmt.Sprintf("BTCHEAD:%s:%d", config.AppConfig.RelayerAddress, blocks[0].Height)
 	hashBytes := make([][]byte, len(blocks))
 	for i, block := range blocks {

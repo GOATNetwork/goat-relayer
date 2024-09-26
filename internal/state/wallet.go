@@ -104,7 +104,7 @@ func (s *State) AddOrUpdateVin(vin *db.Vin) error {
 	}
 
 	// 3. save vin
-	return s.dbm.GetWalletDB().Save(vin).Error
+	return s.saveVin(vin)
 }
 
 func (s *State) AddOrUpdateVout(vout *db.Vout) error {
@@ -159,7 +159,7 @@ func (s *State) AddOrUpdateVout(vout *db.Vout) error {
 	}
 
 	// 2. save vout
-	return s.dbm.GetWalletDB().Save(vout).Error
+	return s.saveVout(vout)
 }
 
 func (s *State) getVin(txid string, out int) (*db.Vin, error) {

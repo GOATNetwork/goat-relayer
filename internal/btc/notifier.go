@@ -70,70 +70,7 @@ func NewBTCNotifier(client *rpcclient.Client, cache *BTCCache, poller *BTCPoller
 func (bn *BTCNotifier) Start(ctx context.Context) {
 	bn.cache.Start(ctx)
 	bn.poller.Start(ctx)
-	go bn.listenForBTCBlocks(ctx)
 	go bn.checkConfirmations(ctx)
-}
-
-func (bn *BTCNotifier) listenForBTCBlocks(ctx context.Context) {
-	normalInterval := 30 * time.Second
-	catchUpInterval := 1 * time.Second
-	errInterval := 5 * time.Second
-	for {
-		select {
-		case <-ctx.Done():
-			log.Info("Stopping BTC block listening...")
-			return
-		default:
-			bestHeight, err := bn.client.GetBlockCount()
-			if err != nil {
-				log.Errorf("Btc getting the latest block height error: %v", err)
-				time.Sleep(errInterval)
-				continue
-			}
-			log.Debugf("Btc starts to cache block at height %d, best height %d,", bn.currentHeight, bestHeight)
-
-			catchingStatus := int64(bn.currentHeight)+bn.confirmations < bestHeight
-			bn.catchingMu.Lock()
-			bn.catchingStatus = catchingStatus
-			bn.catchingMu.Unlock()
-
-			if int64(bn.currentHeight) > bestHeight {
-				log.Infof("Btc reached the latest block, waiting for new blocks...")
-				time.Sleep(normalInterval)
-				continue
-			}
-
-			block, err := bn.getBlockAtHeight(int64(bn.currentHeight))
-			if err != nil {
-				log.Errorf("Btc getting block error: %v", err)
-				time.Sleep(errInterval)
-				continue
-			}
-
-			blockWithHeight := BlockWithHeight{
-				Block:  block,
-				Height: bn.currentHeight,
-			}
-			bn.cache.blockChan <- blockWithHeight
-
-			if int64(bn.currentHeight)+bn.confirmations < bestHeight {
-				// confirmed block
-				log.Debugf("Pushing block at height %d to confirmChan", bn.currentHeight)
-				bn.poller.confirmChan <- &types.BtcBlockExt{
-					MsgBlock:    *block,
-					BlockNumber: uint64(bn.currentHeight),
-				}
-				log.Debugf("Pushed block at height %d to confirmChan", bn.currentHeight)
-			} else {
-				log.Debugf("Add unconfirm btc block at height %d to confirmChan", bn.currentHeight)
-				// add unconfirm
-				bn.poller.state.AddUnconfirmBtcBlock(bn.currentHeight, block.BlockHash().String())
-			}
-
-			bn.currentHeight++
-			time.Sleep(catchUpInterval)
-		}
-	}
 }
 
 func (bn *BTCNotifier) checkConfirmations(ctx context.Context) {

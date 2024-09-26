@@ -35,6 +35,7 @@ func (lis *Layer2Listener) processEvent(block uint64, event abcitypes.Event) err
 		return lis.processNewWalletKey(block, event.Attributes)
 	case bitcointypes.EventTypeNewDeposit:
 		return lis.processNewDeposit(block, event.Attributes)
+
 	case bitcointypes.EventTypeWithdrawalCancellation:
 		return lis.processUserCancelWithdrawal(block, event.Attributes)
 	case bitcointypes.EventTypeWithdrawalRequest:
@@ -42,11 +43,11 @@ func (lis *Layer2Listener) processEvent(block uint64, event abcitypes.Event) err
 	case bitcointypes.EventTypeWithdrawalReplace:
 		return lis.processUserReplaceWithdrawal(block, event.Attributes)
 	case bitcointypes.EventTypeInitializeWithdrawal:
-		return lis.processNewWithdrawal(block, event.Attributes)
+		return lis.processWithdrawalInitialized(block, event.Attributes)
 	case bitcointypes.EventTypeApproveCancellation:
-		return lis.processCancelWithdrawal(block, event.Attributes)
+		return lis.processWithdrawalCancelApproved(block, event.Attributes)
 	case bitcointypes.EventTypeFinalizeWithdrawal:
-		return lis.processFinalizeWithdrawal(block, event.Attributes)
+		return lis.processWithdrawalFinalized(block, event.Attributes)
 
 	default:
 		// log.Debugf("Unrecognized event type: %s", event.Type)
@@ -125,60 +126,53 @@ func (lis *Layer2Listener) processBlockVoters(block uint64) error {
 }
 
 func (lis *Layer2Listener) processUserCancelWithdrawal(block uint64, attributes []abcitypes.EventAttribute) error {
-	// TODO check uint64
-	var id string
+	var id uint64
 	for _, attr := range attributes {
 		key := attr.Key
 		value := attr.Value
 
 		if key == "id" {
-			id = value
+			id, _ = strconv.ParseUint(value, 10, 64)
 		}
 	}
 	log.Infof("Abci RequestCancelWithdrawal, block: %d, id: %s", block, id)
 
-	// TODO
-	return nil
+	if id == 0 {
+		return nil
+	}
+	return lis.state.UpdateWithdrawCancel(id)
 }
 
 func (lis *Layer2Listener) processUserReplaceWithdrawal(block uint64, attributes []abcitypes.EventAttribute) error {
-	var txid string
-	var txPrice uint64
-	for _, attr := range attributes {
-		key := attr.Key
-		value := attr.Value
-
-		if key == "txid" {
-			// BE hash
-			txid = value
-		}
-		if key == "tx_price" {
-			txPrice, _ = strconv.ParseUint(value, 10, 64)
-		}
-
-	}
-	log.Infof("Abci RequestReplaceWithdrawal, block: %d, txid: %s, txPrice: %d", block, txid, txPrice)
-
-	// TODO amount, address ?
-	return nil
-}
-
-func (lis *Layer2Listener) processUserRequestWithdrawal(block uint64, attributes []abcitypes.EventAttribute) error {
-	var id string
-	var txid string
-	var address string
-	var txPrice uint64
-	var amount uint64
+	var id, txPrice uint64
 	for _, attr := range attributes {
 		key := attr.Key
 		value := attr.Value
 
 		if key == "id" {
-			id = value
+			id, _ = strconv.ParseUint(value, 10, 64)
 		}
-		if key == "txid" {
-			// BE hash
-			txid = value
+		if key == "tx_price" {
+			txPrice, _ = strconv.ParseUint(value, 10, 64)
+		}
+	}
+	log.Infof("Abci RequestReplaceWithdrawal, block: %d, id: %d, txPrice: %d", block, id, txPrice)
+
+	if id == 0 {
+		return nil
+	}
+	return lis.state.UpdateWithdrawReplace(id, txPrice)
+}
+
+func (lis *Layer2Listener) processUserRequestWithdrawal(block uint64, attributes []abcitypes.EventAttribute) error {
+	var address string
+	var id, txPrice, amount uint64
+	for _, attr := range attributes {
+		key := attr.Key
+		value := attr.Value
+
+		if key == "id" {
+			id, _ = strconv.ParseUint(value, 10, 64)
 		}
 		if key == "address" {
 			address = value
@@ -190,14 +184,15 @@ func (lis *Layer2Listener) processUserRequestWithdrawal(block uint64, attributes
 			amount, _ = strconv.ParseUint(value, 10, 64)
 		}
 	}
+	log.Infof("Abci RequestWithdrawal, address: %s, block: %d, id: %d, txPrice: %d, amount: %d", address, block, id, txPrice, amount)
 
-	lis.state.CreateWithdrawal(id, txid, address, float64(txPrice), uint(amount))
-	log.Infof("Abci RequestWithdrawal, block: %d, txid: %s, txPrice: %d, amount: %d", block, txid, txPrice, amount)
-
-	return nil
+	if id == 0 {
+		return nil
+	}
+	return lis.state.CreateWithdrawal(address, block, id, txPrice, amount)
 }
 
-func (lis *Layer2Listener) processFinalizeWithdrawal(block uint64, attributes []abcitypes.EventAttribute) error {
+func (lis *Layer2Listener) processWithdrawalFinalized(block uint64, attributes []abcitypes.EventAttribute) error {
 	var txid string
 	for _, attr := range attributes {
 		key := attr.Key
@@ -209,31 +204,33 @@ func (lis *Layer2Listener) processFinalizeWithdrawal(block uint64, attributes []
 		}
 	}
 	log.Infof("Abci FinalizeWithdrawal, block: %d, txid: %s", block, txid)
-
-	lis.state.UpdateProcessedWithdraw(txid)
-
-	// TODO amount, address ?
-	return nil
+	if txid == "" {
+		return nil
+	}
+	return lis.state.UpdateWithdrawFinalized(txid)
 }
 
-func (lis *Layer2Listener) processCancelWithdrawal(block uint64, attributes []abcitypes.EventAttribute) error {
-	// TODO check uint64
-	var id string
+func (lis *Layer2Listener) processWithdrawalCancelApproved(block uint64, attributes []abcitypes.EventAttribute) error {
+	var id uint64
 	for _, attr := range attributes {
 		key := attr.Key
 		value := attr.Value
 
 		if key == "id" {
-			id = value
+			id, _ = strconv.ParseUint(value, 10, 64)
 		}
 	}
-	log.Infof("Abci ApproveCancelWithdrawal, block: %d, id: %s", block, id)
+	log.Infof("Abci ApproveCancelWithdrawal, block: %d, id: %d", block, id)
 
-	// TODO
+	if id == 0 {
+		return nil
+	}
+
+	// NOTE not implement EventTypeApproveCancellation
 	return nil
 }
 
-func (lis *Layer2Listener) processNewWithdrawal(block uint64, attributes []abcitypes.EventAttribute) error {
+func (lis *Layer2Listener) processWithdrawalInitialized(block uint64, attributes []abcitypes.EventAttribute) error {
 	var txid string
 	for _, attr := range attributes {
 		key := attr.Key
@@ -246,8 +243,10 @@ func (lis *Layer2Listener) processNewWithdrawal(block uint64, attributes []abcit
 	}
 	log.Infof("Abci NewWithdrawal, block: %d, txid: %s", block, txid)
 
-	// TODO amount, address ?
-	return nil
+	if txid == "" {
+		return nil
+	}
+	return lis.state.UpdateWithdrawInitialized(txid)
 }
 
 func (lis *Layer2Listener) processNewDeposit(block uint64, attributes []abcitypes.EventAttribute) error {
@@ -278,6 +277,7 @@ func (lis *Layer2Listener) processNewDeposit(block uint64, attributes []abcitype
 		// }
 	}
 
+	// TODO should throw error if error occured
 	lis.state.UpdateProcessedDeposit(txid)
 	lis.state.AddDepositResult(txid, txout, address.Hex(), amount, "")
 	log.Infof("Abci NewDeposit, block: %d, txid: %s, txout: %d, address: %v, amount: %d", block, txid, txout, address, amount)

@@ -3,13 +3,12 @@ package wallet
 import (
 	"bytes"
 	"encoding/hex"
-	"strings"
-	"testing"
-
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/assert"
+	"strings"
+	"testing"
 )
 
 func TestSpentP2wsh(t *testing.T) {
@@ -24,16 +23,20 @@ func TestSpentP2wsh(t *testing.T) {
 
 	evmAddresses := [][]byte{
 		evmAddress_,
+		evmAddress_,
 	}
 
 	prevTxIds := []string{
-		"1a4ecdb32ca38287e862de3d7e21e551a0d76645d72cb7229058600b7a817553",
+		"82559ad1e71bda315c7b87c8ee0d4d406063c108ad3d6c4ce0acbf2fcdb1e376",
+		"23a8ddd6345fa69bff8196effe731781187d9977ec4c6b8c59631650443709b7",
 	}
 
 	prevTxouts := []int{
 		0,
+		1,
 	}
 	amounts := []int64{
+		1e8,
 		1e8,
 	}
 

@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -20,12 +19,34 @@ func SpentP2wsh(netwk *chaincfg.Params, tssGroupKey *btcec.PrivateKey, evmAddres
 		return "", fmt.Errorf("mismatched input lengths")
 	}
 
-	// Create a new transaction
 	newtx := wire.NewMsgTx(2)
-
 	totalInputAmount := int64(0)
+
+	for _, amount := range amounts {
+		totalInputAmount += amount
+	}
+	tssGroupAddress, err := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(tssGroupKey.PubKey().SerializeCompressed()), netwk)
+	if err != nil {
+		return "", fmt.Errorf("failed to build tssGroupAddress: %v", err)
+	}
+	outputAddress, err := txscript.PayToAddrScript(tssGroupAddress)
+	if err != nil {
+		return "", fmt.Errorf("failed to build outputAddress: %v", err)
+	}
+	txout := wire.NewTxOut(totalInputAmount-fee, outputAddress)
+	newtx.AddTxOut(txout)
+
+	for i, prevTxout := range prevTxouts {
+		prevTxid, err := chainhash.NewHashFromStr(prevTxIds[i])
+		if err != nil {
+			return "", fmt.Errorf("failed to build prevTxid: %v", err)
+		}
+
+		txin := wire.NewTxIn(wire.NewOutPoint(prevTxid, uint32(prevTxout)), nil, nil)
+		newtx.AddTxIn(txin)
+	}
+
 	for i, evmAddress := range evmAddresses {
-		// Create redeemScript for each evmAddress
 		redeemScript, err := txscript.NewScriptBuilder().
 			AddData(evmAddress).
 			AddOp(txscript.OP_DROP).
@@ -37,25 +58,10 @@ func SpentP2wsh(netwk *chaincfg.Params, tssGroupKey *btcec.PrivateKey, evmAddres
 
 		witnessProg := sha256.Sum256(redeemScript)
 
-		// Add the UTXO inputs
-		prevTxid, err := chainhash.NewHashFromStr(prevTxIds[i])
-		if err != nil {
-			return "", fmt.Errorf("failed to build prevTxid: %v", err)
-		}
-
-		// Script for previous UTXO
 		prevPkScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_0).AddData(witnessProg[:]).Script()
 		if err != nil {
 			return "", fmt.Errorf("failed to build prevPkScript: %v", err)
 		}
-
-		txin := wire.NewTxIn(wire.NewOutPoint(prevTxid, uint32(prevTxouts[i])), nil, nil)
-		newtx.AddTxIn(txin)
-
-		// Update total input amount
-		totalInputAmount += amounts[i]
-
-		// Create the witness signature for each input
 		sigHashes := txscript.NewTxSigHashes(newtx,
 			txscript.NewCannedPrevOutputFetcher(prevPkScript, amounts[i]))
 
@@ -67,36 +73,12 @@ func SpentP2wsh(netwk *chaincfg.Params, tssGroupKey *btcec.PrivateKey, evmAddres
 		if err != nil {
 			return "", fmt.Errorf("failed to build witSig: %v", err)
 		}
-
-		// Add witness data
-		txin.Witness = wire.TxWitness{witSig, redeemScript}
+		newtx.TxIn[i].Witness = wire.TxWitness{witSig, redeemScript}
 	}
 
-	// Output to the internal TSS group address
-	tssGroupAddress, err := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(tssGroupKey.PubKey().SerializeCompressed()), netwk)
-	if err != nil {
-		return "", fmt.Errorf("failed to build tssGroupAddress: %v", err)
-	}
-
-	outputAddress, err := txscript.PayToAddrScript(tssGroupAddress)
-	if err != nil {
-		return "", fmt.Errorf("failed to build outputAddress: %v", err)
-	}
-
-	// Deduct fee and create output
-	totalOutputAmount := totalInputAmount - fee
-	if totalOutputAmount <= 0 {
-		return "", fmt.Errorf("output amount is too small")
-	}
-
-	txout := wire.NewTxOut(totalOutputAmount, outputAddress)
-	newtx.AddTxOut(txout)
-
-	// Serialize the transaction
 	txbuf := bytes.NewBuffer(nil)
 	if err := newtx.Serialize(txbuf); err != nil {
 		return "", fmt.Errorf("failed to build txbuf: %v", err)
 	}
-
 	return hex.EncodeToString(txbuf.Bytes()), nil
 }
