@@ -147,11 +147,10 @@ func (w *WalletServer) processBatchDeposit(ch chan DepositParams) {
 			isProposer := w.signer.IsProposer()
 			// Proposer handle batch deposit
 			if isProposer {
-				l2Info := w.state.GetL2Info()
-				depositKey, err := hex.DecodeString(l2Info.DepositKey)
+				pubKey, err := w.state.GetPubKey()
 				if err != nil {
-					log.Errorf("DecodeString DepositKey err: %v", err)
-					continue
+					log.Errorf("GetPubKey err: %v", err)
+					return
 				}
 
 				proposer := w.state.GetEpochVoter().Proposer
@@ -182,7 +181,7 @@ func (w *WalletServer) processBatchDeposit(ch chan DepositParams) {
 				msgSignDeposit := types.MsgSignDeposit{
 					DepositTX:     msgDepositTXs,
 					Proposer:      proposer,
-					RelayerPubkey: depositKey,
+					RelayerPubkey: pubKey,
 				}
 
 				w.state.EventBus.Publish(internalstate.SigStart, msgSignDeposit)

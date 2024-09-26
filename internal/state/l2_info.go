@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -302,4 +303,29 @@ func (s *State) savePubKey(pubKey *db.DepositPubKey) error {
 		return result.Error
 	}
 	return nil
+}
+
+func (s *State) GetPubKey() ([]byte, error) {
+	l2Info := s.GetL2Info()
+
+	var err error
+	var pubKey []byte
+	if l2Info.DepositKey == "," || l2Info.DepositKey == "" {
+		depositPubKey, err := s.GetDepositKeyByBtcBlock(0)
+		if err != nil {
+			return nil, err
+		}
+		pubKey, err = base64.StdEncoding.DecodeString(depositPubKey.PubKey)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		pubKeyStr := strings.Split(l2Info.DepositKey, ",")[1]
+		pubKey, err = base64.StdEncoding.DecodeString(pubKeyStr)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return pubKey, nil
 }

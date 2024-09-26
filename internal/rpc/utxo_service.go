@@ -112,7 +112,7 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 }
 
 func (s *UtxoServer) QueryDepositAddress(ctx context.Context, req *pb.QueryDepositAddressRequest) (*pb.QueryDepositAddressResponse, error) {
-	pubKey, err := s.getPubKey()
+	pubKey, err := s.state.GetPubKey()
 	if err != nil {
 		return nil, err
 	}

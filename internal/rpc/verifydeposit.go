@@ -1,7 +1,6 @@
 package rpc
 
 import (
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"github.com/btcsuite/btcd/btcutil"
@@ -10,7 +9,6 @@ import (
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/types"
 	relayertypes "github.com/goatnetwork/goat/x/relayer/types"
-	"strings"
 )
 
 func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue bool, signVersion uint32, depositAddr string, err error) {
@@ -28,7 +26,7 @@ func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue boo
 
 	// invalid version: 100
 	version := uint32(100)
-	pubKey, err := s.getPubKey()
+	pubKey, err := s.state.GetPubKey()
 	if err != nil {
 		return false, 100, "", err
 	}
@@ -71,29 +69,4 @@ func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue boo
 	}
 
 	return false, 100, "", errors.New("invalid deposit address")
-}
-
-func (s *UtxoServer) getPubKey() ([]byte, error) {
-	l2Info := s.state.GetL2Info()
-
-	var err error
-	var pubKey []byte
-	if l2Info.DepositKey == "," || l2Info.DepositKey == "" {
-		depositPubKey, err := s.state.GetDepositKeyByBtcBlock(0)
-		if err != nil {
-			return nil, err
-		}
-		pubKey, err = base64.StdEncoding.DecodeString(depositPubKey.PubKey)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		pubKeyStr := strings.Split(l2Info.DepositKey, ",")[1]
-		pubKey, err = base64.StdEncoding.DecodeString(pubKeyStr)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return pubKey, nil
 }
