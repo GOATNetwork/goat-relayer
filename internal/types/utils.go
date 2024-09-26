@@ -117,7 +117,7 @@ func GenerateP2WPKHAddress(pubKey []byte, net *chaincfg.Params) (*btcutil.Addres
 	return address, nil
 }
 
-func GenerateV0P2WSHAddress(pubKey []byte, evmAddress string, net *chaincfg.Params) (*btcutil.AddressWitnessScriptHash, error) {
+func GenerateP2WSHAddress(pubKey []byte, evmAddress string, net *chaincfg.Params) (*btcutil.AddressWitnessScriptHash, error) {
 	posPubkey, err := btcec.ParsePubKey(pubKey)
 	if err != nil {
 		return nil, err

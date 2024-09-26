@@ -55,7 +55,7 @@ func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue boo
 			return true, 1, p2wpkhAddr.EncodeAddress(), nil
 		}
 	} else if version == 0 {
-		p2wshAddr, err := types.GenerateV0P2WSHAddress(pubKey, evmAddress, network)
+		p2wshAddr, err := types.GenerateP2WSHAddress(pubKey, evmAddress, network)
 		if err != nil {
 			return false, 100, "", err
 		}
