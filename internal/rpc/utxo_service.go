@@ -73,9 +73,9 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 		return nil, err
 	}
 
-	// if signVersion == 0, save p2wsh info
+	// if signVersion == 0, save p2wsh redeem info
 	if signVersion == 0 {
-		err := s.state.AddP2WSHInfo(depositAddr, req.EvmAddress, req.TransactionId)
+		err := s.state.AddRedeemInfo(depositAddr, req.EvmAddress, req.TransactionId)
 		if err != nil {
 			log.Errorf("Failed to add p2wsh info: %v", err)
 			return nil, err

@@ -206,7 +206,7 @@ type Deposit struct {
 	UpdatedAt   time.Time `gorm:"not null" json:"updated_at"`
 }
 
-type P2WSHInfo struct {
+type RedeemInfo struct {
 	ID             uint   `gorm:"primaryKey" json:"id"`
 	DepositAddress string `gorm:"not null" json:"deposit_address"`
 	EvmAddress     string `gorm:"not null" json:"evm_address"`
@@ -223,7 +223,7 @@ func (dm *DatabaseManager) autoMigrate() {
 	if err := dm.btcLightDb.AutoMigrate(&BtcBlock{}); err != nil {
 		log.Fatalf("Failed to migrate database 3: %v", err)
 	}
-	if err := dm.walletDb.AutoMigrate(&Utxo{}, &Withdraw{}, &SendOrder{}, &Vin{}, &Vout{}, &DepositResult{}, &P2WSHInfo{}); err != nil {
+	if err := dm.walletDb.AutoMigrate(&Utxo{}, &Withdraw{}, &SendOrder{}, &Vin{}, &Vout{}, &DepositResult{}, &RedeemInfo{}); err != nil {
 		log.Fatalf("Failed to migrate database 4: %v", err)
 	}
 	if err := dm.btcCacheDb.AutoMigrate(&BtcSyncStatus{}, &BtcBlockData{}, &BtcTXOutput{}, &Deposit{}); err != nil {

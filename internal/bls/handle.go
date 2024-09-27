@@ -299,7 +299,7 @@ func (s *Signer) handleSigStartNewDeposit(ctx context.Context, e types.MsgSignDe
 
 		// feedback SigFinish, deposit should module subscribe it to save UTXO or mark confirm
 		s.state.EventBus.Publish(state.SigFinish, e)
-		log.Info("Proposer submit MsgNewDeposit to consensus success")
+		log.Infof("Proposer submit MsgNewDeposit to consensus success, request id: %s", e.RequestId)
 	}
 	return nil
 }
