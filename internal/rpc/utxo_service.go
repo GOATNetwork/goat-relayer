@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/goatnetwork/goat-relayer/internal/types"
@@ -65,6 +66,12 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 	if err := tx.Deserialize(bytes.NewReader(rawTxBytes)); err != nil {
 		log.Errorf("Failed to decode transaction: %v", err)
 		return nil, err
+	}
+
+	if strings.HasPrefix(req.EvmAddress, "0X") {
+		req.EvmAddress = strings.TrimPrefix(req.EvmAddress, "0X")
+	} else if strings.HasPrefix(req.EvmAddress, "0x") {
+		req.EvmAddress = strings.TrimPrefix(req.EvmAddress, "0x")
 	}
 
 	isTrue, signVersion, depositAddr, err := s.VerifyDeposit(tx, req.EvmAddress)
