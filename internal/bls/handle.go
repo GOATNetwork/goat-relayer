@@ -259,7 +259,9 @@ func (s *Signer) handleSigStartNewDeposit(ctx context.Context, e types.MsgSignDe
 	if isProposer {
 		log.Info("Proposer submit NewDeposits to consensus")
 
-		pubKey := relayertypes.DecodePublicKey(e.RelayerPubkey)
+		newKey := append([]byte{0}, e.RelayerPubkey...)
+
+		pubKey := relayertypes.DecodePublicKey(newKey)
 		headers := make(map[uint64][]byte)
 		deposits := make([]*bitcointypes.Deposit, len(e.DepositTX))
 

@@ -60,7 +60,8 @@ func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue boo
 			return false, 100, "", err
 		}
 
-		key := relayertypes.DecodePublicKey(pubKey)
+		newKey := append([]byte{0}, pubKey...)
+		key := relayertypes.DecodePublicKey(newKey)
 
 		isTrue = types.IsUtxoGoatDepositV0(key, &tx, evmAddress, p2wshAddr, network)
 		if isTrue {
