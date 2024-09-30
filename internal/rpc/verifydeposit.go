@@ -3,26 +3,15 @@ package rpc
 import (
 	"encoding/hex"
 	"errors"
+
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/types"
-	relayertypes "github.com/goatnetwork/goat/x/relayer/types"
 )
 
-func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue bool, signVersion uint32, depositAddr string, err error) {
-	var network *chaincfg.Params
-	switch config.AppConfig.BTCNetworkType {
-	case "":
-		network = &chaincfg.MainNetParams
-	case "mainnet":
-		network = &chaincfg.MainNetParams
-	case "regtest":
-		network = &chaincfg.RegressionNetParams
-	case "testnet3":
-		network = &chaincfg.TestNet3Params
-	}
+func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue bool, signVersion uint32, err error) {
+	network := types.GetBTCNetwork(config.AppConfig.BTCNetworkType)
 
 	// invalid version: 100
 	version := uint32(100)

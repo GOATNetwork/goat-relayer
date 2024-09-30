@@ -13,7 +13,6 @@ import (
 	"net"
 
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/layer2"
@@ -124,17 +123,7 @@ func (s *UtxoServer) QueryDepositAddress(ctx context.Context, req *pb.QueryDepos
 		return nil, err
 	}
 
-	var network *chaincfg.Params
-	switch config.AppConfig.BTCNetworkType {
-	case "":
-		network = &chaincfg.MainNetParams
-	case "mainnet":
-		network = &chaincfg.MainNetParams
-	case "regtest":
-		network = &chaincfg.RegressionNetParams
-	case "testnet3":
-		network = &chaincfg.TestNet3Params
-	}
+	network := types.GetBTCNetwork(config.AppConfig.BTCNetworkType)
 
 	p2wpkh, err := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(pubKey), network)
 	if err != nil {

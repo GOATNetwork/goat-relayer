@@ -2,11 +2,13 @@ package types
 
 import (
 	"encoding/hex"
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/txscript"
 	"slices"
 
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/txscript"
+
 	"crypto/sha256"
+
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
@@ -23,6 +25,19 @@ func DecodeBtcHash(hash string) ([]byte, error) {
 	txid := slices.Clone(data)
 	slices.Reverse(txid)
 	return txid, nil
+}
+
+func GetBTCNetwork(networkType string) *chaincfg.Params {
+	switch networkType {
+	case "", "mainnet":
+		return &chaincfg.MainNetParams
+	case "regtest":
+		return &chaincfg.RegressionNetParams
+	case "testnet3":
+		return &chaincfg.TestNet3Params
+	default:
+		return &chaincfg.MainNetParams
+	}
 }
 
 func PrivateKeyToGethAddress(privateKeyHex string) (string, error) {
@@ -85,7 +100,7 @@ func IsP2WSHAddress(script []byte, net *chaincfg.Params) (bool, string) {
 	}
 
 	witnessHash := script[2:34]
-	address, err := btcutil.NewAddressWitnessScriptHash(witnessHash, &chaincfg.MainNetParams)
+	address, err := btcutil.NewAddressWitnessScriptHash(witnessHash, net)
 	if err != nil {
 		return false, ""
 	}

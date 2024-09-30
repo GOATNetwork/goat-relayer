@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/goatnetwork/goat-relayer/internal/config"
@@ -34,17 +33,7 @@ func (w *WalletServer) blockScanLoop(ctx context.Context) {
 				continue
 			}
 
-			var network *chaincfg.Params
-			switch config.AppConfig.BTCNetworkType {
-			case "":
-				network = &chaincfg.MainNetParams
-			case "mainnet":
-				network = &chaincfg.MainNetParams
-			case "regtest":
-				network = &chaincfg.RegressionNetParams
-			case "testnet3":
-				network = &chaincfg.TestNet3Params
-			}
+			network := types.GetBTCNetwork(config.AppConfig.BTCNetworkType)
 
 			// TODO verify SPV again
 
