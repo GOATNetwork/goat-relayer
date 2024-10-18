@@ -3,6 +3,8 @@ package types
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -13,7 +15,9 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -254,4 +258,50 @@ func BuildSubScriptForP2WSH(evmAddress string, pubKey []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to build subscript: %v", err)
 	}
 	return subScript, nil
+}
+
+func ParseRSAPublicKeyFromPEM(pubKeyPEM string) (*rsa.PublicKey, error) {
+	block, _ := pem.Decode([]byte(pubKeyPEM))
+	if block == nil || block.Type != "PUBLIC KEY" {
+		return nil, errors.New("failed to decode PEM block containing public key")
+	}
+
+	parsedKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse public key: %v", err)
+	}
+
+	pubKey, ok := parsedKey.(*rsa.PublicKey)
+	if !ok {
+		return nil, errors.New("not an RSA public key")
+	}
+
+	return pubKey, nil
+}
+
+func ParseRSAPrivateKeyFromPEM(privKeyPEM string) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode([]byte(privKeyPEM))
+	if block == nil || block.Type != "PRIVATE KEY" && block.Type != "RSA PRIVATE KEY" {
+		return nil, errors.New("failed to decode PEM block containing private key")
+	}
+
+	var parsedKey interface{}
+	var err error
+
+	if block.Type == "PRIVATE KEY" {
+		parsedKey, err = x509.ParsePKCS8PrivateKey(block.Bytes)
+	} else if block.Type == "RSA PRIVATE KEY" {
+		parsedKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %v", err)
+	}
+
+	privKey, ok := parsedKey.(*rsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("not an RSA private key")
+	}
+
+	return privKey, nil
 }

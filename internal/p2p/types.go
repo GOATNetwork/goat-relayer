@@ -20,4 +20,5 @@ const (
 	MessageTypeSigReq
 	MessageTypeSigResp
 	MessageTypeDepositReceive
+	MessageTypeWithdrawFinalize
 )

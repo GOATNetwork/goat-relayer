@@ -2,9 +2,11 @@ package types
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
@@ -20,7 +22,7 @@ const (
 	WALLET_TYPE_P2WSH  = "P2WSH"
 	WALLET_TYPE_P2TR   = "P2TR"
 
-	DUST_LIMIT = 550 // 546 satoshis for P2PKH
+	SMALL_UTXO_DEFINE = 50000000 // 0.5 BTC
 )
 
 var (
@@ -55,6 +57,22 @@ type BtcBlockExt struct {
 func isOpReturn(txOut *wire.TxOut) bool {
 	// Ensure the PkScript is not empty and starts with OP_RETURN
 	return len(txOut.PkScript) > 0 && txOut.PkScript[0] == txscript.OP_RETURN
+}
+
+func convertVoutToTxOut(vout btcjson.Vout) (*wire.TxOut, error) {
+	// Decode the ScriptPubKey hex string into bytes
+	scriptPubKeyBytes, err := hex.DecodeString(vout.ScriptPubKey.Hex)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create wire.TxOut
+	txOut := &wire.TxOut{
+		Value:    int64(vout.Value * 1e8), // Convert BTC to satoshis
+		PkScript: scriptPubKeyBytes,
+	}
+
+	return txOut, nil
 }
 
 func parseOpReturnGoatMagic(data []byte) (common.Address, error) {
@@ -143,25 +161,107 @@ func IsUtxoGoatDepositV0(tx *wire.MsgTx, tssAddress []btcutil.Address, net *chai
 	return false, -1, 0
 }
 
+func IsUtxoGoatDepositV0Json(tx *btcjson.TxRawResult, tssAddress []btcutil.Address, net *chaincfg.Params) (isV0 bool, outputIndex int, amount int64, pkScript []byte) {
+	// Ensure there are at least 1 output
+	if len(tx.Vout) < 1 {
+		return false, -1, 0, nil
+	}
+
+	// Extract addresses from tx.TxOut[0]
+	for idx, vout := range tx.Vout {
+		txOut, err := convertVoutToTxOut(vout)
+		if err != nil {
+			log.Debugf("Cannot convert Vout to TxOut: %v", err)
+			continue
+		}
+
+		if isOpReturn(txOut) {
+			continue
+		}
+
+		_, addresses, requireSigs, err := txscript.ExtractPkScriptAddrs(txOut.PkScript, net)
+		if err != nil || addresses == nil || requireSigs > 1 {
+			log.Debugf("Cannot extract PkScript addresses from TxOut[0]: %v", err)
+			continue
+		}
+
+		for _, address := range tssAddress {
+			if address.EncodeAddress() == addresses[0].EncodeAddress() {
+				return true, idx, txOut.Value, txOut.PkScript
+			}
+		}
+	}
+
+	return false, -1, 0, nil
+}
+
+func GetDustAmount(txPrice int64) int64 {
+	return txPrice * 31 * 3
+}
+
+func GetAddressType(addressStr string, net *chaincfg.Params) (string, error) {
+	address, err := btcutil.DecodeAddress(addressStr, net)
+	if err != nil {
+		return "", fmt.Errorf("invalid Bitcoin address: %v", err)
+	}
+
+	switch address.(type) {
+	case *btcutil.AddressPubKeyHash:
+		return WALLET_TYPE_P2PKH, nil
+	case *btcutil.AddressScriptHash:
+		return WALLET_TYPE_P2SH, nil
+	case *btcutil.AddressWitnessPubKeyHash:
+		return WALLET_TYPE_P2WPKH, nil
+	case *btcutil.AddressWitnessScriptHash:
+		return WALLET_TYPE_P2WSH, nil
+	case *btcutil.AddressTaproot:
+		return WALLET_TYPE_P2TR, nil
+	default:
+		return "", nil
+	}
+}
+
 // TransactionSizeEstimate estimates the size of a transaction in bytes
-func TransactionSizeEstimate(numInputs, numOutputs int, utxoTypes []string) int64 {
+func TransactionSizeEstimate(numInputs int, receiverTypes []string, numOutputs int, utxoTypes []string) int64 {
 	var totalSize int64 = 10 // Base transaction size (version, locktime, etc.)
+
+	// Add inputs size
 	for _, utxoType := range utxoTypes {
 		switch utxoType {
 		case WALLET_TYPE_P2WPKH:
-			totalSize += 68 // P2WPKH input size
+			totalSize += 41 // P2WPKH input size without witness (32 bytes txid + 4 bytes vout + 1 byte script length + 4 bytes sequence)
 		case WALLET_TYPE_P2PKH:
 			totalSize += 148 // P2PKH input size
 		case WALLET_TYPE_P2WSH:
-			totalSize += 170 // P2WSH input size
+			totalSize += 41 // P2WSH input size without witness (32 bytes txid + 4 bytes vout + 1 byte script length + 4 bytes sequence)
 		case WALLET_TYPE_P2SH:
 			totalSize += 296 // P2SH input size
 		case WALLET_TYPE_P2TR:
-			totalSize += 57 // P2TR input size
+			totalSize += 41 // P2TR input size without witness (32 bytes txid + 4 bytes vout + 1 byte script length + 4 bytes sequence)
 		}
 	}
-	// Each output (for both P2PKH, P2WPKH, P2SH, and P2TR) is around 34 bytes, except P2SH which is 32 bytes
-	totalSize += int64(34 * numOutputs)
+
+	// Each output (P2PKH: 34 bytes, P2WPKH: 31 bytes, P2SH: 32 bytes, P2WSH: 43 bytes, P2TR: 42 bytes)
+	for _, receiverType := range receiverTypes {
+		switch receiverType {
+		case WALLET_TYPE_P2PKH:
+			totalSize += 34
+		case WALLET_TYPE_P2WPKH:
+			totalSize += 31
+		case WALLET_TYPE_P2SH:
+			totalSize += 32
+		case WALLET_TYPE_P2WSH:
+			totalSize += 43
+		case WALLET_TYPE_P2TR:
+			totalSize += 42
+		}
+	}
+
+	if len(receiverTypes) < numOutputs {
+		// change output as P2WPKH
+		totalSize += int64(31 * (numOutputs - len(receiverTypes)))
+	}
+
 	return totalSize
 }
 
@@ -194,4 +294,21 @@ func SerializeTransactionNoWitness(tx *wire.MsgTx) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func ConvertTxRawResultToMsgTx(txResult *btcjson.TxRawResult) (*wire.MsgTx, error) {
+	// Decode the hex-encoded transaction
+	txBytes, err := hex.DecodeString(txResult.Hex)
+	if err != nil {
+		return nil, err
+	}
+
+	// Deserialize the transaction
+	msgTx := wire.NewMsgTx(wire.TxVersion)
+	err = msgTx.Deserialize(bytes.NewReader(txBytes))
+	if err != nil {
+		return nil, err
+	}
+
+	return msgTx, nil
 }

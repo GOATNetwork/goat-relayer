@@ -51,3 +51,13 @@ type MsgSignSendOrder struct {
 
 	WithdrawIds []uint64 `json:"withdraw_ids"`
 }
+
+type MsgSignFinalizeWithdraw struct {
+	MsgSign
+
+	Txid              []byte `json:"txid"`
+	TxIndex           uint32 `json:"tx_index"`
+	BlockNumber       uint64 `json:"block_number"`
+	BlockHeader       []byte `json:"block_header"`
+	IntermediateProof []byte `json:"intermediate_proof"`
+}

@@ -9,6 +9,25 @@ import (
 	"gorm.io/gorm"
 )
 
+type WithdrawStateStore interface {
+	CleanProcessingWithdraw() error
+	CloseWithdraw(id uint, reason string) error
+	CreateWithdrawal(address string, block, id, txPrice, amount uint64) error
+	CreateSendOrder(order *db.SendOrder, selectedUtxos []*db.Utxo, selectedWithdraws []*db.Withdraw, vins []*db.Vin, vouts []*db.Vout, isProposer bool) error
+	RecoverSendOrder(order *db.SendOrder, vins []*db.Vin, vouts []*db.Vout, withdrawIds []uint64) error
+	UpdateWithdrawInitialized(txid string) error
+	UpdateWithdrawFinalized(txid string) error
+	UpdateWithdrawReplace(id, txPrice uint64) error
+	UpdateWithdrawCancel(id uint64) error
+	UpdateSendOrderInitlized(txid string, externalTxId string) error
+	UpdateSendOrderPending(txid string, externalTxId string) error
+	UpdateSendOrderConfirmed(txid string, blockHeight uint64) error
+	GetWithdrawsCanStart() ([]*db.Withdraw, error)
+	GetSendOrderInitlized() ([]*db.SendOrder, error)
+	GetSendOrderPending(limit int) ([]*db.SendOrder, error)
+	GetLatestSendOrderConfirmed() (*db.SendOrder, error)
+}
+
 // CreateWithdrawal, when a new withdrawal request is detected, save to unconfirmed
 //
 // Parameters:
@@ -270,9 +289,75 @@ func (s *State) UpdateWithdrawCancel(id uint64) error {
 	return s.saveWithdraw(withdraw)
 }
 
+// UpdateSendOrderInitlized
+// when a withdrawal or consolidation request is confirmed, save to confirmed
+func (s *State) UpdateSendOrderInitlized(txid string, externalTxId string) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
+		order, err := s.getOrderByTxid(tx, txid)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		if order == nil {
+			return nil
+		}
+		if order.Status == db.ORDER_STATUS_CONFIRMED || order.Status == db.ORDER_STATUS_PROCESSED || order.Status == db.ORDER_STATUS_CLOSED {
+			return nil
+		}
+		order.Status = db.ORDER_STATUS_INIT
+		order.UpdatedAt = time.Now()
+		order.ExternalTxId = externalTxId
+		err = s.saveOrder(tx, order)
+		if err != nil {
+			return err
+		}
+		err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_INIT, true)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return err
+}
+
+// UpdateSendOrderPending
+// when a withdrawal or consolidation request is confirmed, save to confirmed
+func (s *State) UpdateSendOrderPending(txid string, externalTxId string) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
+		order, err := s.getOrderByTxid(tx, txid)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		if order == nil {
+			return nil
+		}
+		if order.Status == db.ORDER_STATUS_CONFIRMED || order.Status == db.ORDER_STATUS_PROCESSED || order.Status == db.ORDER_STATUS_CLOSED {
+			return nil
+		}
+		order.Status = db.ORDER_STATUS_PENDING
+		order.UpdatedAt = time.Now()
+		order.ExternalTxId = externalTxId
+		err = s.saveOrder(tx, order)
+		if err != nil {
+			return err
+		}
+		err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_PENDING, false)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return err
+}
+
 // UpdateSendOrderConfirmed
 // when a withdrawal or consolidation request is confirmed, save to confirmed
-func (s *State) UpdateSendOrderConfirmed(txid string) error {
+func (s *State) UpdateSendOrderConfirmed(txid string, btcBlock uint64) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
@@ -288,14 +373,14 @@ func (s *State) UpdateSendOrderConfirmed(txid string) error {
 				return nil
 			}
 
+			order.BtcBlock = btcBlock
 			order.Status = db.ORDER_STATUS_CONFIRMED
 			order.UpdatedAt = time.Now()
-
 			err = s.saveOrder(tx, order)
 			if err != nil {
 				return err
 			}
-			err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_CONFIRMED)
+			err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_CONFIRMED, false)
 			if err != nil {
 				return err
 			}
@@ -326,29 +411,55 @@ func (s *State) UpdateWithdrawInitialized(txid string) error {
 	defer s.walletMu.Unlock()
 
 	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
-		order, err := s.getOrderByTxid(tx, txid)
-		if err != nil && err != gorm.ErrRecordNotFound {
+		orders, err := s.getAllOrdersByTxid(tx, txid)
+		if err != nil {
 			return err
+		}
+		if len(orders) == 0 {
+			return nil
 		}
 
 		// order found
-		if order != nil && err == nil {
+		for i, order := range orders {
 			if order.Status != db.ORDER_STATUS_AGGREGATING && order.Status != db.ORDER_STATUS_CLOSED {
-				return nil
+				continue
 			}
 
-			order.Status = db.ORDER_STATUS_INIT
+			// the latest one is init, others are closed
+			if i == 0 {
+				order.Status = db.ORDER_STATUS_INIT
+			} else {
+				order.Status = db.ORDER_STATUS_CLOSED
+			}
 			order.UpdatedAt = time.Now()
-
 			err = s.saveOrder(tx, order)
 			if err != nil {
 				return err
 			}
-			err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_INIT)
+			// update vin, vout to order status
+			err = s.updateOtherStatusByOrder(tx, order.OrderId, order.Status, true)
 			if err != nil {
 				return err
 			}
-			return nil
+			// update withdraw status to init, withdraw always not change if tx id is same
+			err = s.updateWithdrawStatusByOrderId(tx, db.WITHDRAW_STATUS_INIT, order.OrderId, db.WITHDRAW_STATUS_CREATE, db.WITHDRAW_STATUS_AGGREGATING, db.WITHDRAW_STATUS_CLOSED)
+			if err != nil {
+				return err
+			}
+			if order.Status != db.ORDER_STATUS_INIT {
+				continue
+			}
+			vins, err := s.getVinsByOrderId(tx, order.OrderId)
+			if err != nil {
+				return err
+			}
+			for _, vin := range vins {
+				// update utxo to pending
+				err = s.updateUtxoStatusPending(tx, vin.Txid, vin.OutIndex)
+				if err != nil {
+					return err
+				}
+			}
 		}
 		// order not found, do nothing
 		return nil
@@ -361,15 +472,23 @@ func (s *State) UpdateWithdrawFinalized(txid string) error {
 	defer s.walletMu.Unlock()
 
 	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
-		order, err := s.getOrderByTxid(tx, txid)
-		if err != nil && err != gorm.ErrRecordNotFound {
+		orders, err := s.getAllOrdersByTxid(tx, txid)
+		if err != nil {
 			return err
+		}
+		if len(orders) == 0 {
+			return nil
 		}
 
 		// order found
-		if order != nil && err == nil {
-			if order.Status == db.ORDER_STATUS_PROCESSED {
-				return nil
+		for _, order := range orders {
+			// update withdraw status to processed, withdraw always not change if tx id is same
+			err = s.updateWithdrawStatusByOrderId(tx, db.WITHDRAW_STATUS_PROCESSED, order.OrderId)
+			if err != nil {
+				return err
+			}
+			if order.Status != db.ORDER_STATUS_INIT && order.Status != db.ORDER_STATUS_PENDING && order.Status != db.ORDER_STATUS_CONFIRMED {
+				continue
 			}
 
 			order.Status = db.ORDER_STATUS_PROCESSED
@@ -379,11 +498,21 @@ func (s *State) UpdateWithdrawFinalized(txid string) error {
 			if err != nil {
 				return err
 			}
-			err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_PROCESSED)
+			err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_PROCESSED, true)
 			if err != nil {
 				return err
 			}
-			return nil
+			vins, err := s.getVinsByOrderId(tx, order.OrderId)
+			if err != nil {
+				return err
+			}
+			for _, vin := range vins {
+				// update utxo to spent
+				err = s.updateUtxoStatusSpent(tx, vin.Txid, vin.OutIndex, order.BtcBlock)
+				if err != nil {
+					return err
+				}
+			}
 		}
 
 		// not found update by txid
@@ -441,7 +570,13 @@ func (s *State) CleanProcessingWithdraw() error {
 					}
 				}
 
-				err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_CLOSED)
+				err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_CLOSED, true)
+				if err != nil {
+					return err
+				}
+
+				// restore withdraw from aggregating to create
+				err = s.updateWithdrawStatusByOrderId(tx, db.WITHDRAW_STATUS_CREATE, order.OrderId, db.WITHDRAW_STATUS_AGGREGATING)
 				if err != nil {
 					return err
 				}
@@ -478,6 +613,69 @@ func (s *State) GetWithdrawsCanStart() ([]*db.Withdraw, error) {
 	}
 
 	return withdraws, nil
+}
+
+func (s *State) GetSendOrderInitlized() ([]*db.SendOrder, error) {
+	s.walletMu.RLock()
+	defer s.walletMu.RUnlock()
+
+	sendOrders, err := s.getOrderByStatuses(nil, "tx_price desc", db.ORDER_STATUS_INIT)
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	return sendOrders, nil
+}
+
+func (s *State) GetSendOrderPending(limit int) ([]*db.SendOrder, error) {
+	s.walletMu.RLock()
+	defer s.walletMu.RUnlock()
+
+	var pendingOrders []*db.SendOrder
+	err := s.dbm.GetWalletDB().Where("status = ?", db.ORDER_STATUS_PENDING).Order("id asc").Limit(limit).Find(&pendingOrders).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return pendingOrders, nil
+}
+
+// GetSendOrderByTxIdOrExternalId get send order by txid or external id
+func (s *State) GetSendOrderByTxIdOrExternalId(id string) (*db.SendOrder, error) {
+	s.walletMu.RLock()
+	defer s.walletMu.RUnlock()
+
+	sendOrder, err := s.getOrderByTxid(nil, id)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, err
+	}
+	if err == gorm.ErrRecordNotFound {
+		sendOrder, err = s.getOrderByExternalId(nil, id)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return nil, err
+		}
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+	}
+	return sendOrder, nil
+}
+
+// GetLatestSendOrderConfirmed get confirmed send order
+func (s *State) GetLatestSendOrderConfirmed() (*db.SendOrder, error) {
+	s.walletMu.RLock()
+	defer s.walletMu.RUnlock()
+
+	var sendOrder *db.SendOrder
+	err := s.dbm.GetWalletDB().Where("status = ?", db.ORDER_STATUS_CONFIRMED).First(&sendOrder).Error
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, err
+	}
+	log.Debugf("GetSendOrderConfirmed sendOrder found: %v", sendOrder.Txid)
+	return sendOrder, nil
 }
 
 func (s *State) CloseWithdraw(id uint, reason string) error {
@@ -538,12 +736,39 @@ func (s *State) hasWithdrawByTxidAndStatus(tx *gorm.DB, txid string, status stri
 	return true, nil
 }
 
+func (s *State) getAllOrdersByTxid(tx *gorm.DB, txid string) ([]*db.SendOrder, error) {
+	if tx == nil {
+		tx = s.dbm.GetWalletDB()
+	}
+	var orders []*db.SendOrder
+	err := tx.Where("txid=?", txid).Order("id DESC").Find(&orders).Error
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, err
+	}
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	return orders, nil
+}
+
 func (s *State) getOrderByTxid(tx *gorm.DB, txid string) (*db.SendOrder, error) {
 	if tx == nil {
 		tx = s.dbm.GetWalletDB()
 	}
 	var order db.SendOrder
 	result := tx.Where("txid=?", txid).Order("id DESC").First(&order)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &order, nil
+}
+
+func (s *State) getOrderByExternalId(tx *gorm.DB, externalId string) (*db.SendOrder, error) {
+	if tx == nil {
+		tx = s.dbm.GetWalletDB()
+	}
+	var order db.SendOrder
+	result := tx.Where("external_tx_id=?", externalId).Order("id DESC").First(&order)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -622,14 +847,17 @@ func (s *State) saveOrder(tx *gorm.DB, order *db.SendOrder) error {
 	return nil
 }
 
-func (s *State) updateOtherStatusByOrder(tx *gorm.DB, orderId string, status string) error {
+func (s *State) updateOtherStatusByOrder(tx *gorm.DB, orderId string, status string, excludeWithdraw bool) error {
 	if tx == nil {
 		tx = s.dbm.GetWalletDB()
 	}
-	err := tx.Model(&db.Withdraw{}).Where("order_id = ?", orderId).Updates(&db.Withdraw{Status: status, UpdatedAt: time.Now()}).Error
-	if err != nil {
-		log.Errorf("State updateOtherStatusByOrder Withdraw by order id: %s, status: %s, error: %v", orderId, status, err)
-		return err
+	var err error
+	if !excludeWithdraw {
+		err = tx.Model(&db.Withdraw{}).Where("order_id = ?", orderId).Updates(&db.Withdraw{Status: status, UpdatedAt: time.Now()}).Error
+		if err != nil {
+			log.Errorf("State updateOtherStatusByOrder Withdraw by order id: %s, status: %s, error: %v", orderId, status, err)
+			return err
+		}
 	}
 	err = tx.Model(&db.Vin{}).Where("order_id = ?", orderId).Updates(&db.Vin{Status: status, UpdatedAt: time.Now()}).Error
 	if err != nil {
@@ -651,6 +879,23 @@ func (s *State) updateWithdrawStatusByStatuses(tx *gorm.DB, newStatus string, ra
 	err := tx.Model(&db.Withdraw{}).Where("status in (?)", rawStatuses).Updates(&db.Withdraw{Status: newStatus, UpdatedAt: time.Now()}).Error
 	if err != nil {
 		log.Errorf("State updateWithdrawStatusByStatuses Withdraw by raw status: %v, new status: %s, error: %v", rawStatuses, newStatus, err)
+		return err
+	}
+	return nil
+}
+
+func (s *State) updateWithdrawStatusByOrderId(tx *gorm.DB, status string, orderId string, rawStatuses ...string) error {
+	if tx == nil {
+		tx = s.dbm.GetWalletDB()
+	}
+	var err error
+	if len(rawStatuses) == 0 {
+		err = tx.Model(&db.Withdraw{}).Where("order_id = ?", orderId).Updates(&db.Withdraw{Status: status, UpdatedAt: time.Now()}).Error
+	} else {
+		err = tx.Model(&db.Withdraw{}).Where("order_id = ? and status in (?)", orderId, rawStatuses).Updates(&db.Withdraw{Status: status, UpdatedAt: time.Now()}).Error
+	}
+	if err != nil {
+		log.Errorf("State updateOtherStatusByOrder Withdraw by order id: %s, status: %s, error: %v", orderId, status, err)
 		return err
 	}
 	return nil

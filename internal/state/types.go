@@ -22,6 +22,7 @@ type BtcHeadState struct {
 
 // WalletState to manage withdrawal Queue and associated Vin/Vout
 type WalletState struct {
+	Latest         db.SendOrder
 	SendOrderQueue []*db.SendOrder
 	SentVin        []*db.Vin
 	SentVout       []*db.Vout

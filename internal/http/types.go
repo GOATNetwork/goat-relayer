@@ -10,7 +10,9 @@ type FireblocksWebhookRequest struct {
 	Data      json.RawMessage `json:"data"`
 }
 
-// TRANSACTION_CREATED, TRANSACTION_STATUS_UPDATED, TRANSACTION_APPROVAL_STATUS_UPDATED
+// SUBMITTED PENDING_AML_SCREENING PENDING_ENRICHMENT PENDING_AUTHORIZATION QUEUED PENDING_SIGNATURE
+// PENDING_3RD_PARTY_MANUAL_APPROVAL PENDING_3RD_PARTY BROADCASTING COMPLETED CONFIRMING
+// CANCELLING CANCELLED BLOCKED REJECTED FAILED
 type TransactionDetails struct {
 	ID                            string                   `json:"id"`
 	ExternalTxID                  string                   `json:"externalTxId"`
@@ -99,3 +101,76 @@ type BlockInfo struct {
 	BlockHeight string `json:"blockHeight"`
 	BlockHash   string `json:"blockHash"`
 }
+
+type FbCreateTransactionRequest struct {
+	Operation          string             `json:"operation"`
+	Note               string             `json:"note,omitempty"`
+	ExternalTxID       string             `json:"externalTxId,omitempty"`
+	AssetID            string             `json:"assetId,omitempty"`
+	Source             FbSource           `json:"source"`
+	Destination        *FbDestination     `json:"destination,omitempty"`
+	Destinations       []any              `json:"destinations,omitempty"`
+	CustomerRefID      string             `json:"customerRefId,omitempty"`
+	Amount             string             `json:"amountAll,omitempty"`
+	TreatAsGrossAmount bool               `json:"treatAsGrossAmount,omitempty"`
+	ForceSweep         bool               `json:"forceSweep,omitempty"`
+	FeeLevel           string             `json:"feeLevel,omitempty"`
+	Fee                string             `json:"fee,omitempty"`
+	PriorityFee        string             `json:"priorityFee,omitempty"`
+	MaxFee             string             `json:"maxFee,omitempty"`
+	GasLimit           string             `json:"gasLimit,omitempty"`
+	GasPrice           string             `json:"gasPrice,omitempty"`
+	NetworkFee         string             `json:"networkFee,omitempty"`
+	ReplaceTxByHash    string             `json:"replaceTxByHash,omitempty"`
+	ExtraParameters    *FbExtraParameters `json:"extraParameters,omitempty"`
+}
+
+type FbCreateTransactionResponse struct {
+	ID             string           `json:"id"`
+	Status         FbCTRStatus      `json:"status"`
+	SystemMessages FbSystemMessages `json:"systemMessages"`
+}
+
+type FbSystemMessages struct {
+	Type_   string `json:"type"`
+	Message string `json:"message"`
+}
+
+type FbExtraParameters struct {
+	RawMessageData FbRawMessageData `json:"rawMessageData"`
+}
+
+type FbRawMessageData struct {
+	Messages  []FbUnsignedRawMessage `json:"messages"`
+	Algorithm string                 `json:"algorithm,omitempty"`
+}
+
+type FbUnsignedRawMessage struct {
+	Content string `json:"content"`
+}
+
+type FbSource struct {
+	Type     string `json:"type"`
+	SubType  string `json:"subType,omitempty"`
+	ID       string `json:"id,omitempty"`
+	Name     string `json:"name,omitempty"`
+	WalletID string `json:"walletId,omitempty"`
+}
+
+type FbDestination struct {
+	Type           string            `json:"type"`
+	SubType        string            `json:"subType,omitempty"`
+	ID             string            `json:"id,omitempty"`
+	Name           string            `json:"name,omitempty"`
+	WalletID       string            `json:"walletId,omitempty"`
+	OneTimeAddress *FbOneTimeAddress `json:"oneTimeAddress,omitempty"`
+}
+
+type FbOneTimeAddress struct {
+	Address string `json:"address,omitempty"`
+	Tag     string `json:"tag,omitempty"`
+}
+
+// "SUBMITTED", "PENDING_AML_SCREENING", "PENDING_ENRICHMENT", "PENDING_AUTHORIZATION", “QUEUED”,
+// "PENDING_SIGNATURE", "PENDING_3RD_PARTY_MANUAL_APPROVAL", "PENDING_3RD_PARTY", "BROADCASTING", "CONFIRMING", "COMPLETED"
+type FbCTRStatus string

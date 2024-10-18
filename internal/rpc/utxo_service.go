@@ -12,7 +12,6 @@ import (
 
 	"net"
 
-	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/layer2"
@@ -112,14 +111,7 @@ func (s *UtxoServer) QueryDepositAddress(ctx context.Context, req *pb.QueryDepos
 		return nil, err
 	}
 
-	network := types.GetBTCNetwork(config.AppConfig.BTCNetworkType)
-
-	p2wpkh, err := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(pubKey), network)
-	if err != nil {
-		return nil, err
-	}
-
 	return &pb.QueryDepositAddressResponse{
-		DepositAddress: p2wpkh.EncodeAddress(),
+		DepositAddress: hex.EncodeToString(pubKey),
 	}, nil
 }

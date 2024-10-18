@@ -48,6 +48,7 @@ func InitConfig() {
 	viper.SetDefault("WITHDRAW_CONTRACT", "")
 	viper.SetDefault("FIREBLOCKS_PUBKEY", "")
 	viper.SetDefault("FIREBLOCKS_PRIVKEY", "")
+	viper.SetDefault("FIREBLOCKS_API_KEY", "")
 	viper.SetDefault("GOATCHAIN_RPC_URI", "tcp://127.0.0.1:26657")
 	viper.SetDefault("GOATCHAIN_GRPC_URI", "127.0.0.1:9090")
 	viper.SetDefault("GOATCHAIN_ID", "goat")
@@ -100,6 +101,7 @@ func InitConfig() {
 		L2SubmitRetry:          viper.GetInt("L2_SUBMIT_RETRY"),
 		FireblocksPubKey:       viper.GetString("FIREBLOCKS_PUBKEY"),
 		FireblocksPrivKey:      viper.GetString("FIREBLOCKS_PRIVKEY"),
+		FireblocksApiKey:       viper.GetString("FIREBLOCKS_API_KEY"),
 		EnableWebhook:          viper.GetBool("ENABLE_WEBHOOK"),
 		EnableRelayer:          viper.GetBool("ENABLE_RELAYER"),
 		DbDir:                  viper.GetString("DB_DIR"),
@@ -153,6 +155,7 @@ type Config struct {
 	L2SubmitRetry          int
 	FireblocksPubKey       string
 	FireblocksPrivKey      string
+	FireblocksApiKey       string
 	EnableWebhook          bool
 	EnableRelayer          bool
 	DbDir                  string

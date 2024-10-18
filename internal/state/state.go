@@ -9,6 +9,13 @@ import (
 	"gorm.io/gorm"
 )
 
+type StateLoader interface {
+	GetL2Info() db.L2Info
+	GetUtxo() db.Utxo
+	GetDepositState() DepositState
+	GetBtcHead() BtcHeadState
+}
+
 type State struct {
 	EventBus *EventBus
 
@@ -25,6 +32,12 @@ type State struct {
 	walletState  WalletState
 	depositState DepositState
 }
+
+var (
+	_ StateLoader        = (*State)(nil)
+	_ WalletStateStore   = (*State)(nil)
+	_ WithdrawStateStore = (*State)(nil)
+)
 
 // InitializeState initializes the state by reading from the DB
 func InitializeState(dbm *db.DatabaseManager) *State {
@@ -205,14 +218,6 @@ func (s *State) GetDepositState() DepositState {
 	defer s.depositMu.RUnlock()
 
 	return s.depositState
-}
-
-// UpdateDepositState update the DepositState from memory
-func (s *State) UpdateDepositState(deposits []*db.Deposit) {
-	s.depositMu.RLock()
-	defer s.depositMu.RUnlock()
-
-	s.depositState.UnconfirmQueue = deposits
 }
 
 func (s *State) GetBtcHead() BtcHeadState {

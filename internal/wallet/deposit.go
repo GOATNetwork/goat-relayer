@@ -7,58 +7,130 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/goatnetwork/goat-relayer/internal/config"
+	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/types"
 
 	"time"
 
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/goatnetwork/goat-relayer/internal/state"
 	bitcointypes "github.com/goatnetwork/goat/x/bitcoin/types"
 	log "github.com/sirupsen/logrus"
 )
 
-func (w *WalletServer) depositLoop(ctx context.Context) {
-	w.state.EventBus.Subscribe(state.SigFailed, w.depositSigFailChan)
-	w.state.EventBus.Subscribe(state.SigFinish, w.depositSigFinishChan)
-	w.state.EventBus.Subscribe(state.SigTimeout, w.depositSigTimeoutChan)
+type DepositProcessor interface {
+	Start(ctx context.Context)
+	Stop()
 
-	ticker := time.NewTicker(10 * time.Second)
+	handleDepositSigFailed(event interface{}, reason string)
+	handleDepositSigFinish(event interface{})
+	initDepositSig()
+	checkUnconfirmDeposit()
+}
+
+type BaseDepositProcessor struct {
+	state     *state.State
+	depositCh chan interface{}
+	once      sync.Once
+
+	sigDepositMu           sync.Mutex
+	sigDepositStatus       bool
+	sigDepositFinishHeight uint64
+
+	depositSigFailChan    chan interface{}
+	depositSigFinishChan  chan interface{}
+	depositSigTimeoutChan chan interface{}
+
+	btcClient     *rpcclient.Client
+	nextUnfirmIdx uint64
+}
+
+var (
+	_ DepositProcessor = (*BaseDepositProcessor)(nil)
+)
+
+func NewDepositProcessor(btcClient *rpcclient.Client, state *state.State) DepositProcessor {
+	return &BaseDepositProcessor{
+		state:     state,
+		btcClient: btcClient,
+
+		depositCh: make(chan interface{}, 100),
+
+		depositSigFailChan:    make(chan interface{}, 10),
+		depositSigFinishChan:  make(chan interface{}, 10),
+		depositSigTimeoutChan: make(chan interface{}, 10),
+
+		nextUnfirmIdx: 0,
+	}
+}
+
+func (b *BaseDepositProcessor) Start(ctx context.Context) {
+	b.state.EventBus.Subscribe(state.SigFailed, b.depositSigFailChan)
+	b.state.EventBus.Subscribe(state.SigFinish, b.depositSigFinishChan)
+	b.state.EventBus.Subscribe(state.SigTimeout, b.depositSigTimeoutChan)
+
+	b.state.EventBus.Subscribe(state.DepositReceive, b.depositCh)
+
+	// btc block time is 10 minutes, so we check if there is a deposit to sign every 30 seconds
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
+			b.Stop()
 			return
-		case deposit := <-w.depositCh:
+		case deposit := <-b.depositCh:
 			depositData, ok := deposit.(types.MsgUtxoDeposit)
 			if !ok {
 				log.Errorf("Invalid deposit data type")
 				continue
 			}
-			err := w.state.AddUnconfirmDeposit(depositData.TxId, depositData.RawTx, depositData.EvmAddr, depositData.SignVersion, depositData.OutputIndex, depositData.Amount)
+			err := b.state.AddUnconfirmDeposit(depositData.TxId, depositData.RawTx, depositData.EvmAddr, depositData.SignVersion, depositData.OutputIndex, depositData.Amount)
 			if err != nil {
 				log.Errorf("Failed to add unconfirmed deposit: %v", err)
 				continue
 			}
-		case sigFail := <-w.depositSigFailChan:
-			w.handleDepositSigFailed(sigFail, "failed")
-		case sigTimeout := <-w.depositSigTimeoutChan:
-			w.handleDepositSigFailed(sigTimeout, "timeout")
-		case sigFinish := <-w.depositSigFinishChan:
-			w.handleDepositSigFinish(sigFinish)
+		case sigFail := <-b.depositSigFailChan:
+			b.handleDepositSigFailed(sigFail, "failed")
+		case sigTimeout := <-b.depositSigTimeoutChan:
+			b.handleDepositSigFailed(sigTimeout, "timeout")
+		case sigFinish := <-b.depositSigFinishChan:
+			b.handleDepositSigFinish(sigFinish)
 		case <-ticker.C:
-			w.initDepositSig()
+			b.initDepositSig()
+			b.checkUnconfirmDeposit()
 		}
 	}
 }
 
-func (w *WalletServer) handleDepositSigFailed(event interface{}, reason string) {
-	w.sigDepositMu.Lock()
-	defer w.sigDepositMu.Unlock()
+func (b *BaseDepositProcessor) Stop() {
+	b.state.EventBus.Unsubscribe(state.SigFailed, b.depositSigFailChan)
+	b.state.EventBus.Unsubscribe(state.SigFinish, b.depositSigFinishChan)
+	b.state.EventBus.Unsubscribe(state.SigTimeout, b.depositSigTimeoutChan)
+	b.state.EventBus.Unsubscribe(state.DepositReceive, b.depositCh)
 
-	if !w.sigDepositStatus {
+	b.once.Do(func() {
+		close(b.depositCh)
+
+		close(b.depositSigFailChan)
+		close(b.depositSigFinishChan)
+		close(b.depositSigTimeoutChan)
+	})
+
+	log.Debug("BaseDepositProcessor Stop")
+}
+
+func (b *BaseDepositProcessor) handleDepositSigFailed(event interface{}, reason string) {
+	b.sigDepositMu.Lock()
+	defer b.sigDepositMu.Unlock()
+
+	if !b.sigDepositStatus {
 		log.Debug("Event handleDepositSigFailed ignore, sigDepositStatus is false")
 		return
 	}
@@ -66,17 +138,17 @@ func (w *WalletServer) handleDepositSigFailed(event interface{}, reason string) 
 	switch e := event.(type) {
 	case types.MsgSignDeposit:
 		log.Infof("Event handleDepositSigFailed is of type MsgSignDeposit, request id %s, reason: %s", e.RequestId, reason)
-		w.sigDepositStatus = false
+		b.sigDepositStatus = false
 	default:
 		log.Debug("WalletServer depositLoop ignore unsupport type")
 	}
 }
 
-func (w *WalletServer) handleDepositSigFinish(event interface{}) {
-	w.sigDepositMu.Lock()
-	defer w.sigDepositMu.Unlock()
+func (b *BaseDepositProcessor) handleDepositSigFinish(event interface{}) {
+	b.sigDepositMu.Lock()
+	defer b.sigDepositMu.Unlock()
 
-	if !w.sigDepositStatus {
+	if !b.sigDepositStatus {
 		log.Debug("Event handleDepositSigFinish ignore, sigDepositStatus is false")
 		return
 	}
@@ -84,60 +156,58 @@ func (w *WalletServer) handleDepositSigFinish(event interface{}) {
 	switch e := event.(type) {
 	case types.MsgSignDeposit:
 		log.Infof("Event handleDepositSigFinish is of type MsgSignDeposit, request id %s", e.RequestId)
-		w.sigDepositStatus = false
-		w.sigDepositFinishHeight = w.state.GetL2Info().Height
+		b.sigDepositStatus = false
+		b.sigDepositFinishHeight = b.state.GetL2Info().Height
 	default:
-		log.Debug("WalletServer depositLoop ignore unsupport type")
+		log.Debug("BaseDepositProcessor depositLoop ignore unsupport type")
 	}
 }
 
-func (w *WalletServer) initDepositSig() {
-	log.Debug("WalletServer initDepositSig")
+func (b *BaseDepositProcessor) initDepositSig() {
+	log.Debug("BaseDepositProcessor initDepositSig")
 
 	// 1. check catching up, self is proposer
-	l2Info := w.state.GetL2Info()
+	l2Info := b.state.GetL2Info()
 	if l2Info.Syncing {
-		log.Debug("WalletServer initDepositSig ignore, layer2 is catching up")
+		log.Debug("BaseDepositProcessor initDepositSig ignore, layer2 is catching up")
 		return
 	}
 
-	if w.state.GetBtcHead().Syncing {
-		log.Debug("WalletServer initDepositSig ignore, btc is catching up")
+	if b.state.GetBtcHead().Syncing {
+		log.Debug("BaseDepositProcessor initDepositSig ignore, btc is catching up")
 		return
 	}
 
-	w.sigDepositMu.Lock()
-	defer w.sigDepositMu.Unlock()
+	b.sigDepositMu.Lock()
+	defer b.sigDepositMu.Unlock()
 
-	epochVoter := w.state.GetEpochVoter()
+	epochVoter := b.state.GetEpochVoter()
 	if epochVoter.Proposer != config.AppConfig.RelayerAddress {
-		if w.sigDepositStatus && l2Info.Height > epochVoter.Height+1 {
-			w.sigDepositStatus = false
-			// clean process, role changed, remove all status "create", "aggregating"
-			w.cleanDepositProcess()
+		if b.sigDepositStatus && l2Info.Height > epochVoter.Height+1 {
+			b.sigDepositStatus = false
 		}
-		log.Debugf("WalletServer initDepositSig ignore, self is not proposer, epoch: %d, proposer: %s", epochVoter.Epoch, epochVoter.Proposer)
+		log.Debugf("BaseDepositProcessor initDepositSig ignore, self is not proposer, epoch: %d, proposer: %s", epochVoter.Epoch, epochVoter.Proposer)
 		return
 	}
 
 	// 2. check if there is a sig in progress
-	if w.sigDepositStatus {
-		log.Debug("WalletServer initDepositSig ignore, there is a sig")
+	if b.sigDepositStatus {
+		log.Debug("BaseDepositProcessor initDepositSig ignore, there is a sig")
 		return
 	}
-	if l2Info.Height <= w.sigDepositFinishHeight+2 {
-		log.Debug("WalletServer initDepositSig ignore, last finish sig in 2 blocks")
+	if l2Info.Height <= b.sigDepositFinishHeight+2 {
+		log.Debug("BaseDepositProcessor initDepositSig ignore, last finish sig in 2 blocks")
 		return
 	}
 
 	// 3. find confirmed deposits for signing
-	deposits, err := w.state.GetDepositForSign(16)
+	deposits, err := b.state.GetDepositForSign(16)
 	if err != nil {
-		log.Errorf("WalletServer initDepositSig error: %v", err)
+		log.Errorf("BaseDepositProcessor initDepositSig error: %v", err)
 		return
 	}
 	if len(deposits) == 0 {
-		log.Debug("WalletServer initDepositSig ignore, no deposit for sign")
+		log.Debug("BaseDepositProcessor initDepositSig ignore, no deposit for sign")
 		return
 	}
 
@@ -156,14 +226,14 @@ func (w *WalletServer) initDepositSig() {
 	}
 
 	if len(blockHashes) == 0 {
-		log.Debug("WalletServer initDepositSig ignore, no valid block hash")
+		log.Debug("BaseDepositProcessor initDepositSig ignore, no valid block hash")
 		return
 	}
 
 	// 5. build sign msg
-	pubkey, err := w.state.GetDepositKeyByBtcBlock(0)
+	pubkey, err := b.state.GetDepositKeyByBtcBlock(0)
 	if err != nil {
-		log.Fatalf("WalletServer get current deposit key by btc height current err %v", err)
+		log.Fatalf("BaseDepositProcessor get current deposit key by btc height current err %v", err)
 	}
 	pubkeyBytes, err := base64.StdEncoding.DecodeString(pubkey.PubKey)
 	if err != nil {
@@ -171,7 +241,7 @@ func (w *WalletServer) initDepositSig() {
 	}
 
 	// 6. get block headers
-	blockData, err := w.state.QueryBtcBlockDataByBlockHashes(blockHashes)
+	blockData, err := b.state.QueryBtcBlockDataByBlockHashes(blockHashes)
 	if err != nil {
 		log.Errorf("QueryBtcBlockDataByBlockHashes error: %v", err)
 		return
@@ -181,7 +251,7 @@ func (w *WalletServer) initDepositSig() {
 		blockHeaders[blockData.BlockHeight] = blockData.Header
 		log.Debugf("WalletServer initDepositSig blockHeaders[%d] %d", blockData.BlockHeight, len(blockData.Header))
 	}
-	proposer := w.state.GetEpochVoter().Proposer
+	proposer := b.state.GetEpochVoter().Proposer
 	headersBytes, err := json.Marshal(blockHeaders)
 	if err != nil {
 		log.Errorf("Failed to marshal headers: %v", err)
@@ -232,11 +302,140 @@ func (w *WalletServer) initDepositSig() {
 		Proposer:      proposer,
 		RelayerPubkey: pubkeyBytes,
 	}
-	w.state.EventBus.Publish(state.SigStart, msgSignDeposit)
-	w.sigDepositStatus = true
+	b.state.EventBus.Publish(state.SigStart, msgSignDeposit)
+	b.sigDepositStatus = true
 	log.Infof("P2P publish msgSignDeposit success, request id: %s", requestId)
 }
 
-func (w *WalletServer) cleanDepositProcess() {
-	// TODO remove all status "create", "aggregating"
+// checkUnconfirmDeposit check if there is any unconfirmed deposit
+// 1. only deal with 72 hours unconfirmed deposit
+// 2. batch query 50 per time
+func (b *BaseDepositProcessor) checkUnconfirmDeposit() {
+	deposits, err := b.state.QueryUnConfirmDeposit(b.nextUnfirmIdx, 50)
+	if err != nil {
+		log.Errorf("QueryUnConfirmDeposit error: %v", err)
+		b.nextUnfirmIdx = 0
+		return
+	}
+	if len(deposits) == 0 {
+		log.Debugf("BaseDepositProcessor checkUnconfirmDeposit ignore, no deposit unconfirm")
+		b.nextUnfirmIdx = 0
+		return
+	}
+	network := types.GetBTCNetwork(config.AppConfig.BTCNetworkType)
+
+	for _, deposit := range deposits {
+		if deposit.TxHash == "" || deposit.EvmAddr == "" {
+			log.Errorf("Invalid deposit data, txid: %s, evmaddr: %s", deposit.TxHash, deposit.EvmAddr)
+			b.nextUnfirmIdx = uint64(deposit.ID)
+			continue
+		}
+		txHash, err := chainhash.NewHashFromStr(deposit.TxHash)
+		if err != nil {
+			log.Errorf("New hash from str error: %v, raw txid: %s", err, deposit.TxHash)
+			continue
+		}
+		// query btc block data by block hash
+		txRawResult, err := b.btcClient.GetRawTransactionVerbose(txHash)
+		if err != nil {
+			log.Errorf("GetRawTransactionVerbose error: %v", err)
+			continue
+		}
+		if txRawResult.Confirmations < uint64(config.AppConfig.BTCConfirmations) {
+			log.Debugf("Tx %s is not enough confirm, confirmations: %d", txRawResult.Txid, txRawResult.Confirmations)
+			b.nextUnfirmIdx = uint64(deposit.ID)
+			continue
+		}
+		blockHash, err := chainhash.NewHashFromStr(txRawResult.BlockHash)
+		if err != nil {
+			log.Errorf("New hash from str error: %v, raw block hash: %s", err, txRawResult.BlockHash)
+			continue
+		}
+		// query block with verbose 2
+		block, err := b.btcClient.GetBlockVerboseTx(blockHash)
+		if err != nil {
+			log.Errorf("Get block verbose error: %v, block hash: %s", err, blockHash.String())
+			continue
+		}
+
+		// get pubkey
+		pubkey, err := b.state.GetDepositKeyByBtcBlock(uint64(block.Height))
+		if err != nil {
+			log.Fatalf("Get current deposit key by btc height %d err %v", block.Height, err)
+		}
+		pubkeyBytes, err := base64.StdEncoding.DecodeString(pubkey.PubKey)
+		if err != nil {
+			log.Fatalf("Base64 decode pubkey %s err %v", pubkey.PubKey, err)
+		}
+		p2wsh, err := types.GenerateV0P2WSHAddress(pubkeyBytes, deposit.EvmAddr, network)
+		if err != nil {
+			log.Fatalf("GenerateV0P2WSHAddress err %v", err)
+		}
+
+		// just validate v0, v1 will detect by relayer
+		isV0, outputIndex, amount, pkScript := types.IsUtxoGoatDepositV0Json(txRawResult, []btcutil.Address{p2wsh}, network)
+		if !isV0 {
+			log.Errorf("IsUtxoGoatDepositV0Json false, txid: %s", txRawResult.Txid)
+			b.nextUnfirmIdx = uint64(deposit.ID)
+			continue
+		}
+		subScript, err := types.BuildSubScriptForP2WSH(deposit.EvmAddr, pubkeyBytes)
+		if err != nil {
+			log.Errorf("BuildSubScriptForP2WSH err %v", err)
+			b.nextUnfirmIdx = uint64(deposit.ID)
+			continue
+		}
+
+		utxo := &db.Utxo{
+			Uid:           "",
+			Txid:          txRawResult.Txid,
+			PkScript:      pkScript,
+			SubScript:     subScript,
+			OutIndex:      outputIndex,
+			Amount:        amount,
+			Receiver:      p2wsh.EncodeAddress(),
+			WalletVersion: "1",
+			Sender:        "", // don't read sender here
+			EvmAddr:       deposit.EvmAddr,
+			Source:        db.UTXO_SOURCE_DEPOSIT,
+			ReceiverType:  types.WALLET_TYPE_P2WSH,
+			Status:        db.UTXO_STATUS_CONFIRMED,
+			ReceiveBlock:  uint64(block.Height),
+			SpentBlock:    0,
+			UpdatedAt:     time.Now(),
+		}
+
+		// TODO: not read this record again from db
+		msgTx, err := types.ConvertTxRawResultToMsgTx(txRawResult)
+		if err != nil {
+			log.Errorf("ConvertTxRawResultToMsgTx error: %v", err)
+			b.nextUnfirmIdx = uint64(deposit.ID)
+			continue
+		}
+
+		blockTxHashs := make([]string, 0)
+		for _, rawTx := range block.Tx {
+			blockTxHashs = append(blockTxHashs, rawTx.Txid)
+		}
+
+		noWitnessTx, err := types.SerializeTransactionNoWitness(msgTx)
+		if err != nil {
+			log.Errorf("SerializeTransactionNoWitness err %v", err)
+			b.nextUnfirmIdx = uint64(deposit.ID)
+			continue
+		}
+		merkleRoot, proofBytes, txIndex, err := types.GenerateSPVProof(utxo.Txid, blockTxHashs)
+		if err != nil {
+			log.Errorf("GenerateSPVProof err %v, txid: %s, block tx hashes: %s", err, utxo.Txid, blockTxHashs)
+			b.nextUnfirmIdx = uint64(deposit.ID)
+			continue
+		}
+		err = b.state.AddUtxo(utxo, pubkeyBytes, blockHash.String(), uint64(block.Height), noWitnessTx, merkleRoot, proofBytes, txIndex, true)
+		if err != nil {
+			log.Fatalf("Add utxo %+v err %v", utxo, err)
+		}
+
+		b.nextUnfirmIdx = uint64(deposit.ID)
+		log.Infof("Add utxo and deposit tx %s success, tx index: %d, output index: %d", deposit.TxHash, txIndex, deposit.OutputIndex)
+	}
 }

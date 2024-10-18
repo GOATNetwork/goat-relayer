@@ -49,6 +49,13 @@ func (s *Signer) handleSigStart(ctx context.Context, event interface{}) {
 			// feedback SigFailed
 			s.state.EventBus.Publish(state.SigFailed, e)
 		}
+	case types.MsgSignFinalizeWithdraw:
+		log.Debugf("Event handleSigStartFinalizeWithdraw is of type MsgSignFinalizeWithdraw, request id %s", e.RequestId)
+		if err := s.handleSigStartWithdrawFinalize(ctx, e); err != nil {
+			log.Errorf("Error handleSigStart MsgSignFinalizeWithdraw, %v", err)
+			// feedback SigFailed
+			s.state.EventBus.Publish(state.SigFailed, e)
+		}
 	default:
 		log.Debug("Unknown event handleSigStart type")
 	}
