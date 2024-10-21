@@ -3,6 +3,7 @@ package wallet
 import (
 	"testing"
 
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/goatnetwork/goat-relayer/internal/config"
@@ -54,6 +55,13 @@ func TestBTCClient(t *testing.T) {
 		t.Logf("Network information: %+v", info)
 		assert.NotNil(t, info, "Network information should not be nil")
 	}
+
+	feeEstimate, err := btcClient.EstimateSmartFee(1, &btcjson.EstimateModeConservative)
+	if err != nil {
+		t.Errorf("Failed to estimate smart fee: %v", err)
+	}
+	satoshiPerVByte := uint64((*feeEstimate.FeeRate * 1e8) / 1000)
+	t.Logf("Estimate smart fee: %+v, satoshi per vbyte: %d", feeEstimate, satoshiPerVByte)
 
 	blockHash, err := btcClient.GetBlockHash(height)
 	if err != nil {

@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/types"
 	log "github.com/sirupsen/logrus"
@@ -34,7 +35,7 @@ import (
 //	finalAmount - final amount after consolidation, after deducting the network fee
 //	error - error if any
 func ConsolidateSmallUTXOs(utxos []*db.Utxo, networkFee, threshold int64, maxVin, trigerNum int) ([]*db.Utxo, int64, int64, error) {
-	if networkFee > 200 {
+	if networkFee > int64(config.AppConfig.BTCMaxNetworkFee-300) {
 		return nil, 0, 0, fmt.Errorf("network fee is too high, cannot consolidate")
 	}
 	if trigerNum < 10 {
@@ -222,7 +223,7 @@ func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount
 //	error - error if any
 func SelectWithdrawals(withdrawals []*db.Withdraw, networkFee int64, maxVout int, net *chaincfg.Params) ([]*db.Withdraw, []string, int64, int64, error) {
 	// if network fee is too high, do not perform withdrawal
-	if networkFee > 500 {
+	if networkFee > int64(config.AppConfig.BTCMaxNetworkFee) {
 		return nil, nil, 0, 0, fmt.Errorf("network fee too high, no withdrawals allowed")
 	}
 
