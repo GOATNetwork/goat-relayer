@@ -55,6 +55,8 @@ func WithdrawalWaitTime(networkType string) (time.Duration, time.Duration) {
 	switch networkType {
 	case "regtest":
 		return 5 * time.Minute, 10 * time.Minute
+	case "testnet3":
+		return 5 * time.Minute, 10 * time.Minute
 	default:
 		return 2 * time.Hour, 6 * time.Hour
 	}

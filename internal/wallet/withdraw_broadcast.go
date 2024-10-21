@@ -243,7 +243,7 @@ func (b *BaseOrderBroadcaster) broadcastOrders() {
 		log.Infof("OrderBroadcaster broadcastOrders ignore, btc is catching up")
 		return
 	}
-	if btcState.NetworkFee > 500 {
+	if btcState.NetworkFee > uint64(config.AppConfig.BTCMaxNetworkFee) {
 		log.Infof("OrderBroadcaster broadcastOrders ignore, btc network fee too high: %d", btcState.NetworkFee)
 		return
 	}

@@ -26,7 +26,7 @@ func (w *WalletServer) finalizeWithdrawSig() {
 		log.Infof("WalletServer finalizeWithdrawSig ignore, btc is catching up")
 		return
 	}
-	if btcState.NetworkFee > 500 {
+	if btcState.NetworkFee > uint64(config.AppConfig.BTCMaxNetworkFee) {
 		log.Infof("WalletServer finalizeWithdrawSig ignore, btc network fee too high: %d", btcState.NetworkFee)
 		return
 	}

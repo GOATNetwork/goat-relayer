@@ -31,6 +31,7 @@ func InitConfig() {
 	viper.SetDefault("BTC_CONFIRMATIONS", 6)
 	viper.SetDefault("BTC_START_HEIGHT", 0)
 	viper.SetDefault("BTC_NETWORK_TYPE", "")
+	viper.SetDefault("BTC_MAX_NETWORK_FEE", 500)
 	viper.SetDefault("L2_RPC", "http://localhost:8545")
 	viper.SetDefault("L2_JWT_SECRET", "")
 	viper.SetDefault("L2_PRIVATE_KEY", "")
@@ -89,6 +90,7 @@ func InitConfig() {
 		BTCStartHeight:         viper.GetInt("BTC_START_HEIGHT"),
 		BTCConfirmations:       viper.GetInt("BTC_CONFIRMATIONS"),
 		BTCNetworkType:         viper.GetString("BTC_NETWORK_TYPE"),
+		BTCMaxNetworkFee:       viper.GetInt("BTC_MAX_NETWORK_FEE"),
 		L2RPC:                  viper.GetString("L2_RPC"),
 		L2JwtSecret:            viper.GetString("L2_JWT_SECRET"),
 		L2PrivateKey:           l2PrivateKey,
@@ -142,6 +144,7 @@ type Config struct {
 	BTCStartHeight         int
 	BTCConfirmations       int
 	BTCNetworkType         string
+	BTCMaxNetworkFee       int
 	L2RPC                  string
 	L2JwtSecret            string
 	L2PrivateKey           *ecdsa.PrivateKey
