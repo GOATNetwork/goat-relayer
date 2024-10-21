@@ -256,6 +256,18 @@ func (lis *Layer2Listener) Start(ctx context.Context) {
 				}
 			}
 
+			layer2Info := lis.state.GetL2Info()
+			if len(layer2Info.DepositMagic) == 0 || layer2Info.MinDepositAmount == 0 {
+				paramsResp, err := lis.QueryParams(ctx)
+				if err != nil || paramsResp.Params.MinDepositAmount == 0 || len(paramsResp.Params.DepositMagicPrefix) == 0 {
+					log.Fatalf("Failed to query params: %v", err)
+				}
+				err = lis.processParams(paramsResp.Params)
+				if err != nil {
+					log.Fatalf("Failed to process params: %v", err)
+				}
+			}
+
 			if status.SyncInfo.CatchingUp {
 				log.Infof("Goat chain is catching up, current height %d", latestBlock)
 			} else {

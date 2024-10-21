@@ -15,14 +15,16 @@ type L2SyncStatus struct {
 
 // L2 Info model (only 1 record)
 type L2Info struct {
-	ID              uint      `gorm:"primaryKey" json:"id"`
-	Height          uint64    `gorm:"not null" json:"height"`
-	Syncing         bool      `gorm:"not null" json:"syncing"`
-	Threshold       string    `json:"threshold"`
-	DepositKey      string    `gorm:"not null" json:"deposit_key"` // type,pubKey
-	StartBtcHeight  uint64    `gorm:"not null" json:"start_btc_height"`
-	LatestBtcHeight uint64    `gorm:"not null" json:"latest_btc_height"`
-	UpdatedAt       time.Time `gorm:"not null" json:"updated_at"`
+	ID               uint      `gorm:"primaryKey" json:"id"`
+	Height           uint64    `gorm:"not null" json:"height"`
+	Syncing          bool      `gorm:"not null" json:"syncing"`
+	Threshold        string    `json:"threshold"`
+	DepositKey       string    `gorm:"not null" json:"deposit_key"` // type,pubKey
+	DepositMagic     []byte    `json:"deposit_magic"`
+	MinDepositAmount uint64    `gorm:"not null" json:"min_deposit_amount"`
+	StartBtcHeight   uint64    `gorm:"not null" json:"start_btc_height"`
+	LatestBtcHeight  uint64    `gorm:"not null" json:"latest_btc_height"`
+	UpdatedAt        time.Time `gorm:"not null" json:"updated_at"`
 }
 
 // L2 Deposit public key

@@ -80,13 +80,15 @@ func InitializeState(dbm *db.DatabaseManager) *State {
 			log.Warnf("Failed to load L2Info: %v", err)
 
 			l2Info = db.L2Info{
-				Height:          0,
-				Syncing:         false,
-				Threshold:       "2/3",
-				DepositKey:      "",
-				StartBtcHeight:  0,
-				LatestBtcHeight: 0,
-				UpdatedAt:       time.Now(),
+				Height:           0,
+				Syncing:          false,
+				Threshold:        "2/3",
+				DepositKey:       "",
+				DepositMagic:     []byte{},
+				MinDepositAmount: 0,
+				StartBtcHeight:   0,
+				LatestBtcHeight:  0,
+				UpdatedAt:        time.Now(),
 			}
 		}
 	}()

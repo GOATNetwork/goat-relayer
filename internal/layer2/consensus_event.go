@@ -105,6 +105,15 @@ func (lis *Layer2Listener) processFirstBlock(info *db.L2Info, voters []*db.Voter
 	return nil
 }
 
+func (lis *Layer2Listener) processParams(params bitcointypes.Params) error {
+	err := lis.state.UpdateL2InfoParams(params.MinDepositAmount, params.DepositMagicPrefix)
+	if err != nil {
+		log.Errorf("Abci processParams UpdateL2InfoParams error: %v", err)
+		return err
+	}
+	return nil
+}
+
 func (lis *Layer2Listener) processBlockVoters(block uint64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()

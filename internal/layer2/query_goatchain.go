@@ -52,3 +52,18 @@ func (lis *Layer2Listener) QueryPubKey(ctx context.Context) (*bitcointypes.Query
 
 	return response, nil
 }
+
+func (lis *Layer2Listener) QueryParams(ctx context.Context) (*bitcointypes.QueryParamsResponse, error) {
+	if err := lis.checkAndReconnect(); err != nil {
+		log.Errorf("check and reconnect goat client faild: %v", err)
+		return nil, err
+	}
+	client := bitcointypes.NewQueryClient(lis.goatGrpcConn)
+	response, err := client.Params(ctx, &bitcointypes.QueryParamsRequest{})
+	if err != nil {
+		log.Errorf("Error while querying relayer status: %v", err)
+		return nil, err
+	}
+
+	return response, nil
+}

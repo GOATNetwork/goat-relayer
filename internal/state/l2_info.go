@@ -117,6 +117,24 @@ func (s *State) UpdateL2InfoFirstBlock(block uint64, info *db.L2Info, voters []*
 	return nil
 }
 
+func (s *State) UpdateL2InfoParams(minDepositAmount uint64, depositMagicPrefix []byte) error {
+	s.layer2Mu.Lock()
+	defer s.layer2Mu.Unlock()
+
+	l2Info := s.layer2State.L2Info
+
+	if len(l2Info.DepositMagic) == 0 || l2Info.MinDepositAmount == 0 {
+		l2Info.MinDepositAmount = minDepositAmount
+		l2Info.DepositMagic = depositMagicPrefix
+
+		err := s.saveL2Info(l2Info)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *State) UpdateL2InfoVoters(block, epoch, sequence uint64, proposer string, voters []*db.Voter) error {
 	s.layer2Mu.Lock()
 	defer s.layer2Mu.Unlock()
