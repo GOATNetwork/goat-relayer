@@ -21,7 +21,7 @@ type L2Info struct {
 	Threshold        string    `json:"threshold"`
 	DepositKey       string    `gorm:"not null" json:"deposit_key"` // type,pubKey
 	DepositMagic     []byte    `json:"deposit_magic"`
-	MinDepositAmount uint64    `gorm:"not null" json:"min_deposit_amount"`
+	MinDepositAmount uint64    `json:"min_deposit_amount"`
 	StartBtcHeight   uint64    `gorm:"not null" json:"start_btc_height"`
 	LatestBtcHeight  uint64    `gorm:"not null" json:"latest_btc_height"`
 	UpdatedAt        time.Time `gorm:"not null" json:"updated_at"`
