@@ -24,8 +24,10 @@ func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue boo
 		return false, 100, -1, 0, err
 	}
 
-	isTrue, _, amount = types.IsUtxoGoatDepositV1(&tx, []btcutil.Address{p2wpkh}, network)
-	if isTrue && amount >= config.AppConfig.MinDepositAmount {
+	minDepositAmount := int64(s.state.GetL2Info().MinDepositAmount)
+	magicBytes := s.state.GetL2Info().DepositMagic
+	isTrue, _, amount = types.IsUtxoGoatDepositV1(&tx, []btcutil.Address{p2wpkh}, network, magicBytes)
+	if isTrue && amount >= minDepositAmount {
 		return true, 1, 0, amount, nil
 	}
 
@@ -35,7 +37,7 @@ func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue boo
 	}
 
 	isTrue, outputIndex, amount = types.IsUtxoGoatDepositV0(&tx, []btcutil.Address{p2wsh}, network)
-	if isTrue && amount >= config.AppConfig.MinDepositAmount {
+	if isTrue && amount >= minDepositAmount {
 		return true, 0, outputIndex, amount, nil
 	}
 

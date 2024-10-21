@@ -135,7 +135,8 @@ func (w *WalletServer) blockScanLoop(ctx context.Context) {
 				}
 
 				var receiverType, evmAddr string
-				isDeposit, evmAddr, _ = types.IsUtxoGoatDepositV1(tx, []btcutil.Address{p2pkhAddress, p2wpkhAddress}, network)
+				magicBytes := w.state.GetL2Info().DepositMagic
+				isDeposit, evmAddr, _ = types.IsUtxoGoatDepositV1(tx, []btcutil.Address{p2pkhAddress, p2wpkhAddress}, network, magicBytes)
 
 				for idx, vout := range tx.TxOut {
 					_, addresses, requireSigs, err := txscript.ExtractPkScriptAddrs(vout.PkScript, network)

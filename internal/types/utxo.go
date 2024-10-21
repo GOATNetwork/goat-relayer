@@ -25,10 +25,6 @@ const (
 	SMALL_UTXO_DEFINE = 50000000 // 0.5 BTC
 )
 
-var (
-	GOAT_MAGIC_BYTES = []byte{0x47, 0x54, 0x54, 0x30} // "GTT0"
-)
-
 // MsgUtxoDeposit defines deposit UTXO broadcast to p2p which received in relayer rpc
 // TODO columns
 type MsgUtxoDeposit struct {
@@ -75,10 +71,10 @@ func convertVoutToTxOut(vout btcjson.Vout) (*wire.TxOut, error) {
 	return txOut, nil
 }
 
-func parseOpReturnGoatMagic(data []byte) (common.Address, error) {
+func parseOpReturnGoatMagic(data []byte, magicBytes []byte) (common.Address, error) {
 	// Ensure the data is long enough to contain the magic bytes
-	if len(data) < len(GOAT_MAGIC_BYTES)+1 {
-		return common.Address{}, fmt.Errorf("data is too short, expected at least %d bytes, got %d", len(GOAT_MAGIC_BYTES), len(data))
+	if len(data) < len(magicBytes)+1 {
+		return common.Address{}, fmt.Errorf("data is too short, expected at least %d bytes, got %d", len(magicBytes), len(data))
 	}
 	dataLen := uint32(data[0])
 	if dataLen != 24 {
@@ -86,11 +82,11 @@ func parseOpReturnGoatMagic(data []byte) (common.Address, error) {
 	}
 	data = data[1:]
 	// Check if the data starts with GOAT_MAGIC_BYTES
-	if !bytes.HasPrefix(data, GOAT_MAGIC_BYTES) {
+	if !bytes.HasPrefix(data, magicBytes) {
 		return common.Address{}, errors.New("data does not start with magic bytes")
 	}
 	log.Debugf("Parsed OP_RETURN as GTT0: %v", data)
-	remainingBytes := data[len(GOAT_MAGIC_BYTES):]
+	remainingBytes := data[len(magicBytes):]
 	// Check if the remaining bytes match the expected EVM address length (20 bytes)
 	if len(remainingBytes) != 20 {
 		return common.Address{}, fmt.Errorf("invalid data length for EVM address, expected 20 bytes, got %d", len(remainingBytes))
@@ -100,7 +96,7 @@ func parseOpReturnGoatMagic(data []byte) (common.Address, error) {
 	return evmAddr, nil
 }
 
-func IsUtxoGoatDepositV1(tx *wire.MsgTx, tssAddress []btcutil.Address, net *chaincfg.Params) (bool, string, int64) {
+func IsUtxoGoatDepositV1(tx *wire.MsgTx, tssAddress []btcutil.Address, net *chaincfg.Params, magicBytes []byte) (bool, string, int64) {
 	// Ensure there are at least 2 outputs, one of them is OP_RETURN
 	if len(tx.TxOut) < 2 {
 		return false, "", 0
@@ -121,7 +117,7 @@ func IsUtxoGoatDepositV1(tx *wire.MsgTx, tssAddress []btcutil.Address, net *chai
 			// check if tx.TxOut[1] OP_RETURN rule: https://www.goat.network/docs/deposit/v1
 			// Process OP_RETURN to extract EVM address
 			data := tx.TxOut[1].PkScript[1:] // Assuming OP_RETURN opcode is at index 0
-			evmAddr, err := parseOpReturnGoatMagic(data)
+			evmAddr, err := parseOpReturnGoatMagic(data, magicBytes)
 			if err != nil {
 				log.Debugf("Cannot parse OP_RETURN in TxOut[1]: %v", err)
 				return false, "", 0
