@@ -1,6 +1,10 @@
 package http
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/goatnetwork/goat-relayer/internal/types"
+)
 
 // FireblocksWebhookRequest
 type FireblocksWebhookRequest struct {
@@ -58,12 +62,12 @@ type TransactionDetails struct {
 	AmountUSD                     float64                  `json:"amountUSD,omitempty"`
 	ServiceFee                    float64                  `json:"serviceFee,omitempty"`
 	NetworkFee                    float64                  `json:"networkFee,omitempty"`
+	SignedMessages                []types.FbSignedMessage  `json:"signedMessages,omitempty"`
 
 	// NetworkRecords               []NetworkRecord               `json:"networkRecords,omitempty"`
 	// AuthorizationInfo            AuthorizationInfo             `json:"authorizationInfo"`
 	// AmlScreeningResult           AmlScreeningResult            `json:"amlScreeningResult"`
 	// ExtraParameters              TransactionExtraParameters    `json:"extraParameters"`
-	// SignedMessages               []SignedMessage               `json:"signedMessages,omitempty"`
 	// RewardsInfo                  RewardsInfo                   `json:"rewardsInfo"`
 }
 

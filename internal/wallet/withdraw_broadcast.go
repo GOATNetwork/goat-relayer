@@ -39,6 +39,8 @@ type BtcClient struct {
 
 type FireblocksClient struct {
 	client *http.FireblocksProposal
+	btcRpc *rpcclient.Client
+	state  *state.State
 }
 
 type BaseOrderBroadcaster struct {
@@ -186,6 +188,43 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 		}
 	}
 
+	// if tx is completed, broadcast to BTC chain
+	if txDetails.Status == "COMPLETED" {
+		if len(txDetails.SignedMessages) == 0 {
+			log.Errorf("No signed messages found for completed tx, txid: %s, fbId: %s", txid, txDetails.ID)
+			return true, 0, 0, nil
+		}
+		// find the send order
+		sendOrder, err := c.state.GetSendOrderByTxIdOrExternalId(txid)
+		if err != nil {
+			return false, 0, 0, fmt.Errorf("get send order error: %v, txid: %s", err, txid)
+		}
+		// deserialize the tx
+		tx, err := types.DeserializeTransaction(sendOrder.NoWitnessTx)
+		if err != nil {
+			return false, 0, 0, fmt.Errorf("deserialize tx error: %v, txid: %s", err, sendOrder.Txid)
+		}
+		utxos, err := c.state.GetUtxoByOrderId(sendOrder.OrderId)
+		if err != nil {
+			return false, 0, 0, fmt.Errorf("get utxos error: %v, txid: %s", err, sendOrder.Txid)
+		}
+		err = ApplyFireblocksSignaturesToTx(tx, utxos, txDetails.SignedMessages, types.GetBTCNetwork(config.AppConfig.BTCNetworkType))
+		if err != nil {
+			return false, 0, 0, fmt.Errorf("apply fireblocks signatures to tx error: %v, txid: %s", err, txid)
+		}
+		_, err = c.btcRpc.SendRawTransaction(tx, false)
+		if err != nil {
+			if rpcErr, ok := err.(*btcjson.RPCError); ok {
+				switch rpcErr.Code {
+				case btcjson.ErrRPCTxAlreadyInChain:
+					return false, 0, 0, nil
+				}
+			}
+			return false, 0, 0, fmt.Errorf("send raw transaction error: %v, txid: %s", err, txid)
+		}
+		return false, 0, 0, nil
+	}
+
 	blockHeight, err = strconv.ParseUint(txDetails.BlockInfo.BlockHeight, 10, 64)
 	if err != nil {
 		return false, 0, 0, fmt.Errorf("parse block height error: %v, txid: %s", err, txid)
@@ -205,6 +244,8 @@ func NewOrderBroadcaster(btcClient *rpcclient.Client, state *state.State) OrderB
 	} else {
 		orderBroadcaster.remoteClient = &FireblocksClient{
 			client: http.NewFireblocksProposal(),
+			btcRpc: btcClient,
+			state:  state,
 		}
 	}
 	return orderBroadcaster

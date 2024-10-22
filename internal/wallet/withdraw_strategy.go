@@ -3,6 +3,7 @@ package wallet
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
 
@@ -580,4 +581,80 @@ func GenerateRawMeessageToFireblocks(tx *wire.MsgTx, utxos []*db.Utxo, net *chai
 	}
 
 	return hashes, nil
+}
+
+func ApplyFireblocksSignaturesToTx(tx *wire.MsgTx, utxos []*db.Utxo, fbSignedMessages []types.FbSignedMessage, net *chaincfg.Params) error {
+	if len(utxos) != len(fbSignedMessages) {
+		return fmt.Errorf("number of UTXOs and signed messages do not match")
+	}
+
+	for i, utxo := range utxos {
+		signedMessage := fbSignedMessages[i]
+		signature, err := hex.DecodeString(signedMessage.Signature.FullSig)
+		if err != nil {
+			return fmt.Errorf("error decoding fullSig: %v", err)
+		}
+
+		switch utxo.ReceiverType {
+		// P2PKH
+		case types.WALLET_TYPE_P2PKH:
+			// Decode the public key
+			pubKeyBytes, err := hex.DecodeString(signedMessage.PublicKey)
+			if err != nil {
+				return fmt.Errorf("error decoding public key: %v", err)
+			}
+
+			// Build signature script (sig + pubkey)
+			sigScript, err := txscript.NewScriptBuilder().
+				AddData(signature).
+				AddData(pubKeyBytes).
+				Script()
+			if err != nil {
+				return fmt.Errorf("error building signature script: %v", err)
+			}
+
+			// Apply the signature script to the transaction input
+			tx.TxIn[i].SignatureScript = sigScript
+
+		// P2WPKH
+		case types.WALLET_TYPE_P2WPKH:
+			// Decode the public key
+			pubKeyBytes, err := hex.DecodeString(signedMessage.PublicKey)
+			if err != nil {
+				return fmt.Errorf("error decoding public key: %v", err)
+			}
+
+			// Build witness (sig + pubkey)
+			witness := wire.TxWitness{
+				signature,   // Signature
+				pubKeyBytes, // Public key
+			}
+
+			// Apply the witness to the transaction input
+			tx.TxIn[i].Witness = witness
+
+		// P2WSH
+		case types.WALLET_TYPE_P2WSH:
+			// Decode the subscript and public key
+			pubKeyBytes, err := hex.DecodeString(signedMessage.PublicKey)
+			if err != nil {
+				return fmt.Errorf("error decoding public key: %v", err)
+			}
+
+			// Build witness (sig + pubkey + subScript)
+			witness := wire.TxWitness{
+				signature,      // Signature
+				pubKeyBytes,    // Public key
+				utxo.SubScript, // The redeem script (subscript)
+			}
+
+			// Apply the witness to the transaction input
+			tx.TxIn[i].Witness = witness
+
+		default:
+			return fmt.Errorf("unknown UTXO type: %s", utxo.ReceiverType)
+		}
+	}
+
+	return nil
 }
