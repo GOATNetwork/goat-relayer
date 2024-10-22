@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
@@ -127,15 +128,21 @@ func (s *HTTPServer) handleFireblocksCosignerTxSign(c *gin.Context) {
 		}
 		return rsaPubKey, nil
 	})
-	if err != nil || !tx.Valid {
-		log.Error("Cosigner callback JWT valid false")
+	if err != nil {
+		log.Error("Cosigner callback JWT parsing failed")
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	if !tx.Valid {
+		log.Error("Cosigner callback JWT tx not valid")
 		c.Status(http.StatusUnauthorized)
 		return
 	}
 
 	// Extract requestId from the JWT claims
 	claims, ok := tx.Claims.(jwt.MapClaims)
-	if !ok || !tx.Valid {
+	if !ok {
 		log.Error("Cosigner callback JWT claims parsing failed")
 		c.Status(http.StatusUnauthorized)
 		return
@@ -143,23 +150,27 @@ func (s *HTTPServer) handleFireblocksCosignerTxSign(c *gin.Context) {
 
 	requestId := claims["requestId"].(string)
 	txId := claims["txId"].(string)
-
-	log.Infof("Cosigner callback JWT claim received, requestId %s, txId %s", requestId, txId)
+	note := claims["note"].(string)
+	log.Infof("Cosigner callback JWT claim received, requestId %s, txId %s, note %s", requestId, txId, note)
+	// 使用trim去除note的前缀 "WITHDRAW"
+	txHash := strings.Split(note, ":")[1]
 
 	// Sign the response APPROVE|REJECT|RETRY
 	action := "APPROVE"
 	rejectionReason := ""
 
 	// check by more fields
-	sendOrder, err := s.state.GetSendOrderByTxIdOrExternalId(txId)
+	sendOrder, err := s.state.GetSendOrderByTxIdOrExternalId(txHash)
 	if err != nil {
 		log.Errorf("Cosigner callback get send order error: %v", err)
 		action = "RETRY"
 		rejectionReason = "read db error"
 	} else if sendOrder == nil {
+		log.Errorf("Cosigner callback send order not found: txId %s", txId)
 		action = "REJECT"
 		rejectionReason = "send order not found"
 	} else if sendOrder.Status != db.ORDER_STATUS_INIT && sendOrder.Status != db.ORDER_STATUS_PENDING {
+		log.Errorf("Cosigner callback send order status not expected, current status: %s", sendOrder.Status)
 		action = "REJECT"
 		rejectionReason = "send order status not expected, current status: " + sendOrder.Status
 	}
@@ -171,10 +182,12 @@ func (s *HTTPServer) handleFireblocksCosignerTxSign(c *gin.Context) {
 	})
 	signedRes, err := token.SignedString(rsaPrivKey)
 	if err != nil {
+		log.Errorf("Cosigner callback JWT signing failed: %v, rejectionReason: %s", err, rejectionReason)
 		c.Status(http.StatusInternalServerError)
 		return
 	}
 
+	log.Infof("Cosigner callback JWT signed, signedRes: %s, requestId: %s, txId: %s, note: %s", signedRes, requestId, txId, note)
 	c.String(http.StatusOK, signedRes)
 }
 
