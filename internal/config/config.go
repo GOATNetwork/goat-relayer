@@ -47,8 +47,9 @@ func InitConfig() {
 	viper.SetDefault("DB_DIR", "/app/db")
 	viper.SetDefault("VOTING_CONTRACT", "")
 	viper.SetDefault("WITHDRAW_CONTRACT", "")
-	viper.SetDefault("FIREBLOCKS_PUBKEY", "")
-	viper.SetDefault("FIREBLOCKS_PRIVKEY", "")
+	viper.SetDefault("FIREBLOCKS_SECRET", "")
+	viper.SetDefault("FIREBLOCKS_CALLBACK_PRIVATE", "")
+	viper.SetDefault("FIREBLOCKS_CALLBACK_PUBLIC", "")
 	viper.SetDefault("FIREBLOCKS_API_KEY", "")
 	viper.SetDefault("GOATCHAIN_RPC_URI", "tcp://127.0.0.1:26657")
 	viper.SetDefault("GOATCHAIN_GRPC_URI", "127.0.0.1:9090")
@@ -100,8 +101,9 @@ func InitConfig() {
 		L2MaxBlockRange:        viper.GetInt("L2_MAX_BLOCK_RANGE"),
 		L2RequestInterval:      viper.GetDuration("L2_REQUEST_INTERVAL"),
 		L2SubmitRetry:          viper.GetInt("L2_SUBMIT_RETRY"),
-		FireblocksPubKey:       viper.GetString("FIREBLOCKS_PUBKEY"),
-		FireblocksPrivKey:      viper.GetString("FIREBLOCKS_PRIVKEY"),
+		FireblocksSecret:       viper.GetString("FIREBLOCKS_SECRET"),
+		FireblocksCallbackPriv: viper.GetString("FIREBLOCKS_CALLBACK_PRIVATE"),
+		FireblocksCallbackPub:  viper.GetString("FIREBLOCKS_CALLBACK_PUBLIC"),
 		FireblocksApiKey:       viper.GetString("FIREBLOCKS_API_KEY"),
 		EnableWebhook:          viper.GetBool("ENABLE_WEBHOOK"),
 		EnableRelayer:          viper.GetBool("ENABLE_RELAYER"),
@@ -154,8 +156,9 @@ type Config struct {
 	L2MaxBlockRange        int
 	L2RequestInterval      time.Duration
 	L2SubmitRetry          int
-	FireblocksPubKey       string
-	FireblocksPrivKey      string
+	FireblocksSecret       string
+	FireblocksCallbackPriv string
+	FireblocksCallbackPub  string
 	FireblocksApiKey       string
 	EnableWebhook          bool
 	EnableRelayer          bool

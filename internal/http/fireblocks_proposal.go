@@ -108,7 +108,7 @@ func (p *FireblocksProposal) request(method, path string, body interface{}) ([]b
 		}
 	}
 
-	rsaPrivKey, err := types.ParseRSAPrivateKeyFromPEM(config.AppConfig.FireblocksPrivKey)
+	rsaPrivKey, err := types.ParseRSAPrivateKeyFromPEM(config.AppConfig.FireblocksSecret)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing RSA private key: %v", err)
 	}

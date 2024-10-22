@@ -59,7 +59,7 @@ var (
 
 func (c *BtcClient) SendRawTransaction(tx *wire.MsgTx, utxos []*db.Utxo, orderType string) (txHash string, exist bool, err error) {
 	txid := tx.TxHash().String()
-	privKeyBytes, err := hex.DecodeString(config.AppConfig.FireblocksPrivKey)
+	privKeyBytes, err := hex.DecodeString(config.AppConfig.FireblocksSecret)
 	if err != nil {
 		return txid, false, fmt.Errorf("decode privKey error: %v", err)
 	}

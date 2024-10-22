@@ -93,20 +93,20 @@ func (s *HTTPServer) handleFireblocksWebhook(c *gin.Context) {
 
 // handleFireblocksCosignerTxSign process cosigner tx sign callback of Fireblocks, it will check tx and sign
 func (s *HTTPServer) handleFireblocksCosignerTxSign(c *gin.Context) {
-	if config.AppConfig.FireblocksPrivKey == "" || config.AppConfig.FireblocksPubKey == "" {
+	if config.AppConfig.FireblocksCallbackPriv == "" || config.AppConfig.FireblocksCallbackPub == "" {
 		log.Error("Cosigner callback empty RSA key")
 		c.String(http.StatusInternalServerError, "Private key and public key not exist")
 		return
 	}
 
-	rsaPubKey, err := types.ParseRSAPublicKeyFromPEM(config.AppConfig.FireblocksPubKey)
+	rsaPubKey, err := types.ParseRSAPublicKeyFromPEM(config.AppConfig.FireblocksCallbackPub)
 	if err != nil {
 		log.Errorf("Cosigner error parsing RSA public key: %v", err)
 		c.String(http.StatusInternalServerError, "Public key parsing error")
 		return
 	}
 
-	rsaPrivKey, err := types.ParseRSAPrivateKeyFromPEM(config.AppConfig.FireblocksPrivKey)
+	rsaPrivKey, err := types.ParseRSAPrivateKeyFromPEM(config.AppConfig.FireblocksCallbackPriv)
 	if err != nil {
 		log.Errorf("Cosigner error parsing RSA private key: %v", err)
 		c.String(http.StatusInternalServerError, "Private key parsing error")
