@@ -15,6 +15,7 @@ require (
 	github.com/goatnetwork/goat v0.0.1-testnet-rc3.0.20241019052752-650b54ae4225
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
+	github.com/joho/godotenv v1.5.1
 	github.com/kelindar/bitmap v1.5.2
 	github.com/libp2p/go-libp2p v0.36.2
 	github.com/libp2p/go-libp2p-pubsub v0.12.0

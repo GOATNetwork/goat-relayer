@@ -45,9 +45,9 @@ type BaseOrderBroadcaster struct {
 	remoteClient RemoteClient
 	state        *state.State
 
-	txBroadcastMu              sync.Mutex
-	txBroadcastStatus          bool
-	txBroadcastFinishBtcHeight uint64
+	txBroadcastMu sync.Mutex
+	// txBroadcastStatus          bool
+	// txBroadcastFinishBtcHeight uint64
 }
 
 var (
