@@ -10,6 +10,11 @@ type FireblocksWebhookRequest struct {
 	Data      json.RawMessage `json:"data"`
 }
 
+type FireblocksBaseResponse struct {
+	Code    int32  `json:"code"`
+	Message string `json:"message"`
+}
+
 // SUBMITTED PENDING_AML_SCREENING PENDING_ENRICHMENT PENDING_AUTHORIZATION QUEUED PENDING_SIGNATURE
 // PENDING_3RD_PARTY_MANUAL_APPROVAL PENDING_3RD_PARTY BROADCASTING COMPLETED CONFIRMING
 // CANCELLING CANCELLED BLOCKED REJECTED FAILED
@@ -126,6 +131,8 @@ type FbCreateTransactionRequest struct {
 }
 
 type FbCreateTransactionResponse struct {
+	FireblocksBaseResponse
+
 	ID             string           `json:"id"`
 	Status         FbCTRStatus      `json:"status"`
 	SystemMessages FbSystemMessages `json:"systemMessages"`

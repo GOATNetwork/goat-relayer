@@ -127,7 +127,7 @@ func (p *FireblocksProposal) request(method, path string, body interface{}) ([]b
 		"uri":      path,
 		"nonce":    uuid.New().String(),
 		"iat":      time.Now().Unix(),
-		"exp":      time.Now().Add(time.Minute * 5).Unix(),
+		"exp":      time.Now().Add(time.Minute * 1).Unix(),
 		"sub":      config.AppConfig.FireblocksApiKey,
 		"bodyHash": hex.EncodeToString(reqBodyHash),
 	})

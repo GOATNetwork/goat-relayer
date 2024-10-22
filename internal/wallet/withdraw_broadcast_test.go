@@ -31,7 +31,7 @@ func TestBroadcastOrdersWithLocalDB(t *testing.T) {
 
 	// Connect to local database
 	var dbRef *gorm.DB
-	if err := connectDatabase(filepath.Join("/Users/drej/Projects/goat-regtest/submodule/relayer/internal/wallet/wallet_order.db"), &dbRef, "wallet"); err != nil {
+	if err := connectDatabase(filepath.Join("/Users/aiden/Space/Goat/dev/goat-relayer/internal/wallet/wallet_order.db"), &dbRef, "wallet"); err != nil {
 		log.Fatalf("Failed to connect to %s: %v", "wallet", err)
 	}
 
@@ -76,6 +76,11 @@ func TestBroadcastOrdersWithLocalDB(t *testing.T) {
 		resp, err := remoteClient.client.PostRawSigningRequest(rawMessage, fmt.Sprintf("%s:%s", sendOrder.OrderType, sendOrder.Txid))
 		if err != nil {
 			log.Errorf("OrderBroadcaster broadcastOrders post raw signing request error: %v, txid: %s", err, sendOrder.Txid)
+			continue
+		}
+		if resp.Code != 0 {
+			log.Errorf("OrderBroadcaster broadcastOrders post raw signing request error: %v, txid: %s", resp.Message, sendOrder.Txid)
+			continue
 		}
 		log.Debugf("PostRawSigningRequest resp: %+v", resp)
 	}

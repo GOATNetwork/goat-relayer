@@ -164,6 +164,9 @@ func (c *FireblocksClient) SendRawTransaction(tx *wire.MsgTx, utxos []*db.Utxo, 
 	if err != nil {
 		return txid, false, fmt.Errorf("post raw signing request error: %v", err)
 	}
+	if resp.Code != 0 {
+		return txid, false, fmt.Errorf("post raw signing request error: %v, txid: %s", resp.Message, txid)
+	}
 	log.Debugf("PostRawSigningRequest resp: %+v", resp)
 
 	return resp.ID, false, nil
