@@ -37,6 +37,11 @@ type MsgUtxoDeposit struct {
 	Timestamp   int64  `json:"timestamp"`
 }
 
+type MsgSendOrderBroadcasted struct {
+	TxId         string `json:"tx_id"`
+	ExternalTxId string `json:"external_tx_id"`
+}
+
 // MsgUtxoWithdraw defines withdraw UTXO broadcast to p2p which received in relayer rpc
 type MsgUtxoWithdraw struct {
 	TxId      string `json:"tx_id"`

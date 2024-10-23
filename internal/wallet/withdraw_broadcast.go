@@ -16,6 +16,7 @@ import (
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/http"
+	"github.com/goatnetwork/goat-relayer/internal/p2p"
 	"github.com/goatnetwork/goat-relayer/internal/state"
 	"github.com/goatnetwork/goat-relayer/internal/types"
 	log "github.com/sirupsen/logrus"
@@ -48,6 +49,7 @@ type BaseOrderBroadcaster struct {
 	state        *state.State
 
 	txBroadcastMu sync.Mutex
+	txBroadcastCh chan interface{}
 	// txBroadcastStatus          bool
 	// txBroadcastFinishBtcHeight uint64
 }
@@ -235,7 +237,8 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 
 func NewOrderBroadcaster(btcClient *rpcclient.Client, state *state.State) OrderBroadcaster {
 	orderBroadcaster := &BaseOrderBroadcaster{
-		state: state,
+		state:         state,
+		txBroadcastCh: make(chan interface{}, 100),
 	}
 	if config.AppConfig.BTCNetworkType == "regtest" {
 		orderBroadcaster.remoteClient = &BtcClient{
@@ -255,6 +258,7 @@ func NewOrderBroadcaster(btcClient *rpcclient.Client, state *state.State) OrderB
 // check orders pending status, if it is failed, broadcast it again
 func (b *BaseOrderBroadcaster) Start(ctx context.Context) {
 	log.Debug("BaseOrderBroadcaster start")
+	b.state.EventBus.Subscribe(state.SendOrderBroadcasted, b.txBroadcastCh)
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -264,6 +268,17 @@ func (b *BaseOrderBroadcaster) Start(ctx context.Context) {
 		case <-ctx.Done():
 			b.Stop()
 			return
+		case msg := <-b.txBroadcastCh:
+			sendOrder, ok := msg.(types.MsgSendOrderBroadcasted)
+			if !ok {
+				log.Errorf("Invalid send order data type")
+				continue
+			}
+			err := b.state.UpdateSendOrderPending(sendOrder.TxId, sendOrder.ExternalTxId)
+			if err != nil {
+				log.Errorf("Failed to update send order status: %v", err)
+				continue
+			}
 		case <-ticker.C:
 			b.broadcastOrders()
 			b.broadcastPendingCheck()
@@ -339,7 +354,7 @@ func (b *BaseOrderBroadcaster) broadcastOrders() {
 		}
 
 		// broadcast the transaction and update sendOrder status
-		txHash, exist, err := b.remoteClient.SendRawTransaction(tx, utxos, sendOrder.OrderType)
+		externalTxId, exist, err := b.remoteClient.SendRawTransaction(tx, utxos, sendOrder.OrderType)
 		if err != nil {
 			log.Errorf("OrderBroadcaster broadcastOrders send raw transaction error: %v, txid: %s", err, sendOrder.Txid)
 			if exist {
@@ -349,13 +364,23 @@ func (b *BaseOrderBroadcaster) broadcastOrders() {
 		}
 
 		// update sendOrder status to pending
-		err = b.state.UpdateSendOrderPending(sendOrder.Txid, txHash)
+		err = b.state.UpdateSendOrderPending(sendOrder.Txid, externalTxId)
 		if err != nil {
 			log.Errorf("OrderBroadcaster broadcastOrders update sendOrder status error: %v, txid: %s", err, sendOrder.Txid)
 			continue
 		}
 
-		log.Infof("WalletServer broadcastOrders tx broadcast success, txid: %s", txHash)
+		p2p.PublishMessage(context.Background(), p2p.Message{
+			MessageType: p2p.MessageTypeSendOrderBroadcasted,
+			RequestId:   fmt.Sprintf("TXBROADCAST:%s:%s", config.AppConfig.RelayerAddress, sendOrder.Txid),
+			DataType:    "MsgSendOrderBroadcasted",
+			Data: types.MsgSendOrderBroadcasted{
+				TxId:         sendOrder.Txid,
+				ExternalTxId: externalTxId,
+			},
+		})
+
+		log.Infof("OrderBroadcaster broadcastOrders tx broadcast success, txid: %s", sendOrder.Txid)
 	}
 }
 
