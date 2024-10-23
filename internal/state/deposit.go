@@ -182,13 +182,12 @@ func (s *State) GetDepositForSign(size int) ([]*db.Deposit, error) {
 	s.depositMu.RLock()
 	defer s.depositMu.RUnlock()
 
-	from := s.depositState.Latest.ID
 	var deposits []*db.Deposit
-	err := s.dbm.GetBtcCacheDB().Where("id > ? and status = ? and block_hash <> '' and tx_index >= 0", from, db.DEPOSIT_STATUS_CONFIRMED).Order("id asc").Limit(size).Find(&deposits).Error
+	err := s.dbm.GetBtcCacheDB().Where("status = ? and block_hash <> '' and tx_index >= 0", db.DEPOSIT_STATUS_CONFIRMED).Order("id asc").Limit(size).Find(&deposits).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, err
 	}
-	log.Debugf("GetDepositForSign from: %d, deposits found: %d", from, len(deposits))
+	log.Debugf("GetDepositForSign, deposits found: %d", len(deposits))
 	return deposits, nil
 }
 
