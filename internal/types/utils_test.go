@@ -3,8 +3,10 @@ package types
 import (
 	"bytes"
 	"encoding/hex"
+	"strings"
 	"testing"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	bitcointypes "github.com/goatnetwork/goat/x/bitcoin/types"
@@ -59,4 +61,35 @@ func processTransaction(rawTxHex string, txHashes []string) bool {
 	targetTxHash, _ := chainhash.NewHashFromStr(txHashes[txIndex])
 
 	return bitcointypes.VerifyMerkelProof(targetTxHash[:], merkleRoot[:], proofBytes, uint32(txIndex))
+}
+
+func TestGenerateV0P2WSHAddress(t *testing.T) {
+	// Prepare test data
+	pubKeyHex := "0383560def84048edefe637d0119a4428dd12a42765a118b2bf77984057633c50e"
+	pubKey, err := hex.DecodeString(pubKeyHex)
+	if err != nil {
+		t.Fatalf("Failed to decode public key: %v", err)
+	}
+
+	evmAddress := "0x29cF29d4b2CD6Db07f6db43243e8E43fE3DC468e"
+	net := &chaincfg.TestNet3Params
+
+	// Call function to generate P2WSH address
+	p2wshAddress, err := GenerateV0P2WSHAddress(pubKey, evmAddress, net)
+	if err != nil {
+		t.Fatalf("Failed to generate P2WSH address: %v", err)
+	}
+
+	// Validate the generated address
+	if p2wshAddress == nil {
+		t.Fatal("Generated P2WSH address is nil")
+	}
+
+	// Check if the address prefix is correct (testnet3 P2WSH addresses start with "tb1q")
+	if !strings.HasPrefix(p2wshAddress.EncodeAddress(), "tb1q") {
+		t.Errorf("Generated address prefix is incorrect, expected to start with 'tb1q', actual: %s", p2wshAddress.EncodeAddress())
+	}
+
+	// Print the generated address
+	t.Logf("Generated P2WSH address: %s", p2wshAddress.EncodeAddress())
 }
