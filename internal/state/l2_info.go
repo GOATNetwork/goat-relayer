@@ -123,7 +123,7 @@ func (s *State) UpdateL2InfoParams(minDepositAmount uint64, depositMagicPrefix [
 
 	l2Info := s.layer2State.L2Info
 
-	if len(l2Info.DepositMagic) == 0 || l2Info.MinDepositAmount == 0 {
+	if len(l2Info.DepositMagic) == 0 || l2Info.MinDepositAmount == 1 {
 		l2Info.MinDepositAmount = minDepositAmount
 		l2Info.DepositMagic = depositMagicPrefix
 

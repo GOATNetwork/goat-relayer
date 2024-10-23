@@ -85,7 +85,7 @@ func InitializeState(dbm *db.DatabaseManager) *State {
 				Threshold:        "2/3",
 				DepositKey:       "",
 				DepositMagic:     []byte{},
-				MinDepositAmount: 0,
+				MinDepositAmount: 1,
 				StartBtcHeight:   0,
 				LatestBtcHeight:  0,
 				UpdatedAt:        time.Now(),

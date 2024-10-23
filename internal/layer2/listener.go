@@ -257,7 +257,7 @@ func (lis *Layer2Listener) Start(ctx context.Context) {
 			}
 
 			layer2Info := lis.state.GetL2Info()
-			if len(layer2Info.DepositMagic) == 0 || layer2Info.MinDepositAmount == 0 {
+			if len(layer2Info.DepositMagic) == 0 || layer2Info.MinDepositAmount == 1 {
 				paramsResp, err := lis.QueryParams(ctx)
 				if err != nil || paramsResp.Params.MinDepositAmount == 0 || len(paramsResp.Params.DepositMagicPrefix) == 0 {
 					log.Fatalf("Failed to query params: %v", err)
