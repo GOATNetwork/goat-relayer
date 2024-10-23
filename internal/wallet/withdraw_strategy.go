@@ -639,20 +639,32 @@ func ApplyFireblocksSignaturesToTx(tx *wire.MsgTx, utxos []*db.Utxo, fbSignedMes
 		// P2WSH
 		case types.WALLET_TYPE_P2WSH:
 			// Decode the subscript and public key
-			pubKeyBytes, err := hex.DecodeString(signedMessage.PublicKey)
+			addr, err := btcutil.DecodeAddress(utxo.Receiver, net)
 			if err != nil {
-				return fmt.Errorf("error decoding public key: %v", err)
+				return err
 			}
 
-			// Build witness (sig + pubkey + subScript)
-			witness := wire.TxWitness{
-				derSignature,   // Signature
-				pubKeyBytes,    // Public key
-				utxo.SubScript, // The redeem script (subscript)
+			// Get the scriptPubKey from the address
+			pkScript, err := txscript.PayToAddrScript(addr)
+			if err != nil {
+				return err
 			}
 
-			// Apply the witness to the transaction input
-			tx.TxIn[i].Witness = witness
+			// Ensure the hash of the subScript matches the hash in the scriptPubKey
+			subScriptHash := sha256.Sum256(utxo.SubScript)
+			expectedPkScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_0).AddData(subScriptHash[:]).Script()
+			if err != nil {
+				return err
+			}
+			if !bytes.Equal(pkScript, expectedPkScript) {
+				return fmt.Errorf("subScript hash does not match the scriptPubKey of the UTXO")
+			}
+
+			// Set the witness stack
+			tx.TxIn[i].Witness = wire.TxWitness{
+				derSignature,   // signature
+				utxo.SubScript, // subScript (redeem script)
+			}
 
 		default:
 			return fmt.Errorf("unknown UTXO type: %s", utxo.ReceiverType)
