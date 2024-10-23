@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -590,9 +591,11 @@ func ApplyFireblocksSignaturesToTx(tx *wire.MsgTx, utxos []*db.Utxo, fbSignedMes
 
 	for i, utxo := range utxos {
 		signedMessage := fbSignedMessages[i]
-		signature, err := hex.DecodeString(signedMessage.Signature.FullSig)
+
+		// Convert the Fireblocks signature to DER format
+		derSignature, err := convertToDERSignature(signedMessage.Signature)
 		if err != nil {
-			return fmt.Errorf("error decoding fullSig: %v", err)
+			return fmt.Errorf("error converting Fireblocks signature to DER: %v", err)
 		}
 
 		switch utxo.ReceiverType {
@@ -606,7 +609,7 @@ func ApplyFireblocksSignaturesToTx(tx *wire.MsgTx, utxos []*db.Utxo, fbSignedMes
 
 			// Build signature script (sig + pubkey)
 			sigScript, err := txscript.NewScriptBuilder().
-				AddData(signature).
+				AddData(derSignature).
 				AddData(pubKeyBytes).
 				Script()
 			if err != nil {
@@ -626,8 +629,8 @@ func ApplyFireblocksSignaturesToTx(tx *wire.MsgTx, utxos []*db.Utxo, fbSignedMes
 
 			// Build witness (sig + pubkey)
 			witness := wire.TxWitness{
-				signature,   // Signature
-				pubKeyBytes, // Public key
+				derSignature, // Signature
+				pubKeyBytes,  // Public key
 			}
 
 			// Apply the witness to the transaction input
@@ -643,7 +646,7 @@ func ApplyFireblocksSignaturesToTx(tx *wire.MsgTx, utxos []*db.Utxo, fbSignedMes
 
 			// Build witness (sig + pubkey + subScript)
 			witness := wire.TxWitness{
-				signature,      // Signature
+				derSignature,   // Signature
 				pubKeyBytes,    // Public key
 				utxo.SubScript, // The redeem script (subscript)
 			}
@@ -657,4 +660,31 @@ func ApplyFireblocksSignaturesToTx(tx *wire.MsgTx, utxos []*db.Utxo, fbSignedMes
 	}
 
 	return nil
+}
+
+// Convert FbSignature to DER encoded signature with SIGHASH_ALL
+func convertToDERSignature(fbSig types.FbSignature) ([]byte, error) {
+	rBytes, err := hex.DecodeString(fbSig.R)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding R: %v", err)
+	}
+
+	sBytes, err := hex.DecodeString(fbSig.S)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding S: %v", err)
+	}
+
+	// Convert R and S into btcec.ModNScalar
+	var rMod, sMod btcec.ModNScalar
+	rMod.SetByteSlice(rBytes)
+	sMod.SetByteSlice(sBytes)
+
+	// Create a btcec signature using R and S
+	signature := ecdsa.NewSignature(&rMod, &sMod)
+
+	// Serialize the signature into DER format
+	derSig := signature.Serialize()
+
+	// Append SIGHASH_ALL (0x01)
+	return append(derSig, byte(txscript.SigHashAll)), nil
 }
