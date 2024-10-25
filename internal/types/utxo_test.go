@@ -54,7 +54,7 @@ func TestIsUtxoGoatDepositV1WithRawTx(t *testing.T) {
 	tssAddress := []btcutil.Address{p2pkhAddress, p2wpkhAddress}
 
 	// Test the transaction using IsUtxoGoatDepositV1
-	isDepositV1, evmAddress, _ := IsUtxoGoatDepositV1(tx, tssAddress, network, TEST_GOAT_MAGIC_BYTES)
+	isDepositV1, evmAddress, _ := IsUtxoGoatDepositV1(tx, tssAddress, network, 0, TEST_GOAT_MAGIC_BYTES)
 
 	if !isDepositV1 {
 		t.Errorf("Expected transaction to be a valid GOAT deposit, got invalid")
