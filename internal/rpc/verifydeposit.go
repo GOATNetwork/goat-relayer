@@ -11,37 +11,37 @@ import (
 	"github.com/goatnetwork/goat-relayer/internal/types"
 )
 
-func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue bool, signVersion uint32, outputIndex int, amount int64, err error) {
+func (s *UtxoServer) VerifyDeposit(tx wire.MsgTx, evmAddress string) (isTrue bool, signVersion uint32, outIdxToAmount map[int]int64, err error) {
 	network := types.GetBTCNetwork(config.AppConfig.BTCNetworkType)
+	outIdxToAmount = make(map[int]int64)
 
 	pubKey, err := s.getPubKey()
 	if err != nil {
-		return false, 100, -1, 0, err
+		return false, 100, outIdxToAmount, err
 	}
 
 	p2wpkh, err := types.GenerateP2WPKHAddress(pubKey, network)
 	if err != nil {
-		return false, 100, -1, 0, err
+		return false, 100, outIdxToAmount, err
 	}
 
-	minDepositAmount := int64(s.state.GetL2Info().MinDepositAmount)
 	magicBytes := s.state.GetL2Info().DepositMagic
-	isTrue, _, amount = types.IsUtxoGoatDepositV1(&tx, []btcutil.Address{p2wpkh}, network, magicBytes)
-	if isTrue && amount >= minDepositAmount {
-		return true, 1, 0, amount, nil
+	isTrue, _, outIdxToAmount = types.IsUtxoGoatDepositV1(&tx, []btcutil.Address{p2wpkh}, network, magicBytes)
+	if isTrue {
+		return true, 1, outIdxToAmount, nil
 	}
 
 	p2wsh, err := types.GenerateV0P2WSHAddress(pubKey, evmAddress, network)
 	if err != nil {
-		return false, 100, -1, 0, err
+		return false, 100, outIdxToAmount, err
 	}
 
-	isTrue, outputIndex, amount = types.IsUtxoGoatDepositV0(&tx, []btcutil.Address{p2wsh}, network)
-	if isTrue && amount >= minDepositAmount {
-		return true, 0, outputIndex, amount, nil
+	isTrue, outIdxToAmount = types.IsUtxoGoatDepositV0(&tx, []btcutil.Address{p2wsh}, network)
+	if isTrue {
+		return true, 0, outIdxToAmount, nil
 	}
 
-	return false, 100, -1, 0, fmt.Errorf("invalid deposit isUtxoGoatDeposit: %v, amount: %v", isTrue, amount)
+	return false, 100, outIdxToAmount, fmt.Errorf("invalid deposit isUtxoGoatDeposit: %v, outIdxToAmount: %v", isTrue, outIdxToAmount)
 }
 
 func (s *UtxoServer) getPubKey() ([]byte, error) {

@@ -209,14 +209,14 @@ type BtcTXOutput struct {
 // Deposit model (for managing deposits)
 type Deposit struct {
 	ID          uint      `gorm:"primaryKey" json:"id"`
-	TxHash      string    `gorm:"not null;index:deposit_txhash_index" json:"tx_hash"`
+	TxHash      string    `gorm:"not null;index:deposit_txhash_output_index" json:"tx_hash"`
 	Amount      int64     `gorm:"not null;default:0" json:"amount"`
 	RawTx       string    `gorm:"not null" json:"raw_tx"`
 	EvmAddr     string    `gorm:"not null" json:"evm_addr"`
 	BlockHash   string    `gorm:"not null;index:deposit_blockhash_index" json:"block_hash"`
 	BlockHeight uint64    `gorm:"not null" json:"block_height"`
 	TxIndex     int       `gorm:"not null;index:deposit_txindex_index" json:"tx_index"`
-	OutputIndex int       `gorm:"not null;index:deposit_output_index" json:"output_index"`
+	OutputIndex int       `gorm:"not null;index:deposit_txhash_output_index" json:"output_index"`
 	MerkleRoot  []byte    `json:"merkle_root"`
 	Proof       []byte    `json:"proof"`
 	SignVersion uint32    `gorm:"not null" json:"sign_version"`

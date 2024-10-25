@@ -66,38 +66,48 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 		return nil, err
 	}
 
-	evmAddr := strings.TrimPrefix(req.EvmAddress, "0x")
-
-	isTrue, signVersion, outputIndex, amount, err := s.VerifyDeposit(tx, evmAddr)
-	if err != nil || !isTrue || outputIndex == -1 {
-		log.Errorf("Failed to verify deposit: %v", err)
-		return nil, err
+	evmAddresses := strings.Split(req.EvmAddress, ",")
+	if len(evmAddresses) > 150 {
+		return nil, fmt.Errorf("EVM addresses should not be more than 150")
 	}
 
-	err = s.state.AddUnconfirmDeposit(req.TransactionId, req.RawTransaction, evmAddr, signVersion, outputIndex, amount)
-	if err != nil {
-		log.Errorf("Failed to add unconfirmed deposit: %v", err)
-		return nil, err
-	}
+	for _, evmAddr := range evmAddresses {
+		evmAddr = strings.ToLower(evmAddr)
+		evmAddr = strings.TrimPrefix(evmAddr, "0x")
 
-	deposit := types.MsgUtxoDeposit{
-		RawTx:       req.RawTransaction,
-		TxId:        req.TransactionId,
-		EvmAddr:     evmAddr,
-		SignVersion: signVersion,
-		OutputIndex: outputIndex,
-		Amount:      amount,
-		Timestamp:   time.Now().Unix(),
-	}
+		isTrue, signVersion, outIdxToAmount, err := s.VerifyDeposit(tx, evmAddr)
+		if err != nil || !isTrue {
+			log.Errorf("Failed to verify deposit: %v", err)
+			return nil, err
+		}
 
-	err = p2p.PublishMessage(context.Background(), p2p.Message{
-		MessageType: p2p.MessageTypeDepositReceive,
-		RequestId:   fmt.Sprintf("DEPOSIT:%s:%s", config.AppConfig.RelayerAddress, deposit.TxId),
-		DataType:    "MsgUtxoDeposit",
-		Data:        deposit,
-	})
-	if err != nil {
-		return nil, err
+		for outIdx, amount := range outIdxToAmount {
+			err = s.state.AddUnconfirmDeposit(req.TransactionId, req.RawTransaction, evmAddr, signVersion, outIdx, amount)
+			if err != nil {
+				log.Errorf("Failed to add unconfirmed deposit: %v", err)
+				continue
+			}
+			deposit := types.MsgUtxoDeposit{
+				RawTx:       req.RawTransaction,
+				TxId:        req.TransactionId,
+				EvmAddr:     evmAddr,
+				SignVersion: signVersion,
+				OutputIndex: outIdx,
+				Amount:      amount,
+				Timestamp:   time.Now().Unix(),
+			}
+
+			err = p2p.PublishMessage(context.Background(), p2p.Message{
+				MessageType: p2p.MessageTypeDepositReceive,
+				RequestId:   fmt.Sprintf("DEPOSIT:%s:%s_%d", config.AppConfig.RelayerAddress, deposit.TxId, outIdx),
+				DataType:    "MsgUtxoDeposit",
+				Data:        deposit,
+			})
+			if err != nil {
+				log.Errorf("Failed to publish deposit message: %v", err)
+				continue
+			}
+		}
 	}
 
 	return &pb.NewTransactionResponse{
