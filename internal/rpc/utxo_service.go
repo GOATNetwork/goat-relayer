@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -66,15 +67,13 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 		return nil, err
 	}
 
-	evmAddresses := strings.Split(req.EvmAddress, ",")
-	if len(evmAddresses) > 150 {
-		return nil, fmt.Errorf("EVM addresses should not be more than 150")
+	evmAddresses, err := splitEvmAddresses(req.EvmAddress)
+	if err != nil {
+		log.Errorf("Failed to split evm addresses: %v", err)
+		return nil, err
 	}
 
 	for _, evmAddr := range evmAddresses {
-		evmAddr = strings.ToLower(evmAddr)
-		evmAddr = strings.TrimPrefix(evmAddr, "0x")
-
 		isTrue, signVersion, outIdxToAmount, err := s.VerifyDeposit(tx, evmAddr)
 		if err != nil || !isTrue {
 			log.Errorf("Failed to verify deposit: %v", err)
@@ -124,4 +123,17 @@ func (s *UtxoServer) QueryDepositAddress(ctx context.Context, req *pb.QueryDepos
 	return &pb.QueryDepositAddressResponse{
 		DepositAddress: hex.EncodeToString(pubKey),
 	}, nil
+}
+
+func splitEvmAddresses(evmAddressesStr string) ([]string, error) {
+	evmAddresses := strings.Split(evmAddressesStr, ",")
+	if len(evmAddresses) > 150 {
+		return nil, fmt.Errorf("EVM addresses should not be more than 150")
+	}
+
+	for i, addr := range evmAddresses {
+		evmAddresses[i] = strings.ToLower(strings.TrimPrefix(addr, "0x"))
+	}
+	slices.Sort(evmAddresses)
+	return slices.Compact(evmAddresses), nil
 }

@@ -269,27 +269,27 @@ func (b *BaseDepositProcessor) initDepositSig() {
 		txHash, err := chainhash.NewHashFromStr(verifiedDeposit.TxHash)
 		if err != nil {
 			log.Errorf("NewHashFromStr err: %v", err)
-			return
+			continue
 		}
 		evmAddr, err := hex.DecodeString(strings.TrimPrefix(verifiedDeposit.EvmAddr, "0x"))
 		if err != nil {
 			log.Errorf("DecodeString err: %v", err)
-			return
+			continue
 		}
 		rawTx, err := hex.DecodeString(verifiedDeposit.RawTx)
 		if err != nil {
 			log.Errorf("DecodeString err: %v", err)
-			return
+			continue
 		}
 		tx, err := types.DeserializeTransaction(rawTx)
 		if err != nil {
 			log.Errorf("DeserializeTransaction err: %v", err)
-			return
+			continue
 		}
 		noWitnessTx, err := types.SerializeTransactionNoWitness(tx)
 		if err != nil {
 			log.Errorf("SerializeTransactionNoWitness err: %v", err)
-			return
+			continue
 		}
 		msgDepositTXs[i] = types.DepositTX{
 			Version:           verifiedDeposit.SignVersion,
