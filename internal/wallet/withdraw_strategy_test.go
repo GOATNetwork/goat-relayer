@@ -21,6 +21,7 @@ import (
 
 // Test ConsolidateSmallUTXOs function
 func TestConsolidateSmallUTXOs(t *testing.T) {
+	config.AppConfig.BTCMaxNetworkFee = 200
 	// mock UTXOs for testing
 	utxos := []*db.Utxo{
 		{Amount: 20000000, ReceiverType: types.WALLET_TYPE_P2PKH},

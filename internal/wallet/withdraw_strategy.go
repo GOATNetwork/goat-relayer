@@ -36,7 +36,7 @@ import (
 //	finalAmount - final amount after consolidation, after deducting the network fee
 //	error - error if any
 func ConsolidateSmallUTXOs(utxos []*db.Utxo, networkFee, threshold int64, maxVin, trigerNum int) ([]*db.Utxo, int64, int64, error) {
-	if networkFee > int64(config.AppConfig.BTCMaxNetworkFee-300) {
+	if networkFee > int64(config.AppConfig.BTCMaxNetworkFee) {
 		return nil, 0, 0, fmt.Errorf("network fee is too high, cannot consolidate")
 	}
 	if trigerNum < 10 {
