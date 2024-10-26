@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
@@ -91,6 +92,50 @@ func ConsolidateSmallUTXOs(utxos []*db.Utxo, networkFee, threshold int64, maxVin
 	return smallUTXOs, totalAmount, finalAmount, nil
 }
 
+// ConsolidateUTXOsByCount consolidate utxos by count
+func ConsolidateUTXOsByCount(utxos []*db.Utxo, networkFee int64, maxVin, trigerNum int) (selectedUTXOs []*db.Utxo, totalAmount int64, finalAmount int64, err error) {
+	if networkFee > int64(config.AppConfig.BTCMaxNetworkFee) {
+		return nil, 0, 0, fmt.Errorf("network fee is too high, cannot consolidate")
+	}
+	if len(utxos) < trigerNum {
+		return nil, 0, 0, fmt.Errorf("not enough utxos to consolidate")
+	}
+
+	// select all utxos until maxVin
+	for _, utxo := range utxos {
+		if utxo.ReceiverType != types.WALLET_TYPE_P2WPKH && utxo.ReceiverType != types.WALLET_TYPE_P2WSH && utxo.ReceiverType != types.WALLET_TYPE_P2PKH {
+			continue
+		}
+		selectedUTXOs = append(selectedUTXOs, utxo)
+		totalAmount += utxo.Amount
+		// vin count limit
+		if len(selectedUTXOs) >= maxVin {
+			break
+		}
+	}
+
+	// calculate transaction size and estimated fee
+	utxoTypes := make([]string, len(selectedUTXOs))
+	for i, utxo := range selectedUTXOs {
+		utxoTypes[i] = utxo.ReceiverType
+	}
+
+	txSize := types.TransactionSizeEstimate(len(selectedUTXOs), []string{types.WALLET_TYPE_P2WPKH}, 1, utxoTypes) // 1 vout
+	estimatedFee := txSize * networkFee
+
+	if totalAmount < types.GetDustAmount(networkFee) {
+		return nil, 0, 0, fmt.Errorf("total amount is too low, cannot consolidate")
+	}
+
+	// calculate the remaining amount after consolidation
+	finalAmount = totalAmount - estimatedFee
+	if finalAmount <= 0 {
+		return nil, 0, 0, fmt.Errorf("consolidation fee is too high, cannot consolidate")
+	}
+
+	return selectedUTXOs, totalAmount, finalAmount, nil
+}
+
 // SelectOptimalUTXOs select optimal utxos for withdrawal
 //
 // Parameters:
@@ -109,11 +154,6 @@ func ConsolidateSmallUTXOs(utxos []*db.Utxo, networkFee, threshold int64, maxVin
 //	estimatedFee - estimate fee
 //	error - error if any
 func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount, networkFee int64, withdrawTotal int) ([]*db.Utxo, int64, int64, int64, int64, error) {
-	// sort utxos by amount from large to small
-	sort.Slice(utxos, func(i, j int) bool {
-		return utxos[i].Amount > utxos[j].Amount
-	})
-
 	var selectedUTXOs []*db.Utxo
 	var totalSelectedAmount int64 = 0
 	var maxVin int = 10
@@ -127,28 +167,70 @@ func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount
 	txSize := types.TransactionSizeEstimate(len(utxoTypes), receiverTypes, withdrawTotal, utxoTypes) // +1 for change output
 	estimatedFee := txSize * networkFee
 
-	// total target includes withdrawal amount and estimated fee
-	totalTarget := withdrawAmount + estimatedFee
+	// sort utxos by amount from small to large
+	sort.Slice(utxos, func(i, j int) bool {
+		return utxos[i].Amount < utxos[j].Amount
+	})
 
-	// try to find UTXO that satisfies the total target including fee
-	for _, utxo := range utxos {
-		if totalSelectedAmount >= totalTarget {
+	found := false
+
+	// try to find a utxo or two utxos combination that just meets withdrawAmount
+	for i := 0; i < len(utxos); i++ {
+		// if current utxo amount is greater than or equal to withdrawAmount, directly select it
+		if utxos[i].Amount >= withdrawAmount {
+			selectedUTXOs = []*db.Utxo{utxos[i]}
+			totalSelectedAmount = utxos[i].Amount
+			utxoTypes = []string{utxos[i].ReceiverType}
+			found = true
 			break
 		}
-		selectedUTXOs = append(selectedUTXOs, utxo)
-		totalSelectedAmount += utxo.Amount
 
-		// update transaction size and estimated fee with the current UTXO selection
-		utxoTypes = append(utxoTypes, utxo.ReceiverType)
+		// if two utxos amount is greater than or equal to withdrawAmount, select them
+		for j := i + 1; j < len(utxos); j++ {
+			if utxos[i].Amount+utxos[j].Amount >= withdrawAmount {
+				selectedUTXOs = []*db.Utxo{utxos[i], utxos[j]}
+				totalSelectedAmount = utxos[i].Amount + utxos[j].Amount
+				utxoTypes = []string{utxos[i].ReceiverType, utxos[j].ReceiverType}
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+
+	// if found a suitable utxo or combination, calculate transaction size and fee
+	if found {
 		txSize = types.TransactionSizeEstimate(len(selectedUTXOs), receiverTypes, withdrawTotal, utxoTypes)
 		estimatedFee = txSize * networkFee
+		// totalTarget = withdrawAmount + estimatedFee // not used, fee should minus from withdraw txout value
+	} else {
+		// if not found a suitable utxo or combination, accumulate utxos by amount from large to small
+		sort.Slice(utxos, func(i, j int) bool {
+			return utxos[i].Amount > utxos[j].Amount
+		})
 
-		// recalculate the total target (withdraw amount + estimated fee)
-		totalTarget = withdrawAmount // + estimatedFee
+		// accumulate utxos by amount from large to small until totalTarget is met
+		for _, utxo := range utxos {
+			if totalSelectedAmount >= withdrawAmount {
+				break
+			}
+			selectedUTXOs = append(selectedUTXOs, utxo)
+			totalSelectedAmount += utxo.Amount
 
-		// limit max vin
-		if len(selectedUTXOs) >= maxVin {
-			break
+			// update transaction size and fee
+			utxoTypes = append(utxoTypes, utxo.ReceiverType)
+			txSize = types.TransactionSizeEstimate(len(selectedUTXOs), receiverTypes, withdrawTotal, utxoTypes)
+			estimatedFee = txSize * networkFee
+
+			// recalculate totalTarget (withdrawAmount + estimatedFee)
+			// totalTarget = withdrawAmount + estimatedFee // not used, fee should minus from withdraw txout value
+
+			// limit max vin
+			if len(selectedUTXOs) >= maxVin {
+				break
+			}
 		}
 	}
 
@@ -186,11 +268,11 @@ func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount
 		estimatedFee = txSize * networkFee
 
 		// recalculate the total target (withdraw amount + estimated fee)
-		totalTarget = withdrawAmount // + estimatedFee, fee should minus from withdraw txout value
+		// totalTarget = withdrawAmount + estimatedFee // not used, fee should minus from withdraw txout value
 	}
 
 	// after selecting, check if we have enough UTXO to cover the total target
-	if totalSelectedAmount < totalTarget {
+	if totalSelectedAmount < withdrawAmount {
 		return nil, 0, 0, 0, estimatedFee, fmt.Errorf("not enough utxos to satisfy the withdrawal amount and network fee, withdraw amount: %d, selected amount: %d, estimated fee: %d", withdrawAmount, totalSelectedAmount, estimatedFee)
 	}
 
@@ -216,6 +298,7 @@ func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount
 //	withdrawals - all withdrawals can start
 //	networkFee - network fee
 //	maxVout - maximum vout count
+//	immediateCount - immediate count to start withdrawals
 //	net - bitcoin network
 //
 // Returns:
@@ -223,9 +306,9 @@ func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount
 //	selectedWithdrawals - selected withdrawals
 //	minTxPrice - minimum transaction price
 //	error - error if any
-func SelectWithdrawals(withdrawals []*db.Withdraw, networkFee int64, maxVout int, net *chaincfg.Params) ([]*db.Withdraw, []string, int64, int64, error) {
+func SelectWithdrawals(withdrawals []*db.Withdraw, networkFee types.BtcNetworkFee, maxVout, immediateCount int, net *chaincfg.Params) ([]*db.Withdraw, []string, int64, int64, error) {
 	// if network fee is too high, do not perform withdrawal
-	if networkFee > int64(config.AppConfig.BTCMaxNetworkFee) {
+	if networkFee.FastestFee > uint64(config.AppConfig.BTCMaxNetworkFee) {
 		return nil, nil, 0, 0, fmt.Errorf("network fee too high, no withdrawals allowed")
 	}
 
@@ -234,83 +317,75 @@ func SelectWithdrawals(withdrawals []*db.Withdraw, networkFee int64, maxVout int
 		return withdrawals[i].TxPrice > withdrawals[j].TxPrice
 	})
 
-	// three groups
-	var group1 []*db.Withdraw
-	var group2 []*db.Withdraw
-	var group3 []*db.Withdraw
-	uNetworkFee := uint64(networkFee)
-
-	// iterate withdrawals and group by MaxTxFee
+	// group withdrawals based on TxPrice and network fee thresholds
+	groups := make(map[string][]*db.Withdraw)
 	for _, withdrawal := range withdrawals {
-		// skip dust withdrawals first
-		if withdrawal.Amount <= uint64(types.GetDustAmount(networkFee)) {
-			continue
-		}
-		// group1: TxPrice > 150 and TxPrice >= networkFee.FeePerByte
-		if withdrawal.TxPrice > 150 && withdrawal.TxPrice >= uNetworkFee {
-			group1 = append(group1, withdrawal)
-		} else if withdrawal.TxPrice > 50 && withdrawal.TxPrice <= 150 && withdrawal.TxPrice >= uNetworkFee {
-			// group2: 50 < MaxTxFee <= 150 and MaxTxFee >= networkFee.FeePerByte
-			group2 = append(group2, withdrawal)
-		} else if withdrawal.TxPrice <= 50 && withdrawal.TxPrice >= uNetworkFee {
-			// group3: MaxTxFee <= 50 and MaxTxFee >= networkFee
-			group3 = append(group3, withdrawal)
+		// determine dust threshold for each fee category and filter dust withdrawals
+		switch {
+		case withdrawal.TxPrice >= networkFee.FastestFee:
+			dustThreshold := uint64(types.GetDustAmount(int64(networkFee.FastestFee)))
+			if withdrawal.Amount > dustThreshold {
+				groups["group1"] = append(groups["group1"], withdrawal)
+			}
+		case withdrawal.TxPrice >= networkFee.HalfHourFee:
+			dustThreshold := uint64(types.GetDustAmount(int64(networkFee.HalfHourFee)))
+			if withdrawal.Amount > dustThreshold {
+				groups["group2"] = append(groups["group2"], withdrawal)
+			}
+		case withdrawal.TxPrice >= networkFee.HourFee:
+			dustThreshold := uint64(types.GetDustAmount(int64(networkFee.HourFee)))
+			if withdrawal.Amount > dustThreshold {
+				groups["group3"] = append(groups["group3"], withdrawal)
+			}
 		}
 	}
 
-	// group withdrawals and calculate the estimated fee
-	applyGroup := func(group []*db.Withdraw, multiplier float64) ([]*db.Withdraw, []string, int64, int64) {
-		if len(group) == 0 {
-			return nil, nil, 0, 0
-		}
-
-		// limit the number of withdrawals to maxVout
+	// apply group selection and condition check
+	waitTime1, waitTime2 := types.WithdrawalWaitTime(config.AppConfig.BTCNetworkType)
+	applyGroup := func(group []*db.Withdraw, groupFee uint64) ([]*db.Withdraw, []string, int64, int64) {
+		// sort by CreatedAt in ascending order and limit to maxVout
+		sort.Slice(group, func(i, j int) bool { return group[i].CreatedAt.Unix() < group[j].CreatedAt.Unix() })
 		if len(group) > maxVout {
 			group = group[:maxVout]
 		}
 
 		receiverTypes := make([]string, len(group))
-		withdrawAmount := uint64(0)
-		// calculate the minimum MaxTxFee in the group
-		groupMinPrice := group[0].TxPrice
+		withdrawAmount, minTxPrice := uint64(0), group[0].TxPrice
+
 		for i, withdrawal := range group {
-			if withdrawal.TxPrice < groupMinPrice {
-				groupMinPrice = withdrawal.TxPrice
+			if withdrawal.TxPrice < minTxPrice {
+				minTxPrice = withdrawal.TxPrice
 			}
 			withdrawAmount += withdrawal.Amount
 			receiverTypes[i], _ = types.GetAddressType(withdrawal.To, net)
 		}
 
-		// actual price is the minimum of networkFee * multiplier and the minimum MaxTxPrice in the group
-		estimatedPrice := int64(float64(networkFee) * multiplier)
-		actualPrice := int64(groupMinPrice)
-		if estimatedPrice < int64(actualPrice) {
-			actualPrice = estimatedPrice
+		// use group fee as actual fee
+		return group, receiverTypes, int64(withdrawAmount), int64(groupFee)
+	}
+
+	shouldProcess := func(selected []*db.Withdraw, immediateCount int) bool {
+		return len(selected) >= immediateCount ||
+			(time.Since(selected[0].CreatedAt) > waitTime1 && len(selected) >= immediateCount/3) ||
+			time.Since(selected[0].CreatedAt) > waitTime2
+	}
+
+	// Process each group in priority order
+	for _, g := range []struct {
+		key string
+		fee uint64
+	}{{"group1", networkFee.FastestFee}, {"group2", networkFee.HalfHourFee}, {"group3", networkFee.HourFee}} {
+		group := groups[g.key]
+		if len(group) > 0 {
+			selectedWithdrawals, receiverTypes, withdrawAmount, minTxPrice := applyGroup(group, g.fee)
+			if shouldProcess(selectedWithdrawals, immediateCount) {
+				return selectedWithdrawals, receiverTypes, withdrawAmount, minTxPrice, nil
+			}
 		}
-
-		return group, receiverTypes, int64(withdrawAmount), actualPrice
-	}
-
-	// process group1 (MaxTxFee > 150, fee: networkFee * 1.25 or min MaxTxFee in the group)
-	if len(group1) > 0 {
-		selectedWithdrawals, receiverTypes, withdrawAmount, minTxPrice := applyGroup(group1, 1.25)
-		return selectedWithdrawals, receiverTypes, withdrawAmount, minTxPrice, nil
-	}
-
-	// process group2 (50 < MaxTxFee <= 150, fee: networkFee * 1.1 or min MaxTxFee in the group)
-	if len(group2) > 0 {
-		selectedWithdrawals, receiverTypes, withdrawAmount, minTxPrice := applyGroup(group2, 1.1)
-		return selectedWithdrawals, receiverTypes, withdrawAmount, minTxPrice, nil
-	}
-
-	// process group3 (MaxTxFee <= 50, fee: networkFee)
-	if len(group3) > 0 {
-		selectedWithdrawals, receiverTypes, withdrawAmount, minTxPrice := applyGroup(group3, 1.0)
-		return selectedWithdrawals, receiverTypes, withdrawAmount, minTxPrice, nil
 	}
 
 	// no withdrawals found
-	return nil, nil, 0, 0, fmt.Errorf("no withdrawals found")
+	return nil, nil, 0, 0, fmt.Errorf("no withdrawals found that meet the conditions")
 }
 
 // CreateRawTransaction create raw transaction

@@ -54,11 +54,14 @@ func GetBTCNetwork(networkType string) *chaincfg.Params {
 func WithdrawalWaitTime(networkType string) (time.Duration, time.Duration) {
 	switch networkType {
 	case "regtest":
-		return 5 * time.Minute, 10 * time.Minute
+		return 2 * time.Minute, 4 * time.Minute
 	case "testnet3":
+		// testnet3 block speed is 10 minutes, so wait time is 10 minutes, 20 minutes
+		// TODO: restore after testnet upgrade
 		return 5 * time.Minute, 10 * time.Minute
 	default:
-		return 2 * time.Hour, 6 * time.Hour
+		// mainnet 10 minutes, 20 minutes
+		return 10 * time.Minute, 20 * time.Minute
 	}
 }
 

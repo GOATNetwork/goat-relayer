@@ -1,6 +1,9 @@
 package state
 
-import "github.com/goatnetwork/goat-relayer/internal/db"
+import (
+	"github.com/goatnetwork/goat-relayer/internal/db"
+	"github.com/goatnetwork/goat-relayer/internal/types"
+)
 
 // VoterState to manage voter-related states
 type Layer2State struct {
@@ -15,9 +18,9 @@ type Layer2State struct {
 type BtcHeadState struct {
 	Latest         db.BtcBlock
 	Syncing        bool
-	NetworkFee     uint64         // network fee in sat/vbyte
-	UnconfirmQueue []*db.BtcBlock // status in 'unconfirm', 'confirmed'
-	SigQueue       []*db.BtcBlock // status in 'signing', 'pending'
+	NetworkFee     types.BtcNetworkFee // network fee in sat/vbyte
+	UnconfirmQueue []*db.BtcBlock      // status in 'unconfirm', 'confirmed'
+	SigQueue       []*db.BtcBlock      // status in 'signing', 'pending'
 }
 
 // WalletState to manage withdrawal Queue and associated Vin/Vout

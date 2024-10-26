@@ -4,14 +4,19 @@ import (
 	"time"
 
 	"github.com/goatnetwork/goat-relayer/internal/db"
+	"github.com/goatnetwork/goat-relayer/internal/types"
 	"gorm.io/gorm"
 )
 
-func (s *State) UpdateBtcNetworkFee(fee uint64) {
+func (s *State) UpdateBtcNetworkFee(fastestFee uint64, halfHourFee uint64, hourFee uint64) {
 	s.btcHeadMu.Lock()
 	defer s.btcHeadMu.Unlock()
 
-	s.btcHeadState.NetworkFee = fee
+	s.btcHeadState.NetworkFee = types.BtcNetworkFee{
+		FastestFee:  fastestFee,
+		HalfHourFee: halfHourFee,
+		HourFee:     hourFee,
+	}
 }
 
 func (s *State) UpdateBtcSyncing(syncing bool) {

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/goatnetwork/goat-relayer/internal/db"
+	"github.com/goatnetwork/goat-relayer/internal/types"
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
@@ -183,6 +184,11 @@ func InitializeState(dbm *db.DatabaseManager) *State {
 			Latest:         latestBtcBlock,
 			UnconfirmQueue: unconfirmBtcQueue,
 			SigQueue:       sigBtcQueue,
+			NetworkFee: types.BtcNetworkFee{
+				FastestFee:  0,
+				HalfHourFee: 0,
+				HourFee:     0,
+			},
 		},
 		walletState: WalletState{
 			SendOrderQueue: sendOrderQueue,

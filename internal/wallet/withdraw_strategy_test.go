@@ -4,12 +4,14 @@ import (
 	"encoding/hex"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/types"
 	"github.com/goatnetwork/goat-relayer/internal/wallet"
@@ -85,16 +87,21 @@ func TestSelectOptimalUTXOs(t *testing.T) {
 
 // Test SelectWithdrawals function
 func TestSelectWithdrawals(t *testing.T) {
+	config.AppConfig.BTCMaxNetworkFee = 500
 	// mock Withdrawals for testing
 	withdrawals := []*db.Withdraw{
-		{Amount: 70000000, TxPrice: 300},
-		{Amount: 50000000, TxPrice: 200},
-		{Amount: 30000000, TxPrice: 100},
-		{Amount: 15000000, TxPrice: 50},
+		{Amount: 70000000, TxPrice: 300, CreatedAt: time.Now().Add(-time.Minute * 20)},
+		{Amount: 50000000, TxPrice: 200, CreatedAt: time.Now().Add(-time.Minute * 20)},
+		{Amount: 30000000, TxPrice: 100, CreatedAt: time.Now().Add(-time.Minute * 20)},
+		{Amount: 15000000, TxPrice: 50, CreatedAt: time.Now().Add(-time.Minute * 20)},
 	}
 
 	// valid withdrawal selection
-	selectedWithdrawals, receiverTypes, withdrawAmount, minTxFee, err := wallet.SelectWithdrawals(withdrawals, 100, 2, types.GetBTCNetwork("regtest"))
+	selectedWithdrawals, receiverTypes, withdrawAmount, minTxFee, err := wallet.SelectWithdrawals(withdrawals, types.BtcNetworkFee{
+		FastestFee:  100,
+		HalfHourFee: 50,
+		HourFee:     20,
+	}, 2, 150, types.GetBTCNetwork("regtest"))
 	t.Logf("SelectWithdrawals returns selectedWithdrawals len %d, receiverTypes %v, withdrawAmount %d, minTxFee %d, err %v", len(selectedWithdrawals), receiverTypes, withdrawAmount, minTxFee, err)
 	assert.NoError(t, err)
 	assert.NotNil(t, selectedWithdrawals)
@@ -102,7 +109,11 @@ func TestSelectWithdrawals(t *testing.T) {
 	assert.Greater(t, minTxFee, int64(0))
 
 	// when network fee is too high
-	_, _, _, _, err = wallet.SelectWithdrawals(withdrawals, 600, 2, types.GetBTCNetwork("regtest"))
+	_, _, _, _, err = wallet.SelectWithdrawals(withdrawals, types.BtcNetworkFee{
+		FastestFee:  600,
+		HalfHourFee: 300,
+		HourFee:     100,
+	}, 2, 150, types.GetBTCNetwork("regtest"))
 	assert.Error(t, err)
 	assert.EqualError(t, err, "network fee too high, no withdrawals allowed")
 }
