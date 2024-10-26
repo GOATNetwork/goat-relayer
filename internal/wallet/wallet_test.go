@@ -12,10 +12,12 @@ import (
 )
 
 func TestBTCClient(t *testing.T) {
+	t.Skip("This is for verifying the BTC rpc node, skipping the test for prod")
+
 	tempDir := t.TempDir()
 	t.Setenv("DB_DIR", tempDir)
 	t.Setenv("L2_PRIVATE_KEY", "e9ccd0ec6bb77c263dc46c0f81962c0b378a67befe089e90ef81e96a4a4c5bc5")
-	t.Setenv("BTC_RPC", "go.getblock.io/a71aa42f3f674e99bb0c598803e78eff")
+	t.Setenv("BTC_RPC", "127.0.0.1:18332")
 	t.Setenv("BTC_RPC_USER", "goat")
 	t.Setenv("BTC_RPC_PASS", "goat")
 	t.Setenv("BTC_NETWORK_TYPE", "testnet3")
@@ -104,9 +106,4 @@ func TestBTCClient(t *testing.T) {
 		}
 	}
 	t.Logf("Block: %+v", block)
-
-	// Print RPC configuration information for debugging
-	t.Logf("BTC_RPC: %s", config.AppConfig.BTCRPC)
-	t.Logf("BTC_USER: %s", config.AppConfig.BTCRPC_USER)
-	t.Logf("BTC_PASS: %s", config.AppConfig.BTCRPC_PASS)
 }
