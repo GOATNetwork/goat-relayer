@@ -1,8 +1,6 @@
 package wallet
 
 import (
-	"bytes"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"sort"
@@ -475,16 +473,6 @@ func SignTransactionByPrivKey(privKey *btcec.PrivateKey, tx *wire.MsgTx, utxos [
 				return err
 			}
 
-			// Ensure the hash of the subScript matches the hash in the scriptPubKey
-			subScriptHash := sha256.Sum256(utxo.SubScript)
-			expectedPkScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_0).AddData(subScriptHash[:]).Script()
-			if err != nil {
-				return err
-			}
-			if !bytes.Equal(pkScript, expectedPkScript) {
-				return fmt.Errorf("subScript hash does not match the scriptPubKey of the UTXO")
-			}
-
 			// Create the inputFetcher with the correct scriptPubKey and amount
 			inputFetcher := txscript.NewCannedPrevOutputFetcher(pkScript, utxo.Amount)
 
@@ -627,43 +615,18 @@ func ApplyFireblocksSignaturesToTx(tx *wire.MsgTx, utxos []*db.Utxo, fbSignedMes
 				return fmt.Errorf("error decoding public key: %v", err)
 			}
 
-			// Build witness (sig + pubkey)
-			witness := wire.TxWitness{
+			// Apply the witness to the transaction input
+			tx.TxIn[i].Witness = wire.TxWitness{
 				derSignature, // Signature
 				pubKeyBytes,  // Public key
 			}
 
-			// Apply the witness to the transaction input
-			tx.TxIn[i].Witness = witness
-
 		// P2WSH
 		case types.WALLET_TYPE_P2WSH:
-			// Decode the subscript and public key
-			addr, err := btcutil.DecodeAddress(utxo.Receiver, net)
-			if err != nil {
-				return err
-			}
-
-			// Get the scriptPubKey from the address
-			pkScript, err := txscript.PayToAddrScript(addr)
-			if err != nil {
-				return err
-			}
-
-			// Ensure the hash of the subScript matches the hash in the scriptPubKey
-			subScriptHash := sha256.Sum256(utxo.SubScript)
-			expectedPkScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_0).AddData(subScriptHash[:]).Script()
-			if err != nil {
-				return err
-			}
-			if !bytes.Equal(pkScript, expectedPkScript) {
-				return fmt.Errorf("subScript hash does not match the scriptPubKey of the UTXO")
-			}
-
-			// Set the witness stack
+			// Apply the witness to the transaction input
 			tx.TxIn[i].Witness = wire.TxWitness{
-				derSignature,   // signature
-				utxo.SubScript, // subScript (redeem script)
+				derSignature,   // Signature
+				utxo.SubScript, // SubScript (redeem script)
 			}
 
 		default:
