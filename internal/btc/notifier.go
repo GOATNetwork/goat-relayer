@@ -135,7 +135,11 @@ func (bn *BTCNotifier) checkConfirmations(ctx context.Context) {
 			}
 
 			bn.poller.state.UpdateBtcSyncing(true)
-			bn.updateNetworkFee()
+			err = bn.updateNetworkFee()
+			if err != nil {
+				log.Errorf("Failed to update network fee at best height: %d, error: %v", bestHeight, err)
+				break
+			}
 
 			newSyncHeight := syncConfirmedHeight
 			log.Infof("BTC sync started: best height=%d, from=%d, to=%d", bestHeight, syncConfirmedHeight+1, confirmedHeight)

@@ -3,9 +3,11 @@ package btc
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/goatnetwork/goat-relayer/internal/config"
@@ -46,7 +48,16 @@ func (f *MemPoolFeeFetcher) GetNetworkFee() (*types.BtcNetworkFee, error) {
 		url = "https://mempool.space/testnet/api/v1/fees/recommended"
 	}
 	if len(url) == 0 {
-		return getFeeRateFromBtcNode(f.btcClient)
+		fee, err := getFeeRateFromBtcNode(f.btcClient)
+		if err != nil {
+			log.Warnf("Failed to get fee rate from btc node: %v, set to default for regtest network fee", err)
+			return &types.BtcNetworkFee{
+				FastestFee:  3,
+				HalfHourFee: 3,
+				HourFee:     3,
+			}, nil
+		}
+		return fee, nil
 	}
 	fee, err := f.getFeeRate(url)
 	if err != nil {
@@ -77,21 +88,21 @@ func (f *MemPoolFeeFetcher) getFeeRate(url string) (*types.BtcNetworkFee, error)
 
 // get fee rate from btc node
 func getFeeRateFromBtcNode(btcClient *rpcclient.Client) (*types.BtcNetworkFee, error) {
-	feeEstimate, err := btcClient.EstimateSmartFee(1, nil)
+	feeEstimate, err := btcClient.EstimateSmartFee(1, &btcjson.EstimateModeConservative)
 	if err != nil || feeEstimate == nil || feeEstimate.FeeRate == nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to estimate smart fee 1: %v", err)
 	}
 	fastestFee := uint64((*feeEstimate.FeeRate * 1e8) / 1000)
 
-	feeEstimate, err = btcClient.EstimateSmartFee(3, nil)
+	feeEstimate, err = btcClient.EstimateSmartFee(3, &btcjson.EstimateModeConservative)
 	if err != nil || feeEstimate == nil || feeEstimate.FeeRate == nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to estimate smart fee 3: %v", err)
 	}
 	halfHourFee := uint64((*feeEstimate.FeeRate * 1e8) / 1000)
 
-	feeEstimate, err = btcClient.EstimateSmartFee(6, nil)
+	feeEstimate, err = btcClient.EstimateSmartFee(6, &btcjson.EstimateModeConservative)
 	if err != nil || feeEstimate == nil || feeEstimate.FeeRate == nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to estimate smart fee 6: %v", err)
 	}
 	hourFee := uint64((*feeEstimate.FeeRate * 1e8) / 1000)
 

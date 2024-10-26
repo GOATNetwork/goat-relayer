@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"sort"
@@ -180,24 +181,24 @@ func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount
 			totalSelectedAmount = utxos[i].Amount
 			utxoTypes = []string{utxos[i].ReceiverType}
 			found = true
-			break
-		}
-
-		// if two utxos amount is greater than or equal to withdrawAmount, select them
-		for j := i + 1; j < len(utxos); j++ {
-			if utxos[i].Amount+utxos[j].Amount >= withdrawAmount {
-				selectedUTXOs = []*db.Utxo{utxos[i], utxos[j]}
-				totalSelectedAmount = utxos[i].Amount + utxos[j].Amount
-				utxoTypes = []string{utxos[i].ReceiverType, utxos[j].ReceiverType}
-				found = true
-				break
-			}
-		}
-		if found {
+			log.Debugf("SelectOptimalUTXOs found single utxo matched: %s-%d, amount: %d", utxos[i].Txid, utxos[i].OutIndex, utxos[i].Amount)
 			break
 		}
 	}
-
+	// try to find two utxos combination that just meets withdrawAmount
+	if !found {
+		// if two utxos amount is greater than or equal to withdrawAmount, select them
+		for i := 1; i < len(utxos); i++ {
+			if utxos[i-1].Amount+utxos[i].Amount >= withdrawAmount {
+				selectedUTXOs = []*db.Utxo{utxos[i-1], utxos[i]}
+				totalSelectedAmount = utxos[i-1].Amount + utxos[i].Amount
+				utxoTypes = []string{utxos[i-1].ReceiverType, utxos[i].ReceiverType}
+				found = true
+				log.Debugf("SelectOptimalUTXOs found two utxos matched: %s-%d, %s-%d, amount: %d", utxos[i-1].Txid, utxos[i-1].OutIndex, utxos[i].Txid, utxos[i].OutIndex, utxos[i-1].Amount+utxos[i].Amount)
+				break
+			}
+		}
+	}
 	// if found a suitable utxo or combination, calculate transaction size and fee
 	if found {
 		txSize = types.TransactionSizeEstimate(len(selectedUTXOs), receiverTypes, withdrawTotal, utxoTypes)
@@ -536,20 +537,16 @@ func SignTransactionByPrivKey(privKey *btcec.PrivateKey, tx *wire.MsgTx, utxos [
 
 		// P2WSH
 		case types.WALLET_TYPE_P2WSH:
-			// Decode the address from the UTXO receiver
-			addr, err := btcutil.DecodeAddress(utxo.Receiver, net)
-			if err != nil {
-				return err
-			}
-
-			// Get the scriptPubKey from the address
-			pkScript, err := txscript.PayToAddrScript(addr)
+			// P2WSH needs subScript
+			// assume subScript is known
+			redeemScriptHash := sha256.Sum256(utxo.SubScript)
+			prevPkScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_0).AddData(redeemScriptHash[:]).Script()
 			if err != nil {
 				return err
 			}
 
 			// Create the inputFetcher with the correct scriptPubKey and amount
-			inputFetcher := txscript.NewCannedPrevOutputFetcher(pkScript, utxo.Amount)
+			inputFetcher := txscript.NewCannedPrevOutputFetcher(prevPkScript, utxo.Amount)
 
 			// Generate the witness signature using the subScript
 			witnessSig, err := txscript.RawTxInWitnessSignature(tx, txscript.NewTxSigHashes(tx, inputFetcher), i, utxo.Amount, utxo.SubScript, txscript.SigHashAll, privKey)
