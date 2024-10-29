@@ -108,7 +108,7 @@ func (p *FireblocksProposal) request(method, path string, body interface{}) ([]b
 		}
 	}
 
-	rsaPrivKey, err := types.ParseRSAPrivateKeyFromPEM(config.AppConfig.FireblocksSecret)
+	rsaPrivKey, err := types.ParseRSAPrivateKeyFromPEM(config.AppConfig.FireblocksPrivKey)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing RSA private key: %v", err)
 	}
@@ -127,7 +127,7 @@ func (p *FireblocksProposal) request(method, path string, body interface{}) ([]b
 		"uri":      path,
 		"nonce":    uuid.New().String(),
 		"iat":      time.Now().Unix(),
-		"exp":      time.Now().Add(time.Minute * 1).Unix(),
+		"exp":      time.Now().Add(time.Minute * 5).Unix(),
 		"sub":      config.AppConfig.FireblocksApiKey,
 		"bodyHash": hex.EncodeToString(reqBodyHash),
 	})

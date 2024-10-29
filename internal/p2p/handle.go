@@ -99,8 +99,6 @@ func (libp2p *LibP2PService) handlePubSubMessages(ctx context.Context, sub *pubs
 				libp2p.state.EventBus.Publish(state.SigReceive, convertMsgData(receivedMsg))
 			case MessageTypeDepositReceive:
 				libp2p.state.EventBus.Publish(state.DepositReceive, convertMsgData(receivedMsg))
-			case MessageTypeSendOrderBroadcasted:
-				libp2p.state.EventBus.Publish(state.SendOrderBroadcasted, convertMsgData(receivedMsg))
 			default:
 				log.Warnf("Unknown message type: %d", receivedMsg.MessageType)
 			}
@@ -155,12 +153,6 @@ func convertMsgData(msg Message) interface{} {
 	if msg.DataType == "MsgSignSendOrder" {
 		jsonBytes, _ := json.Marshal(msg.Data)
 		var rawData types.MsgSignSendOrder
-		_ = json.Unmarshal(jsonBytes, &rawData)
-		return rawData
-	}
-	if msg.DataType == "MsgSendOrderBroadcasted" {
-		jsonBytes, _ := json.Marshal(msg.Data)
-		var rawData types.MsgSendOrderBroadcasted
 		_ = json.Unmarshal(jsonBytes, &rawData)
 		return rawData
 	}

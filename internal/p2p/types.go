@@ -21,5 +21,4 @@ const (
 	MessageTypeSigResp
 	MessageTypeDepositReceive
 	MessageTypeWithdrawFinalize
-	MessageTypeSendOrderBroadcasted
 )

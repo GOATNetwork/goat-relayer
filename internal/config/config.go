@@ -31,7 +31,6 @@ func InitConfig() {
 	viper.SetDefault("BTC_CONFIRMATIONS", 6)
 	viper.SetDefault("BTC_START_HEIGHT", 0)
 	viper.SetDefault("BTC_NETWORK_TYPE", "")
-	viper.SetDefault("BTC_MAX_NETWORK_FEE", 500)
 	viper.SetDefault("L2_RPC", "http://localhost:8545")
 	viper.SetDefault("L2_JWT_SECRET", "")
 	viper.SetDefault("L2_PRIVATE_KEY", "")
@@ -47,9 +46,8 @@ func InitConfig() {
 	viper.SetDefault("DB_DIR", "/app/db")
 	viper.SetDefault("VOTING_CONTRACT", "")
 	viper.SetDefault("WITHDRAW_CONTRACT", "")
-	viper.SetDefault("FIREBLOCKS_SECRET", "")
-	viper.SetDefault("FIREBLOCKS_CALLBACK_PRIVATE", "")
-	viper.SetDefault("FIREBLOCKS_CALLBACK_PUBLIC", "")
+	viper.SetDefault("FIREBLOCKS_PUBKEY", "")
+	viper.SetDefault("FIREBLOCKS_PRIVKEY", "")
 	viper.SetDefault("FIREBLOCKS_API_KEY", "")
 	viper.SetDefault("GOATCHAIN_RPC_URI", "tcp://127.0.0.1:26657")
 	viper.SetDefault("GOATCHAIN_GRPC_URI", "127.0.0.1:9090")
@@ -59,6 +57,7 @@ func InitConfig() {
 	viper.SetDefault("RELAYER_PRIVATE_KEY", "")
 	viper.SetDefault("RELAYER_BLS_SK", "")
 	viper.SetDefault("BLS_SIG_TIMEOUT", "300s")
+	viper.SetDefault("MIN_DEPOSIT_AMOUNT", 1000000)
 
 	logLevel, err := logrus.ParseLevel(strings.ToLower(viper.GetString("LOG_LEVEL")))
 	if err != nil {
@@ -91,7 +90,6 @@ func InitConfig() {
 		BTCStartHeight:         viper.GetInt("BTC_START_HEIGHT"),
 		BTCConfirmations:       viper.GetInt("BTC_CONFIRMATIONS"),
 		BTCNetworkType:         viper.GetString("BTC_NETWORK_TYPE"),
-		BTCMaxNetworkFee:       viper.GetInt("BTC_MAX_NETWORK_FEE"),
 		L2RPC:                  viper.GetString("L2_RPC"),
 		L2JwtSecret:            viper.GetString("L2_JWT_SECRET"),
 		L2PrivateKey:           l2PrivateKey,
@@ -101,9 +99,8 @@ func InitConfig() {
 		L2MaxBlockRange:        viper.GetInt("L2_MAX_BLOCK_RANGE"),
 		L2RequestInterval:      viper.GetDuration("L2_REQUEST_INTERVAL"),
 		L2SubmitRetry:          viper.GetInt("L2_SUBMIT_RETRY"),
-		FireblocksSecret:       viper.GetString("FIREBLOCKS_SECRET"),
-		FireblocksCallbackPriv: viper.GetString("FIREBLOCKS_CALLBACK_PRIVATE"),
-		FireblocksCallbackPub:  viper.GetString("FIREBLOCKS_CALLBACK_PUBLIC"),
+		FireblocksPubKey:       viper.GetString("FIREBLOCKS_PUBKEY"),
+		FireblocksPrivKey:      viper.GetString("FIREBLOCKS_PRIVKEY"),
 		FireblocksApiKey:       viper.GetString("FIREBLOCKS_API_KEY"),
 		EnableWebhook:          viper.GetBool("ENABLE_WEBHOOK"),
 		EnableRelayer:          viper.GetBool("ENABLE_RELAYER"),
@@ -120,6 +117,7 @@ func InitConfig() {
 		RelayerAddress:         relayerAddress,
 		RelayerBlsSk:           viper.GetString("RELAYER_BLS_SK"),
 		BlsSigTimeout:          viper.GetDuration("BLS_SIG_TIMEOUT"),
+		MinDepositAmount:       viper.GetInt64("MIN_DEPOSIT_AMOUNT"),
 	}
 
 	if (AppConfig.BTCNetworkType == "" || AppConfig.BTCNetworkType == "mainnet") && AppConfig.BTCConfirmations < 6 {
@@ -146,7 +144,6 @@ type Config struct {
 	BTCStartHeight         int
 	BTCConfirmations       int
 	BTCNetworkType         string
-	BTCMaxNetworkFee       int
 	L2RPC                  string
 	L2JwtSecret            string
 	L2PrivateKey           *ecdsa.PrivateKey
@@ -156,9 +153,8 @@ type Config struct {
 	L2MaxBlockRange        int
 	L2RequestInterval      time.Duration
 	L2SubmitRetry          int
-	FireblocksSecret       string
-	FireblocksCallbackPriv string
-	FireblocksCallbackPub  string
+	FireblocksPubKey       string
+	FireblocksPrivKey      string
 	FireblocksApiKey       string
 	EnableWebhook          bool
 	EnableRelayer          bool
@@ -175,4 +171,5 @@ type Config struct {
 	RelayerAddress         string
 	RelayerBlsSk           string
 	BlsSigTimeout          time.Duration
+	MinDepositAmount       int64
 }

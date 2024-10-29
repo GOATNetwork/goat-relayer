@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 
@@ -213,8 +212,7 @@ func (b *BaseDepositProcessor) initDepositSig() {
 	}
 
 	// 4. spv verify
-	verifiedBlockHashes := make([]string, 0)
-	verifiedDeposits := make([]db.Deposit, 0)
+	blockHashes := make([]string, 0)
 	for _, deposit := range deposits {
 		txhash, err := chainhash.NewHashFromStr(deposit.TxHash)
 		if err != nil {
@@ -223,14 +221,11 @@ func (b *BaseDepositProcessor) initDepositSig() {
 		}
 		txIndex := uint32(deposit.TxIndex)
 		if bitcointypes.VerifyMerkelProof(txhash[:], deposit.MerkleRoot, deposit.Proof, txIndex) {
-			if !slices.Contains(verifiedBlockHashes, deposit.BlockHash) {
-				verifiedBlockHashes = append(verifiedBlockHashes, deposit.BlockHash)
-			}
-			verifiedDeposits = append(verifiedDeposits, *deposit)
+			blockHashes = append(blockHashes, deposit.BlockHash)
 		}
 	}
 
-	if len(verifiedBlockHashes) == 0 {
+	if len(blockHashes) == 0 {
 		log.Debug("BaseDepositProcessor initDepositSig ignore, no valid block hash")
 		return
 	}
@@ -246,7 +241,7 @@ func (b *BaseDepositProcessor) initDepositSig() {
 	}
 
 	// 6. get block headers
-	blockData, err := b.state.QueryBtcBlockDataByBlockHashes(verifiedBlockHashes)
+	blockData, err := b.state.QueryBtcBlockDataByBlockHashes(blockHashes)
 	if err != nil {
 		log.Errorf("QueryBtcBlockDataByBlockHashes error: %v", err)
 		return
@@ -264,42 +259,37 @@ func (b *BaseDepositProcessor) initDepositSig() {
 	}
 
 	requestId := fmt.Sprintf("DEPOSIT:%s:%s", config.AppConfig.RelayerAddress, deposits[0].TxHash)
-	msgDepositTXs := make([]types.DepositTX, len(verifiedDeposits))
-	for i, verifiedDeposit := range verifiedDeposits {
-		txHash, err := chainhash.NewHashFromStr(verifiedDeposit.TxHash)
+	msgDepositTXs := make([]types.DepositTX, len(deposits))
+	for i, deposit := range deposits {
+		txHash, err := chainhash.NewHashFromStr(deposit.TxHash)
 		if err != nil {
 			log.Errorf("NewHashFromStr err: %v", err)
-			continue
+			return
 		}
-		evmAddr, err := hex.DecodeString(strings.TrimPrefix(verifiedDeposit.EvmAddr, "0x"))
+		evmAddr, err := hex.DecodeString(strings.TrimPrefix(deposit.EvmAddr, "0x"))
 		if err != nil {
 			log.Errorf("DecodeString err: %v", err)
-			continue
+			return
 		}
-		rawTx, err := hex.DecodeString(verifiedDeposit.RawTx)
+		rawTx, err := hex.DecodeString(deposit.RawTx)
 		if err != nil {
 			log.Errorf("DecodeString err: %v", err)
-			continue
+			return
 		}
-		tx, err := types.DeserializeTransaction(rawTx)
+		noWitnessTx, err := types.SerializeNoWitnessTx(rawTx)
 		if err != nil {
-			log.Errorf("DeserializeTransaction err: %v", err)
-			continue
-		}
-		noWitnessTx, err := types.SerializeTransactionNoWitness(tx)
-		if err != nil {
-			log.Errorf("SerializeTransactionNoWitness err: %v", err)
-			continue
+			log.Errorf("SerializeNoWitnessTx err: %v", err)
+			return
 		}
 		msgDepositTXs[i] = types.DepositTX{
-			Version:           verifiedDeposit.SignVersion,
-			BlockNumber:       verifiedDeposit.BlockHeight,
+			Version:           deposit.SignVersion,
+			BlockNumber:       deposit.BlockHeight,
 			TxHash:            txHash.CloneBytes(),
-			TxIndex:           uint32(verifiedDeposit.TxIndex),
+			TxIndex:           uint32(deposit.TxIndex),
 			NoWitnessTx:       noWitnessTx,
-			MerkleRoot:        verifiedDeposit.MerkleRoot,
-			OutputIndex:       verifiedDeposit.OutputIndex,
-			IntermediateProof: verifiedDeposit.Proof,
+			MerkleRoot:        deposit.MerkleRoot,
+			OutputIndex:       deposit.OutputIndex,
+			IntermediateProof: deposit.Proof,
 			EvmAddress:        evmAddr,
 		}
 	}

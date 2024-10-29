@@ -160,7 +160,7 @@ func TestCreateRawTransaction(t *testing.T) {
 }
 
 // Test SignTransactionByPrivKey function
-func TestSpentP2wpkh(t *testing.T) {
+func TestSignTransactionByPrivKey(t *testing.T) {
 	privKeyHex := "e9ccd0ec6bb77c263dc46c0f81962c0b378a67befe089e90ef81e96a4a4c5bc5"
 	privKeyBytes, err := hex.DecodeString(privKeyHex)
 	require.NoError(t, err)
@@ -187,45 +187,6 @@ func TestSpentP2wpkh(t *testing.T) {
 	// sign transaction
 	err = wallet.SignTransactionByPrivKey(privKey, tx, []*db.Utxo{utxo1, utxo2}, &chaincfg.RegressionNetParams)
 	require.NoError(t, err)
-}
-
-func TestSpentP2wsh(t *testing.T) {
-	privKeyHex := "e9ccd0ec6bb77c263dc46c0f81962c0b378a67befe089e90ef81e96a4a4c5bc5"
-	privKeyBytes, err := hex.DecodeString(privKeyHex)
-	require.NoError(t, err)
-	privKey, _ := btcec.PrivKeyFromBytes(privKeyBytes)
-
-	noWitnessHex := "01000000014add7aad09a9584b477124474ff29e81b00fda7f43176278e4028e7dac7e74a20000000000ffffffff02c84b000000000000220020adee3cac019d80f80c5cbb368948f89bb90b93e01cb83b30b5f69b3f98fdebd5c84b000000000000160014d210b97931bebefa754ade28ead2c70bee9f1f2700000000"
-	noWitnessBytes, err := hex.DecodeString(noWitnessHex)
-	require.NoError(t, err)
-
-	evmAddress := "29cF29d4b2CD6Db07f6db43243e8E43fE3DC468e"
-	evmAddressBytes, err := hex.DecodeString(evmAddress)
-	require.NoError(t, err)
-
-	tx, err := types.DeserializeTransaction(noWitnessBytes)
-	require.NoError(t, err)
-
-	subScript, err := txscript.NewScriptBuilder().
-		AddData(evmAddressBytes).
-		AddOp(txscript.OP_DROP).
-		AddData(privKey.PubKey().SerializeCompressed()).
-		AddOp(txscript.OP_CHECKSIG).Script()
-	require.NoError(t, err)
-
-	utxo := &db.Utxo{
-		ReceiverType: "P2WSH",
-		Receiver:     "tb1q4hhretqpnkq0srzuhvmgjj8cnwushylqrjurkv9476dnlx8aa02s8r565l",
-		SubScript:    subScript,
-		Amount:       100000,
-	}
-
-	// sign transaction
-	err = wallet.SignTransactionByPrivKey(privKey, tx, []*db.Utxo{utxo}, &chaincfg.TestNet3Params)
-	require.NoError(t, err)
-	txBytes, err := types.SerializeTransaction(tx)
-	assert.NoError(t, err)
-	t.Logf("txBytes: %s", hex.EncodeToString(txBytes))
 }
 
 // Test GenerateRawMeessageToFireblocks function

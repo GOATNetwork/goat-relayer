@@ -1,10 +1,6 @@
 package http
 
-import (
-	"encoding/json"
-
-	"github.com/goatnetwork/goat-relayer/internal/types"
-)
+import "encoding/json"
 
 // FireblocksWebhookRequest
 type FireblocksWebhookRequest struct {
@@ -12,11 +8,6 @@ type FireblocksWebhookRequest struct {
 	TenantId  string          `json:"tenantId"`
 	Timestamp int64           `json:"timestamp"`
 	Data      json.RawMessage `json:"data"`
-}
-
-type FireblocksBaseResponse struct {
-	Code    int32  `json:"code"`
-	Message string `json:"message"`
 }
 
 // SUBMITTED PENDING_AML_SCREENING PENDING_ENRICHMENT PENDING_AUTHORIZATION QUEUED PENDING_SIGNATURE
@@ -62,12 +53,12 @@ type TransactionDetails struct {
 	AmountUSD                     float64                  `json:"amountUSD,omitempty"`
 	ServiceFee                    float64                  `json:"serviceFee,omitempty"`
 	NetworkFee                    float64                  `json:"networkFee,omitempty"`
-	SignedMessages                []types.FbSignedMessage  `json:"signedMessages,omitempty"`
 
 	// NetworkRecords               []NetworkRecord               `json:"networkRecords,omitempty"`
 	// AuthorizationInfo            AuthorizationInfo             `json:"authorizationInfo"`
 	// AmlScreeningResult           AmlScreeningResult            `json:"amlScreeningResult"`
 	// ExtraParameters              TransactionExtraParameters    `json:"extraParameters"`
+	// SignedMessages               []SignedMessage               `json:"signedMessages,omitempty"`
 	// RewardsInfo                  RewardsInfo                   `json:"rewardsInfo"`
 }
 
@@ -135,8 +126,6 @@ type FbCreateTransactionRequest struct {
 }
 
 type FbCreateTransactionResponse struct {
-	FireblocksBaseResponse
-
 	ID             string           `json:"id"`
 	Status         FbCTRStatus      `json:"status"`
 	SystemMessages FbSystemMessages `json:"systemMessages"`

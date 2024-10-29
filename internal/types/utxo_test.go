@@ -12,10 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var (
-	TEST_GOAT_MAGIC_BYTES = []byte{0x47, 0x54, 0x54, 0x30} // "GTT0"
-)
-
 func TestIsUtxoGoatDepositV1WithRawTx(t *testing.T) {
 	// Decode the provided raw transaction
 	rawTx := "020000000001013b16081931db7633dde8e0475385e607de9d8f3b372a219115179858787517a30200000000fdffffff0380969800000000001600149759ed6aae6ade43ae6628a943a39974cd21c5df00000000000000001a6a184754543070997970c51812dc3a010c7d01b50e0d17dc79c8ca649b1c00000000160014059ce0647de86cf966dfa4656a08530eb8f26772024730440220183ac1ff33c5ad358069ec79a030c3329078d02d77f3ae19d0226810bad74d6d02203c61ba76f590380cf61b4cfc188a0de718c801b4eb24d58dbbf9ad928879449901210361e82e71277ea205814b1cb69777abe5fc417c03d4d39829cefb8f92da08b1fc00000000"
@@ -54,8 +50,7 @@ func TestIsUtxoGoatDepositV1WithRawTx(t *testing.T) {
 	tssAddress := []btcutil.Address{p2pkhAddress, p2wpkhAddress}
 
 	// Test the transaction using IsUtxoGoatDepositV1
-	isDepositV1, evmAddress, _ := IsUtxoGoatDepositV1(tx, tssAddress, network, 0, TEST_GOAT_MAGIC_BYTES)
-
+	isDepositV1, evmAddress, _ := IsUtxoGoatDepositV1(tx, tssAddress, network)
 	if !isDepositV1 {
 		t.Errorf("Expected transaction to be a valid GOAT deposit, got invalid")
 	}

@@ -1,18 +1,17 @@
 package wallet
 
 import (
-	"encoding/hex"
+	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"sort"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/types"
 	log "github.com/sirupsen/logrus"
@@ -35,7 +34,7 @@ import (
 //	finalAmount - final amount after consolidation, after deducting the network fee
 //	error - error if any
 func ConsolidateSmallUTXOs(utxos []*db.Utxo, networkFee, threshold int64, maxVin, trigerNum int) ([]*db.Utxo, int64, int64, error) {
-	if networkFee > int64(config.AppConfig.BTCMaxNetworkFee-300) {
+	if networkFee > 200 {
 		return nil, 0, 0, fmt.Errorf("network fee is too high, cannot consolidate")
 	}
 	if trigerNum < 10 {
@@ -223,7 +222,7 @@ func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount
 //	error - error if any
 func SelectWithdrawals(withdrawals []*db.Withdraw, networkFee int64, maxVout int, net *chaincfg.Params) ([]*db.Withdraw, []string, int64, int64, error) {
 	// if network fee is too high, do not perform withdrawal
-	if networkFee > int64(config.AppConfig.BTCMaxNetworkFee) {
+	if networkFee > 500 {
 		return nil, nil, 0, 0, fmt.Errorf("network fee too high, no withdrawals allowed")
 	}
 
@@ -473,6 +472,16 @@ func SignTransactionByPrivKey(privKey *btcec.PrivateKey, tx *wire.MsgTx, utxos [
 				return err
 			}
 
+			// Ensure the hash of the subScript matches the hash in the scriptPubKey
+			subScriptHash := sha256.Sum256(utxo.SubScript)
+			expectedPkScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_0).AddData(subScriptHash[:]).Script()
+			if err != nil {
+				return err
+			}
+			if !bytes.Equal(pkScript, expectedPkScript) {
+				return fmt.Errorf("subScript hash does not match the scriptPubKey of the UTXO")
+			}
+
 			// Create the inputFetcher with the correct scriptPubKey and amount
 			inputFetcher := txscript.NewCannedPrevOutputFetcher(pkScript, utxo.Amount)
 
@@ -570,96 +579,4 @@ func GenerateRawMeessageToFireblocks(tx *wire.MsgTx, utxos []*db.Utxo, net *chai
 	}
 
 	return hashes, nil
-}
-
-func ApplyFireblocksSignaturesToTx(tx *wire.MsgTx, utxos []*db.Utxo, fbSignedMessages []types.FbSignedMessage, net *chaincfg.Params) error {
-	if len(utxos) != len(fbSignedMessages) {
-		return fmt.Errorf("number of UTXOs and signed messages do not match")
-	}
-
-	for i, utxo := range utxos {
-		signedMessage := fbSignedMessages[i]
-
-		// Convert the Fireblocks signature to DER format
-		derSignature, err := convertToDERSignature(signedMessage.Signature)
-		if err != nil {
-			return fmt.Errorf("error converting Fireblocks signature to DER: %v", err)
-		}
-
-		switch utxo.ReceiverType {
-		// P2PKH
-		case types.WALLET_TYPE_P2PKH:
-			// Decode the public key
-			pubKeyBytes, err := hex.DecodeString(signedMessage.PublicKey)
-			if err != nil {
-				return fmt.Errorf("error decoding public key: %v", err)
-			}
-
-			// Build signature script (sig + pubkey)
-			sigScript, err := txscript.NewScriptBuilder().
-				AddData(derSignature).
-				AddData(pubKeyBytes).
-				Script()
-			if err != nil {
-				return fmt.Errorf("error building signature script: %v", err)
-			}
-
-			// Apply the signature script to the transaction input
-			tx.TxIn[i].SignatureScript = sigScript
-
-		// P2WPKH
-		case types.WALLET_TYPE_P2WPKH:
-			// Decode the public key
-			pubKeyBytes, err := hex.DecodeString(signedMessage.PublicKey)
-			if err != nil {
-				return fmt.Errorf("error decoding public key: %v", err)
-			}
-
-			// Apply the witness to the transaction input
-			tx.TxIn[i].Witness = wire.TxWitness{
-				derSignature, // Signature
-				pubKeyBytes,  // Public key
-			}
-
-		// P2WSH
-		case types.WALLET_TYPE_P2WSH:
-			// Apply the witness to the transaction input
-			tx.TxIn[i].Witness = wire.TxWitness{
-				derSignature,   // Signature
-				utxo.SubScript, // SubScript (redeem script)
-			}
-
-		default:
-			return fmt.Errorf("unknown UTXO type: %s", utxo.ReceiverType)
-		}
-	}
-
-	return nil
-}
-
-// Convert FbSignature to DER encoded signature with SIGHASH_ALL
-func convertToDERSignature(fbSig types.FbSignature) ([]byte, error) {
-	rBytes, err := hex.DecodeString(fbSig.R)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding R: %v", err)
-	}
-
-	sBytes, err := hex.DecodeString(fbSig.S)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding S: %v", err)
-	}
-
-	// Convert R and S into btcec.ModNScalar
-	var rMod, sMod btcec.ModNScalar
-	rMod.SetByteSlice(rBytes)
-	sMod.SetByteSlice(sBytes)
-
-	// Create a btcec signature using R and S
-	signature := ecdsa.NewSignature(&rMod, &sMod)
-
-	// Serialize the signature into DER format
-	derSig := signature.Serialize()
-
-	// Append SIGHASH_ALL (0x01)
-	return append(derSig, byte(txscript.SigHashAll)), nil
 }

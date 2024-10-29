@@ -32,20 +32,18 @@ func (s *Signer) handleSigStartNewDeposit(ctx context.Context, e types.MsgSignDe
 	newKey := append([]byte{0}, e.RelayerPubkey...)
 
 	pubKey := relayertypes.DecodePublicKey(newKey)
-	deposits := make([]*bitcointypes.Deposit, 0)
+	deposits := make([]*bitcointypes.Deposit, len(e.DepositTX))
 
-	for _, tx := range e.DepositTX {
-		if bitcointypes.VerifyMerkelProof(tx.TxHash, tx.MerkleRoot, tx.IntermediateProof, uint32(tx.TxIndex)) {
-			deposits = append(deposits, &bitcointypes.Deposit{
-				Version:           tx.Version,
-				BlockNumber:       tx.BlockNumber,
-				TxIndex:           tx.TxIndex,
-				NoWitnessTx:       tx.NoWitnessTx,
-				OutputIndex:       uint32(tx.OutputIndex),
-				IntermediateProof: tx.IntermediateProof,
-				EvmAddress:        tx.EvmAddress,
-				RelayerPubkey:     pubKey,
-			})
+	for i, tx := range e.DepositTX {
+		deposits[i] = &bitcointypes.Deposit{
+			Version:           tx.Version,
+			BlockNumber:       tx.BlockNumber,
+			TxIndex:           tx.TxIndex,
+			NoWitnessTx:       tx.NoWitnessTx,
+			OutputIndex:       uint32(tx.OutputIndex),
+			IntermediateProof: tx.IntermediateProof,
+			EvmAddress:        tx.EvmAddress,
+			RelayerPubkey:     pubKey,
 		}
 	}
 
