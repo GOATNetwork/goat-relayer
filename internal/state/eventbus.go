@@ -41,6 +41,9 @@ func NewEventBus() *EventBus {
 
 // enum for eventType
 func (eb *EventBus) Subscribe(eventType EventType, ch chan interface{}) {
+	if ch == nil {
+		panic("channel == nil")
+	}
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
 	eb.subscribers[eventType.String()] = append(eb.subscribers[eventType.String()], ch)
@@ -48,32 +51,37 @@ func (eb *EventBus) Subscribe(eventType EventType, ch chan interface{}) {
 
 func (eb *EventBus) Publish(eventType EventType, data interface{}) {
 	eb.mu.RLock()
-	defer eb.mu.RUnlock()
-
 	subscribers, ok := eb.subscribers[eventType.String()]
 	if !ok {
+		eb.mu.RUnlock()
 		return
 	}
-
-	for i := 0; i < len(subscribers); i++ {
+	originLen := len(subscribers)
+	removeIndexes := make(map[int]bool)
+	for i := 0; i < originLen; i++ {
 		ch := subscribers[i]
 		select {
 		case ch <- data:
 			// Success
 		default:
 			// If cannot receive or closed, remove the subscriber
-			eb.mu.Lock()
-			if i < len(eb.subscribers[eventType.String()])-1 {
-				eb.subscribers[eventType.String()] = append(eb.subscribers[eventType.String()][:i], eb.subscribers[eventType.String()][i+1:]...)
-			} else {
-				eb.subscribers[eventType.String()] = eb.subscribers[eventType.String()][:i]
-			}
-			eb.mu.Unlock()
-
-			if i > 0 {
-				i--
-			}
+			removeIndexes[i] = true
 		}
+	}
+	eb.mu.RUnlock()
+
+	if len(removeIndexes) > 0 {
+		eb.mu.Lock()
+		if originLen == len(eb.subscribers[eventType.String()]) {
+			var newSubscribers []chan interface{}
+			for index, ch := range eb.subscribers[eventType.String()] {
+				if _, is := removeIndexes[index]; !is {
+					newSubscribers = append(newSubscribers, ch)
+				}
+			}
+			eb.subscribers[eventType.String()] = newSubscribers
+		}
+		eb.mu.Unlock()
 	}
 }
 
