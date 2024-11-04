@@ -89,7 +89,7 @@ func (lp *LibP2PService) Start(ctx context.Context) {
 
 	go func() {
 		time.Sleep(5 * time.Second)
-		msg := Message{
+		msg := Message[any]{
 			RequestId:   "1",
 			MessageType: MessageTypeUnknown,
 			Data:        "Hello, goat voter libp2p PubSub network with handshake!",

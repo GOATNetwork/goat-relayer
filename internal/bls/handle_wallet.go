@@ -66,7 +66,7 @@ func (s *Signer) handleSigStartSendOrder(ctx context.Context, e types.MsgSignSen
 	}
 
 	// p2p broadcast
-	p2pMsg := p2p.Message{
+	p2pMsg := p2p.Message[any]{
 		MessageType: p2p.MessageTypeSigReq,
 		RequestId:   e.RequestId,
 		DataType:    "MsgSignSendOrder",
@@ -258,7 +258,7 @@ func (s *Signer) handleSigReceiveSendOrder(ctx context.Context, e types.MsgSignS
 		}
 
 		// p2p broadcast
-		p2pMsg := p2p.Message{
+		p2pMsg := p2p.Message[any]{
 			MessageType: p2p.MessageTypeSigResp,
 			RequestId:   newSign.RequestId,
 			DataType:    "MsgSignSendOrder",

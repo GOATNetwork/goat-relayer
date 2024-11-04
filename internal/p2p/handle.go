@@ -47,7 +47,7 @@ func handleHandshake(s network.Stream, node host.Host) {
 	log.Info("Handshake successful")
 }
 
-func PublishMessage(ctx context.Context, msg Message) error {
+func PublishMessage(ctx context.Context, msg any) error {
 	msgBytes, err := json.Marshal(msg)
 	if err != nil {
 		log.Errorf("Failed to marshal message: %v", err)
@@ -84,7 +84,7 @@ func (libp2p *LibP2PService) handlePubSubMessages(ctx context.Context, sub *pubs
 				continue
 			}
 
-			var receivedMsg Message
+			var receivedMsg Message[json.RawMessage]
 			if err := json.Unmarshal(msg.Data, &receivedMsg); err != nil {
 				log.Errorf("Error unmarshaling pubsub message: %v", err)
 				continue
@@ -137,34 +137,28 @@ func (libp2p *LibP2PService) handleHeartbeatMessages(ctx context.Context, sub *p
 	}
 }
 
+func unmarshal[T any](data json.RawMessage) T {
+	var obj T
+	err := json.Unmarshal(data, &obj)
+	if err != nil || data == nil {
+		panic(fmt.Errorf("unmarshal data:%v, error: %w", data, err))
+	}
+	return obj
+}
+
 // convertMsgData converts the message data to the corresponding struct
-// TODO: use reflector to optimize this function
-func convertMsgData(msg Message) interface{} {
-	if msg.DataType == "MsgSignNewBlock" {
-		jsonBytes, _ := json.Marshal(msg.Data)
-		var rawData types.MsgSignNewBlock
-		_ = json.Unmarshal(jsonBytes, &rawData)
-		return rawData
+func convertMsgData(msg Message[json.RawMessage]) any {
+	switch msg.DataType {
+	case "MsgSignNewBlock":
+		return unmarshal[types.MsgSignNewBlock](msg.Data)
+	case "MsgUtxoDeposit":
+		return unmarshal[types.MsgUtxoDeposit](msg.Data)
+	case "MsgSignSendOrder":
+		return unmarshal[types.MsgSignSendOrder](msg.Data)
+	case "MsgSendOrderBroadcasted":
+		return unmarshal[types.MsgSendOrderBroadcasted](msg.Data)
 	}
-	if msg.DataType == "MsgUtxoDeposit" {
-		jsonBytes, _ := json.Marshal(msg.Data)
-		var rawData types.MsgUtxoDeposit
-		_ = json.Unmarshal(jsonBytes, &rawData)
-		return rawData
-	}
-	if msg.DataType == "MsgSignSendOrder" {
-		jsonBytes, _ := json.Marshal(msg.Data)
-		var rawData types.MsgSignSendOrder
-		_ = json.Unmarshal(jsonBytes, &rawData)
-		return rawData
-	}
-	if msg.DataType == "MsgSendOrderBroadcasted" {
-		jsonBytes, _ := json.Marshal(msg.Data)
-		var rawData types.MsgSendOrderBroadcasted
-		_ = json.Unmarshal(jsonBytes, &rawData)
-		return rawData
-	}
-	return msg.Data
+	return unmarshal[any](msg.Data)
 }
 
 func startHeartbeat(ctx context.Context, node host.Host, topic *pubsub.Topic) {

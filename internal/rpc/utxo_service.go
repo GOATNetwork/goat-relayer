@@ -106,7 +106,7 @@ func (s *UtxoServer) NewTransaction(ctx context.Context, req *pb.NewTransactionR
 				Timestamp:   time.Now().Unix(),
 			}
 
-			err = p2p.PublishMessage(context.Background(), p2p.Message{
+			err = p2p.PublishMessage(context.Background(), p2p.Message[any]{
 				MessageType: p2p.MessageTypeDepositReceive,
 				RequestId:   fmt.Sprintf("DEPOSIT:%s:%s_%d", config.AppConfig.RelayerAddress, deposit.TxId, outIdx),
 				DataType:    "MsgUtxoDeposit",
