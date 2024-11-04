@@ -55,7 +55,7 @@ func (s *Signer) handleSigStartNewBlock(ctx context.Context, e types.MsgSignNewB
 	}
 
 	// p2p broadcast
-	p2pMsg := p2p.Message{
+	p2pMsg := p2p.Message[any]{
 		MessageType: p2p.MessageTypeSigReq,
 		RequestId:   e.RequestId,
 		DataType:    "MsgSignNewBlock",
@@ -182,7 +182,7 @@ func (s *Signer) handleSigReceiveNewBlock(ctx context.Context, e types.MsgSignNe
 			BlockHash:        e.BlockHash,
 		}
 		// p2p broadcast
-		p2pMsg := p2p.Message{
+		p2pMsg := p2p.Message[any]{
 			MessageType: p2p.MessageTypeSigResp,
 			RequestId:   newSign.RequestId,
 			DataType:    "MsgSignNewBlock",

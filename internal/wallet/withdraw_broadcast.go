@@ -373,7 +373,7 @@ func (b *BaseOrderBroadcaster) broadcastOrders() {
 			continue
 		}
 
-		p2p.PublishMessage(context.Background(), p2p.Message{
+		p2p.PublishMessage(context.Background(), p2p.Message[any]{
 			MessageType: p2p.MessageTypeSendOrderBroadcasted,
 			RequestId:   fmt.Sprintf("TXBROADCAST:%s:%s", config.AppConfig.RelayerAddress, sendOrder.Txid),
 			DataType:    "MsgSendOrderBroadcasted",

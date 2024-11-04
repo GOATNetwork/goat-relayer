@@ -50,7 +50,7 @@ func (s *Signer) handleSigStartWithdrawFinalize(ctx context.Context, e types.Msg
 	s.removeSigMap(e.RequestId, false)
 
 	// p2p broadcast
-	p2pMsg := p2p.Message{
+	p2pMsg := p2p.Message[any]{
 		MessageType: p2p.MessageTypeWithdrawFinalize,
 		RequestId:   e.RequestId,
 		DataType:    "MsgSignFinalizeWithdraw",
