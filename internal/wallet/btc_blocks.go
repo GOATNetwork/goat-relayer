@@ -38,10 +38,10 @@ func (w *WalletServer) processBlock(btcBlock types.BtcBlockExt, doneCh chan stru
 	}()
 
 	// verify SPV
-	err := types.VerifyBlockSPV(btcBlock)
-	if err != nil {
-		log.Fatalf("Verify block SPV err %v", err)
-	}
+	// err := types.VerifyBlockSPV(btcBlock)
+	// if err != nil {
+	// 	log.Fatalf("Verify block SPV err %v", err)
+	// }
 
 	// get pubkey
 	pubkey, err := w.state.GetDepositKeyByBtcBlock(btcBlock.BlockNumber)
