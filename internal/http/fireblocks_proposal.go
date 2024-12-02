@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/goatnetwork/goat-relayer/internal/config"
@@ -39,10 +40,13 @@ func NewFireblocksProposal() *FireblocksProposal {
 		assetId = "BTC"
 		vaultAccountId = "6"
 	}
+	id, _ := strconv.ParseUint(vaultAccountId, 10, 32)
+	vaultAccountIdInt := uint32(id)
+
 	return &FireblocksProposal{
 		Bip44AddressIndex: 1,
 		Bip44Change:       0,
-		DerivationPath:    [5]uint32{44, 1, 1, 0, 0},
+		DerivationPath:    [5]uint32{44, 1, vaultAccountIdInt, 0, 0},
 		VaultAccountId:    vaultAccountId,
 		AssetId:           assetId,
 
