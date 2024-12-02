@@ -1,7 +1,6 @@
 package config
 
 import (
-	"crypto/ecdsa"
 	"log"
 	"math/big"
 	"os"
@@ -9,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/goatnetwork/goat-relayer/internal/types"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -34,7 +32,6 @@ func InitConfig() {
 	viper.SetDefault("BTC_MAX_NETWORK_FEE", 500)
 	viper.SetDefault("L2_RPC", "http://localhost:8545")
 	viper.SetDefault("L2_JWT_SECRET", "")
-	viper.SetDefault("L2_PRIVATE_KEY", "")
 	viper.SetDefault("L2_CHAIN_ID", "2345")
 	viper.SetDefault("L2_START_HEIGHT", 0)
 	viper.SetDefault("L2_CONFIRMATIONS", 3)
@@ -65,11 +62,6 @@ func InitConfig() {
 		logrus.Fatalf("Invalid log level: %v", err)
 	}
 
-	l2PrivateKey, err := crypto.HexToECDSA(viper.GetString("L2_PRIVATE_KEY"))
-	if err != nil {
-		logrus.Fatalf("Failed to load l2 private key: %v, given length %d", err, len(viper.GetString("L2_PRIVATE_KEY")))
-	}
-
 	l2ChainId, err := strconv.ParseInt(viper.GetString("L2_CHAIN_ID"), 10, 64)
 	if err != nil {
 		logrus.Fatalf("Failed to parse l2 chain id: %v", err)
@@ -94,7 +86,6 @@ func InitConfig() {
 		BTCMaxNetworkFee:       viper.GetInt("BTC_MAX_NETWORK_FEE"),
 		L2RPC:                  viper.GetString("L2_RPC"),
 		L2JwtSecret:            viper.GetString("L2_JWT_SECRET"),
-		L2PrivateKey:           l2PrivateKey,
 		L2ChainId:              big.NewInt(l2ChainId),
 		L2StartHeight:          viper.GetInt("L2_START_HEIGHT"),
 		L2Confirmations:        viper.GetInt("L2_CONFIRMATIONS"),
@@ -149,7 +140,6 @@ type Config struct {
 	BTCMaxNetworkFee       int
 	L2RPC                  string
 	L2JwtSecret            string
-	L2PrivateKey           *ecdsa.PrivateKey
 	L2ChainId              *big.Int
 	L2StartHeight          int
 	L2Confirmations        int

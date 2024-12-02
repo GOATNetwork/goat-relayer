@@ -13,7 +13,6 @@ func TestAddUnconfirmDeposit(t *testing.T) {
 	// Create temporary test directory
 	tempDir := t.TempDir()
 	t.Setenv("DB_DIR", tempDir)
-	t.Setenv("L2_PRIVATE_KEY", "e9ccd0ec6bb77c263dc46c0f81962c0b378a67befe089e90ef81e96a4a4c5bc5")
 
 	// Initialize config module
 	config.InitConfig()
