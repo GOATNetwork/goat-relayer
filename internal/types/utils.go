@@ -236,7 +236,7 @@ func VerifyBlockSPV(btcBlock BtcBlockExt) error {
 	return nil
 }
 
-// buildMerkleRoot build merkle tree and return root hash
+// buildMerkleRoot builds the Merkle tree and returns the root hash
 func buildMerkleRoot(txHashes []*chainhash.Hash) *chainhash.Hash {
 	if len(txHashes) == 0 {
 		return nil
@@ -248,18 +248,19 @@ func buildMerkleRoot(txHashes []*chainhash.Hash) *chainhash.Hash {
 
 		// combine hashes two by two
 		for i := 0; i < len(txHashes); i += 2 {
+			var combined []byte
 			if i+1 < len(txHashes) {
 				// normal case: combine two by two
-				combined := append(txHashes[i][:], txHashes[i+1][:]...)
-				newHash := chainhash.DoubleHashH(combined)
-				newLevel = append(newLevel, &newHash)
+				combined = append(txHashes[i][:], txHashes[i+1][:]...)
 			} else {
-				// odd case: copy the last transaction hash to new level
-				newLevel = append(newLevel, txHashes[i])
+				// odd case: duplicate the last transaction hash
+				combined = append(txHashes[i][:], txHashes[i][:]...)
 			}
+			newHash := chainhash.DoubleHashH(combined)
+			newLevel = append(newLevel, &newHash)
 		}
 
-		// prepare for next level
+		// prepare for the next level
 		txHashes = newLevel
 	}
 

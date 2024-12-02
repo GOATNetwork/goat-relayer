@@ -78,6 +78,15 @@ func TestBTCClient(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to get network params: %v", err)
 	}
+	// Test verification function
+	err = types.VerifyBlockSPV(types.BtcBlockExt{
+		MsgBlock:    *block,
+		BlockNumber: uint64(height),
+	})
+	if err != nil {
+		t.Errorf("SPV verification failed: %v", err)
+	}
+
 	for _, tx := range block.Transactions {
 		for idx, vin := range tx.TxIn {
 			_, addresses, _, err := txscript.ExtractPkScriptAddrs(vin.SignatureScript, networkParams)
