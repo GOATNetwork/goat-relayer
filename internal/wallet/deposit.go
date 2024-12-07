@@ -201,7 +201,7 @@ func (b *BaseDepositProcessor) initDepositSig() {
 	}
 
 	// 3. find confirmed deposits for signing
-	deposits, err := b.state.GetDepositForSign(16, b.state.GetBtcHead().Latest.Height)
+	deposits, err := b.state.GetDepositForSign(16)
 	if err != nil {
 		log.Errorf("BaseDepositProcessor initDepositSig error: %v", err)
 		return
