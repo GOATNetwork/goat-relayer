@@ -746,8 +746,6 @@ func convertToDERSignature(fbSig types.FbSignature) ([]byte, error) {
 //   - originalTx: the original transaction to be replaced
 //   - utxos: all unspent utxos used in the original transaction
 //   - withdrawals: all withdrawals in the original transaction
-//   - changeAddress: change address
-//   - changeAmount: change amount from original transaction
 //   - newFeeRate: new fee rate to use for replacement (in satoshis/byte)
 //   - networkFee: current network fee for dust calculation
 //   - net: bitcoin network parameters
