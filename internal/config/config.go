@@ -57,6 +57,9 @@ func InitConfig() {
 	viper.SetDefault("RELAYER_PRIVATE_KEY", "")
 	viper.SetDefault("RELAYER_BLS_SK", "")
 	viper.SetDefault("BLS_SIG_TIMEOUT", "300s")
+	viper.SetDefault("BTC_RBF_TIMEOUT", "24h")
+	viper.SetDefault("BTC_STUCK_TIMEOUT", "30m")
+	viper.SetDefault("BTC_RBF_MULTIPLIER", 1.5)
 
 	logLevel, err := logrus.ParseLevel(strings.ToLower(viper.GetString("LOG_LEVEL")))
 	if err != nil {
@@ -82,10 +85,10 @@ func InitConfig() {
 		BTCRPC_USER:            viper.GetString("BTC_RPC_USER"),
 		BTCRPC_PASS:            viper.GetString("BTC_RPC_PASS"),
 		BTCStartHeight:         viper.GetInt("BTC_START_HEIGHT"),
-		BTCReindexBlocks:       viper.GetString("BTC_REINDEX_BLOCKS"),
 		BTCConfirmations:       viper.GetInt("BTC_CONFIRMATIONS"),
 		BTCNetworkType:         viper.GetString("BTC_NETWORK_TYPE"),
 		BTCMaxNetworkFee:       viper.GetInt("BTC_MAX_NETWORK_FEE"),
+		BTCReindexBlocks:       viper.GetString("BTC_REINDEX_BLOCKS"),
 		L2RPC:                  viper.GetString("L2_RPC"),
 		L2JwtSecret:            viper.GetString("L2_JWT_SECRET"),
 		L2ChainId:              big.NewInt(l2ChainId),
@@ -113,6 +116,9 @@ func InitConfig() {
 		RelayerAddress:         relayerAddress,
 		RelayerBlsSk:           viper.GetString("RELAYER_BLS_SK"),
 		BlsSigTimeout:          viper.GetDuration("BLS_SIG_TIMEOUT"),
+		BTCRBFTimeout:          viper.GetDuration("BTC_RBF_TIMEOUT"),
+		BTCStuckTimeout:        viper.GetDuration("BTC_STUCK_TIMEOUT"),
+		BTCRBFMultiplier:       viper.GetFloat64("BTC_RBF_MULTIPLIER"),
 	}
 
 	if (AppConfig.BTCNetworkType == "" || AppConfig.BTCNetworkType == "mainnet") && AppConfig.BTCConfirmations < 6 {
@@ -168,4 +174,7 @@ type Config struct {
 	RelayerAddress         string
 	RelayerBlsSk           string
 	BlsSigTimeout          time.Duration
+	BTCRBFTimeout          time.Duration `mapstructure:"btc_rbf_timeout"`    // Time to wait before trying RBF
+	BTCStuckTimeout        time.Duration `mapstructure:"btc_stuck_timeout"`  // Time to wait before considering tx stuck
+	BTCRBFMultiplier       float64       `mapstructure:"btc_rbf_multiplier"` // Minimum fee rate multiplier for RBF
 }

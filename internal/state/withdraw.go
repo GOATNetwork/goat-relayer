@@ -22,11 +22,13 @@ type WithdrawStateStore interface {
 	UpdateSendOrderInitlized(txid string, externalTxId string) error
 	UpdateSendOrderPending(txid string, externalTxId string) error
 	UpdateSendOrderConfirmed(txid string, blockHeight uint64) error
+	UpdateSendOrderRBF(txid string, noWitnessTx []byte, newFeeRate uint64) error
 	GetWithdrawsCanStart() ([]*db.Withdraw, error)
 	GetWithdrawsCanceling() ([]*db.Withdraw, error)
 	GetSendOrderInitlized() ([]*db.SendOrder, error)
 	GetSendOrderPending(limit int) ([]*db.SendOrder, error)
 	GetLatestSendOrderConfirmed() (*db.SendOrder, error)
+	GetWithdrawsByOrderId(orderId string) ([]*db.Withdraw, error)
 }
 
 // CreateWithdrawal, when a new withdrawal request is detected, save to unconfirmed
@@ -429,6 +431,44 @@ func (s *State) UpdateSendOrderConfirmed(txid string, btcBlock uint64) error {
 	return err
 }
 
+func (s *State) UpdateSendOrderRBF(txid string, noWitnessTx []byte, newFeeRate uint64) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	return s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
+		// Get the order that needs RBF
+		order, err := s.getOrderByTxidAndStatuses(tx, txid, db.ORDER_STATUS_PENDING)
+		if err != nil {
+			return fmt.Errorf("get order error: %v, txid: %s", err, txid)
+		}
+		if order == nil {
+			return fmt.Errorf("order not found or not in pending status: %s", txid)
+		}
+
+		// Update the order with new transaction details
+		updates := map[string]interface{}{
+			"no_witness_tx": noWitnessTx,
+			"tx_price":      newFeeRate,
+			"updated_at":    time.Now(),
+		}
+
+		err = tx.Model(&db.SendOrder{}).Where("txid = ? AND status = ?", txid, db.ORDER_STATUS_PENDING).Updates(updates).Error
+		if err != nil {
+			return fmt.Errorf("update order error: %v, txid: %s", err, txid)
+		}
+
+		// Update related withdraws with new fee rate if this is a withdrawal order
+		if order.OrderType == db.ORDER_TYPE_WITHDRAWAL {
+			err = s.updateWithdrawStatusByOrderId(tx, db.WITHDRAW_STATUS_PENDING, order.OrderId, db.WITHDRAW_STATUS_PENDING)
+			if err != nil {
+				return fmt.Errorf("update withdraws error: %v, orderId: %s", err, order.OrderId)
+			}
+		}
+
+		return nil
+	})
+}
+
 func (s *State) UpdateWithdrawInitialized(txid string, pid uint64) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
@@ -715,6 +755,15 @@ func (s *State) GetLatestSendOrderConfirmed() (*db.SendOrder, error) {
 	}
 	log.Debugf("GetSendOrderConfirmed sendOrder found: %v", sendOrder.Txid)
 	return sendOrder, nil
+}
+
+func (s *State) GetWithdrawsByOrderId(orderId string) ([]*db.Withdraw, error) {
+	var withdraws []*db.Withdraw
+	err := s.dbm.GetWalletDB().Where("order_id = ?", orderId).Find(&withdraws).Error
+	if err != nil {
+		return nil, fmt.Errorf("get withdraws by order id error: %v, orderId: %s", err, orderId)
+	}
+	return withdraws, nil
 }
 
 func (s *State) CloseWithdraw(id uint, reason string) error {
