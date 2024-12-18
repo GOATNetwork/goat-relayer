@@ -737,3 +737,79 @@ func convertToDERSignature(fbSig types.FbSignature) ([]byte, error) {
 	// Append SIGHASH_ALL (0x01)
 	return append(derSig, byte(txscript.SigHashAll)), nil
 }
+
+// ReplaceRawTransaction creates a new transaction with higher fees to replace an existing transaction
+// using Replace-By-Fee (RBF). The original transaction must have been created with RBF support
+// (sequence number < 0xffffffff-1).
+//
+// Parameters:
+//   - originalTx: the original transaction to be replaced
+//   - utxos: all unspent utxos used in the original transaction
+//   - withdrawals: all withdrawals in the original transaction
+//   - changeAddress: change address
+//   - changeAmount: change amount from original transaction
+//   - newFeeRate: new fee rate to use for replacement (in satoshis/byte)
+//   - networkFee: current network fee for dust calculation
+//   - net: bitcoin network parameters
+//
+// Returns:
+//   - new transaction with higher fees
+//   - dust withdrawal ID if any withdrawal becomes dust
+//   - error if any
+func ReplaceRawTransaction(
+	originalTx *wire.MsgTx,
+	utxos []*db.Utxo,
+	withdrawals []*db.Withdraw,
+	changeAddress string,
+	changeAmount int64,
+	newFeeRate int64,
+	networkFee int64,
+	net *chaincfg.Params,
+) (*wire.MsgTx, uint, error) {
+	// Validate that original transaction supports RBF
+	for _, input := range originalTx.TxIn {
+		if input.Sequence >= 0xffffffff-1 {
+			return nil, 0, fmt.Errorf("original transaction does not support RBF (sequence number too high)")
+		}
+	}
+
+	// Calculate new total fee based on transaction size and new fee rate
+	txSize := originalTx.SerializeSize()
+	newEstimatedFee := newFeeRate * int64(txSize)
+
+	// The new fee must be at least 10% higher than the old fee for replacement
+	oldFee := calculateTotalFee(originalTx, utxos)
+	minNewFee := oldFee + (oldFee / 10) // 10% increase
+	if newEstimatedFee <= minNewFee {
+		newEstimatedFee = minNewFee + 1 // Ensure it's higher than minimum
+	}
+
+	// Create new transaction with higher fee
+	return CreateRawTransaction(
+		utxos,
+		withdrawals,
+		changeAddress,
+		changeAmount,
+		newEstimatedFee,
+		networkFee,
+		net,
+	)
+}
+
+// calculateTotalFee calculates the total fee of a transaction by summing inputs and subtracting outputs
+func calculateTotalFee(tx *wire.MsgTx, utxos []*db.Utxo) int64 {
+	var inputSum int64
+	var outputSum int64
+
+	// Sum all inputs
+	for _, utxo := range utxos {
+		inputSum += int64(utxo.Amount)
+	}
+
+	// Sum all outputs
+	for _, out := range tx.TxOut {
+		outputSum += out.Value
+	}
+
+	return inputSum - outputSum
+}
