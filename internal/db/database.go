@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db/migrations"
@@ -66,28 +65,17 @@ func (dm *DatabaseManager) initDB() {
 func (dm *DatabaseManager) connectDatabase(dbPath string, dbRef **gorm.DB, dbName string) error {
 	// Configure SQLite with WAL mode and busy timeout
 	dsn := fmt.Sprintf("%s?_journal_mode=WAL&_busy_timeout=10000&_synchronous=NORMAL", dbPath)
-	
+
 	// open database with configured settings
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
 		// Enable auto retry on database lock
 		SkipDefaultTransaction: true,
-		PrepareStmt: true,
+		PrepareStmt:            true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to connect to %s: %w", dbName, err)
 	}
-
-	// Set connection pool settings
-	sqlDB, err := db.DB()
-	if err != nil {
-		return fmt.Errorf("failed to get database instance for %s: %w", dbName, err)
-	}
-	
-	// Set connection pool limits
-	sqlDB.SetMaxIdleConns(1)
-	sqlDB.SetMaxOpenConns(1)
-	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	*dbRef = db
 	log.Debugf("%s connected successfully with WAL mode, path: %s", dbName, dbPath)
@@ -130,11 +118,15 @@ func (dm *DatabaseManager) runMigrations() error {
 
 	// Run migrations for wallet database
 	log.Debugf("Running UTXO records migration")
-	if err := migrationManagers["wallet"].RunMigration(
-		"20241220_add_utxo_records",
-		migrations.AddUtxoRecords,
-	); err != nil {
-		return fmt.Errorf("failed to run UTXO records migration: %w", err)
+	migrates := make(map[string](func(*gorm.DB) error), 0)
+	if config.AppConfig.L2ChainId.String() == "2345" {
+		migrates["20241220_2345_add_utxo_records"] = migrations.AddUtxoRecords
+	}
+
+	for name, migrate := range migrates {
+		if err := migrationManagers["wallet"].RunMigration(name, migrate); err != nil {
+			return fmt.Errorf("failed to run UTXO records migration: %w", err)
+		}
 	}
 
 	return nil
