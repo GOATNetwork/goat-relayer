@@ -4,6 +4,7 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/goatnetwork/goat-relayer/internal/models"
 )
 
 // L2SyncStatus model
@@ -236,7 +237,7 @@ func (dm *DatabaseManager) autoMigrate() {
 	if err := dm.btcLightDb.AutoMigrate(&BtcBlock{}); err != nil {
 		log.Fatalf("Failed to migrate database 3: %v", err)
 	}
-	if err := dm.walletDb.AutoMigrate(&Utxo{}, &Withdraw{}, &SendOrder{}, &Vin{}, &Vout{}, &DepositResult{}); err != nil {
+	if err := dm.walletDb.AutoMigrate(&models.Utxo{}, &Withdraw{}, &SendOrder{}, &Vin{}, &Vout{}, &DepositResult{}); err != nil {
 		log.Fatalf("Failed to migrate database 4: %v", err)
 	}
 	if err := dm.btcCacheDb.AutoMigrate(&BtcSyncStatus{}, &BtcBlockData{}, &BtcTXOutput{}, &Deposit{}); err != nil {

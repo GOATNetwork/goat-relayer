@@ -3,15 +3,15 @@ package migrations
 import (
 	"time"
 
-	"github.com/goatnetwork/goat-relayer/internal/db"
+	"github.com/goatnetwork/goat-relayer/internal/models"
 	"gorm.io/gorm"
 )
 
 func AddUtxoRecords(tx *gorm.DB) error {
-	utxos := []db.Utxo{
+	utxos := []models.Utxo{
 		{
 			ID:            1,
-			Uid:           "ba7dc3e909686bc8cffa2757bba25338f14e281f449afd265d10ee9edb9811dc",
+			Txid:          "ba7dc3e909686bc8cffa2757bba25338f14e281f449afd265d10ee9edb9811dc",
 			OutIndex:      0,
 			Amount:        50000,
 			Receiver:      "bc1qjq6dpeduer5k7m973882dcy34654mkwcvgpr08",
@@ -26,7 +26,7 @@ func AddUtxoRecords(tx *gorm.DB) error {
 		},
 		{
 			ID:            2,
-			Uid:           "a50246a76afc28ec6f1a6e535ddbb71e7d27358bc1f1fc1e60ae5647cc766354",
+			Txid:          "a50246a76afc28ec6f1a6e535ddbb71e7d27358bc1f1fc1e60ae5647cc766354",
 			OutIndex:      0,
 			Amount:        50000,
 			Receiver:      "bc1qjq6dpeduer5k7m973882dcy34654mkwcvgpr08",
@@ -41,7 +41,7 @@ func AddUtxoRecords(tx *gorm.DB) error {
 		},
 		{
 			ID:            3,
-			Uid:           "2638a8f782ce703e59d06bb2f4b0c65153c141a2aa07f4b20df3a01f5d8a2462",
+			Txid:          "2638a8f782ce703e59d06bb2f4b0c65153c141a2aa07f4b20df3a01f5d8a2462",
 			OutIndex:      0,
 			Amount:        50000,
 			Receiver:      "bc1qjq6dpeduer5k7m973882dcy34654mkwcvgpr08",
@@ -56,7 +56,7 @@ func AddUtxoRecords(tx *gorm.DB) error {
 		},
 		{
 			ID:            4,
-			Uid:           "451cae01882da59279fce894f9f57c5ae17f4ee10d924aab355de94e661287bc",
+			Txid:          "451cae01882da59279fce894f9f57c5ae17f4ee10d924aab355de94e661287bc",
 			OutIndex:      0,
 			Amount:        50000,
 			Receiver:      "bc1qjq6dpeduer5k7m973882dcy34654mkwcvgpr08",
@@ -71,7 +71,7 @@ func AddUtxoRecords(tx *gorm.DB) error {
 		},
 		{
 			ID:            5,
-			Uid:           "a01187bdcf4c3577d3057c8a6f59b7f9d410b600cc16e92e3d6a6b53815c1e3c",
+			Txid:          "a01187bdcf4c3577d3057c8a6f59b7f9d410b600cc16e92e3d6a6b53815c1e3c",
 			OutIndex:      0,
 			Amount:        100000,
 			Receiver:      "bc1qjq6dpeduer5k7m973882dcy34654mkwcvgpr08",
@@ -86,7 +86,7 @@ func AddUtxoRecords(tx *gorm.DB) error {
 		},
 		{
 			ID:            6,
-			Uid:           "5638324bad8f0443c7dc8f1a84a0ab108de24f110780d8b4fbc8a8ff80ba0516",
+			Txid:          "5638324bad8f0443c7dc8f1a84a0ab108de24f110780d8b4fbc8a8ff80ba0516",
 			OutIndex:      0,
 			Amount:        600000,
 			Receiver:      "bc1qeyf99r2amxpsgrc55z3fvdx2kvulvxv2a88yl2t0r7cmka44nyasnzrkkz",
@@ -101,7 +101,7 @@ func AddUtxoRecords(tx *gorm.DB) error {
 		},
 		{
 			ID:            7,
-			Uid:           "6691c00f6f33434ae75f1e73f6d7dcfddcfa6075cabcc4add6ff7411f1d85522",
+			Txid:          "6691c00f6f33434ae75f1e73f6d7dcfddcfa6075cabcc4add6ff7411f1d85522",
 			OutIndex:      0,
 			Amount:        5000000,
 			Receiver:      "bc1qljt2qheuvstmxd0t35edeqmtjf2padrgxpg6vujkgavseyxuenzspuq6k9",
@@ -116,7 +116,7 @@ func AddUtxoRecords(tx *gorm.DB) error {
 		},
 		{
 			ID:            8,
-			Uid:           "8cfe59be227428f7635bac5b07437be2b4a497f77b2be9a00db07bbe98f0ea42",
+			Txid:          "8cfe59be227428f7635bac5b07437be2b4a497f77b2be9a00db07bbe98f0ea42",
 			OutIndex:      1,
 			Amount:        447149,
 			Receiver:      "bc1qjq6dpeduer5k7m973882dcy34654mkwcvgpr08",
@@ -130,21 +130,21 @@ func AddUtxoRecords(tx *gorm.DB) error {
 		},
 		{
 			ID:            9,
-			Uid:           "65d6d11ba8eb434e8cf30accabca1ca8c1d1868ce8d0561ffa51bcf3ceb4db2d",
+			Txid:          "65d6d11ba8eb434e8cf30accabca1ca8c1d1868ce8d0561ffa51bcf3ceb4db2d",
 			OutIndex:      1,
 			Amount:        282558,
 			Receiver:      "bc1qjq6dpeduer5k7m973882dcy34654mkwcvgpr08",
 			WalletVersion: "1",
 			Source:        "withdrawal",
 			ReceiverType:  "P2WPKH",
-			Status:        "confirmed",
+			Status:        "processed",
 			ReceiveBlock:  873752,
 			SpentBlock:    0,
 			UpdatedAt:     mustParseTime("2024-12-08 06:35:10.394338948+00:00"),
 		},
 		{
 			ID:            10,
-			Uid:           "01ae742b31828c30f333b5cc4c16ba6ee785f805d150f77eadc72e41bf4765f4",
+			Txid:          "01ae742b31828c30f333b5cc4c16ba6ee785f805d150f77eadc72e41bf4765f4",
 			OutIndex:      0,
 			Amount:        100000,
 			Receiver:      "bc1qjq6dpeduer5k7m973882dcy34654mkwcvgpr08",
@@ -159,7 +159,7 @@ func AddUtxoRecords(tx *gorm.DB) error {
 		},
 		{
 			ID:            11,
-			Uid:           "361d1b189d40bff5de133fee3619d3f8e6a53cf5734a7188f30161fc6072c80e",
+			Txid:          "361d1b189d40bff5de133fee3619d3f8e6a53cf5734a7188f30161fc6072c80e",
 			OutIndex:      0,
 			Amount:        4100000,
 			Receiver:      "bc1qjq6dpeduer5k7m973882dcy34654mkwcvgpr08",
@@ -174,7 +174,7 @@ func AddUtxoRecords(tx *gorm.DB) error {
 		},
 		{
 			ID:            12,
-			Uid:           "ac020d14fd004331d5590aa5a1e6ca9f0ddd5de161e5440a9810f3910d81712a",
+			Txid:          "ac020d14fd004331d5590aa5a1e6ca9f0ddd5de161e5440a9810f3910d81712a",
 			OutIndex:      0,
 			Amount:        500000,
 			Receiver:      "bc1qjq6dpeduer5k7m973882dcy34654mkwcvgpr08",

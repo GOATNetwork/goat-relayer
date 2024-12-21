@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/goatnetwork/goat-relayer/internal/config"
+	"github.com/goatnetwork/goat-relayer/internal/db/migrations"
 	log "github.com/sirupsen/logrus"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -50,21 +52,45 @@ func (dm *DatabaseManager) initDB() {
 		}
 	}
 
+	// First run auto migrations to create all necessary tables
 	dm.autoMigrate()
+
+	// Then run data migrations
+	if err := dm.runMigrations(); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	log.Debugf("Database migration completed successfully")
 }
 
 func (dm *DatabaseManager) connectDatabase(dbPath string, dbRef **gorm.DB, dbName string) error {
-	// open database and set WAL mode
-	db, err := gorm.Open(sqlite.Open(dbPath+"?_journal_mode=WAL"), &gorm.Config{
+	// Configure SQLite with WAL mode and busy timeout
+	dsn := fmt.Sprintf("%s?_journal_mode=WAL&_busy_timeout=10000&_synchronous=NORMAL", dbPath)
+	
+	// open database with configured settings
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
+		// Enable auto retry on database lock
+		SkipDefaultTransaction: true,
+		PrepareStmt: true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to connect to %s: %w", dbName, err)
 	}
 
+	// Set connection pool settings
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("failed to get database instance for %s: %w", dbName, err)
+	}
+	
+	// Set connection pool limits
+	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+
 	*dbRef = db
-	log.Debugf("%s connected successfully in WAL mode, path: %s", dbName, dbPath)
+	log.Debugf("%s connected successfully with WAL mode, path: %s", dbName, dbPath)
 	return nil
 }
 
@@ -86,4 +112,30 @@ func (dm *DatabaseManager) GetWalletDB() *gorm.DB {
 
 func (dm *DatabaseManager) GetBtcCacheDB() *gorm.DB {
 	return dm.btcCacheDb
+}
+
+func (dm *DatabaseManager) runMigrations() error {
+	// Initialize migration managers for each database
+	migrationManagers := map[string]*migrations.MigrationManager{
+		"wallet": migrations.NewMigrationManager(dm.walletDb),
+	}
+
+	// Ensure migration tables exist
+	for name, manager := range migrationManagers {
+		log.Debugf("Ensuring migration table exists for %s database", name)
+		if err := manager.EnsureMigrationTable(); err != nil {
+			return fmt.Errorf("failed to create migration table for %s: %w", name, err)
+		}
+	}
+
+	// Run migrations for wallet database
+	log.Debugf("Running UTXO records migration")
+	if err := migrationManagers["wallet"].RunMigration(
+		"20241220_add_utxo_records",
+		migrations.AddUtxoRecords,
+	); err != nil {
+		return fmt.Errorf("failed to run UTXO records migration: %w", err)
+	}
+
+	return nil
 }
