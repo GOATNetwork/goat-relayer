@@ -152,7 +152,7 @@ func (s *HTTPServer) handleFireblocksCosignerTxSign(c *gin.Context) {
 	txId := claims["txId"].(string)
 	note := claims["note"].(string)
 	log.Infof("Cosigner callback JWT claim received, requestId %s, txId %s, note %s", requestId, txId, note)
-	// 使用trim去除note的前缀 "WITHDRAW"
+	// Remove the prefix from the note
 	txHash := strings.Split(note, ":")[1]
 
 	// Sign the response APPROVE|REJECT|RETRY
