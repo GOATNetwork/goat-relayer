@@ -298,6 +298,11 @@ func (s *State) UpdateWithdrawCanceled(id uint64) error {
 
 	withdraw, err := s.getWithdrawByRequestId(nil, id)
 	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// ignore
+			log.Warnf("State UpdateWithdrawCanceled not found withdraw by request id: %d", id)
+			return nil
+		}
 		return err
 	}
 

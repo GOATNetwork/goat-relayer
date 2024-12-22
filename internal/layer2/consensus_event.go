@@ -56,7 +56,7 @@ func (lis *Layer2Listener) processEvent(block uint64, event abcitypes.Event) err
 		return lis.processNewConsolidation(block, event.Attributes)
 
 	default:
-		// log.Debugf("Unrecognized event type: %s", event.Type)
+		log.Debugf("Unrecognized event type: %s", event.Type)
 		return nil
 	}
 }
