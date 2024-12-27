@@ -27,6 +27,8 @@ type WalletServer struct {
 	sigFinishHeight              uint64
 	finalizeWithdrawStatus       bool
 	finalizeWithdrawFinishHeight uint64
+	replaceWithdrawStatus        bool
+	replaceWithdrawFinishHeight  uint64
 	cancelWithdrawStatus         bool
 	cancelWithdrawFinishHeight   uint64
 

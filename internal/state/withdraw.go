@@ -29,6 +29,7 @@ type WithdrawStateStore interface {
 	GetSendOrderPending(limit int) ([]*db.SendOrder, error)
 	GetLatestSendOrderConfirmed() (*db.SendOrder, error)
 	GetWithdrawsByOrderId(orderId string) ([]*db.Withdraw, error)
+	GetWithdrawsNeedRbf() (*db.Withdraw, error)
 }
 
 // CreateWithdrawal, when a new withdrawal request is detected, save to unconfirmed
@@ -256,12 +257,17 @@ func (s *State) UpdateWithdrawReplace(id, txPrice uint64) error {
 	if err != nil {
 		return err
 	}
-	if withdraw.Status != db.WITHDRAW_STATUS_CREATE && withdraw.Status != db.WITHDRAW_STATUS_AGGREGATING {
+	if withdraw.Status != db.WITHDRAW_STATUS_CREATE && withdraw.Status != db.WITHDRAW_STATUS_AGGREGATING && withdraw.Status != db.WITHDRAW_STATUS_INIT && withdraw.Status != db.WITHDRAW_STATUS_PENDING {
 		// ignore if it is not create status
 		// it is hard to update after start withdraw sig program
 		return nil
 	}
 
+	if withdraw.LastTxPrice == "" {
+		withdraw.LastTxPrice = fmt.Sprintf("%d", withdraw.TxPrice)
+	} else {
+		withdraw.LastTxPrice = fmt.Sprintf("%s,%d", withdraw.LastTxPrice, withdraw.TxPrice)
+	}
 	withdraw.TxPrice = txPrice
 	withdraw.UpdatedAt = time.Now()
 
@@ -764,6 +770,21 @@ func (s *State) GetWithdrawsByOrderId(orderId string) ([]*db.Withdraw, error) {
 		return nil, fmt.Errorf("get withdraws by order id error: %v, orderId: %s", err, orderId)
 	}
 	return withdraws, nil
+}
+
+func (s *State) GetWithdrawsNeedRbf() (*db.Withdraw, error) {
+	s.walletMu.RLock()
+	defer s.walletMu.RUnlock()
+
+	var withdraw *db.Withdraw
+	err := s.dbm.GetWalletDB().Where("status IN (?) and last_tx_price IS NOT NULL", []string{db.WITHDRAW_STATUS_INIT, db.WITHDRAW_STATUS_PENDING}).First(&withdraw).Error
+
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, fmt.Errorf("GetWithdrawsNeedRbf error: %v", err)
+	}
+
+	log.Debugf("GetWithdrawsNeedRbf withdraw found: %v, tx_price: %v, last_tx_price: %v", withdraw.Txid, withdraw.TxPrice, withdraw.LastTxPrice)
+	return withdraw, nil
 }
 
 func (s *State) CloseWithdraw(id uint, reason string) error {

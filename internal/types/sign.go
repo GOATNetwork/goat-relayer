@@ -69,6 +69,14 @@ type MsgSignFinalizeWithdraw struct {
 	IntermediateProof []byte `json:"intermediate_proof"`
 }
 
+type MsgSignReplaceWithdraw struct {
+	MsgSign
+
+	Pid            uint64 `json:"pid"`
+	NewNoWitnessTx []byte `json:"new_no_witness_tx"`
+	NewTxFee       uint64 `json:"new_tx_fee"`
+}
+
 type MsgSignCancelWithdraw struct {
 	MsgSign
 

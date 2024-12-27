@@ -3,8 +3,8 @@ package db
 import (
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/goatnetwork/goat-relayer/internal/models"
+	log "github.com/sirupsen/logrus"
 )
 
 // L2SyncStatus model
@@ -113,20 +113,21 @@ type DepositResult struct {
 
 // Withdraw model (for managing withdrawals)
 type Withdraw struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	RequestId uint64    `gorm:"not null;uniqueIndex" json:"request_id"`
-	GoatBlock uint64    `gorm:"not null" json:"goat_block"`                            // Goat block height
-	Amount    uint64    `gorm:"not null;index:withdraw_amount_index" json:"amount"`    // withdraw BTC satoshis, build tx out should minus tx fee
-	TxPrice   uint64    `gorm:"not null;index:withdraw_txprice_index" json:"tx_price"` // Unit is satoshis
-	TxFee     uint64    `gorm:"not null" json:"tx_fee"`                                // will update when aggregating build
-	From      string    `gorm:"not null" json:"from"`
-	To        string    `gorm:"not null" json:"to"`                                    // BTC address, support all 4 types
-	Status    string    `gorm:"not null;index:withdraw_status_index" json:"status"`    // "create", "aggregating", "init", "signing", "pending", "unconfirm", "confirmed", "processed", "closed" - means user cancel
-	OrderId   string    `gorm:"not null;index:withdraw_orderid_index" json:"order_id"` // update when signing, it always can be query from SendOrder by BTC txid
-	Txid      string    `gorm:"not null;index:withdraw_txid_index" json:"txid"`        // update when signing
-	Reason    string    `gorm:"not null" json:"reason"`                                // reason for closed
-	CreatedAt time.Time `gorm:"not null" json:"created_at"`
-	UpdatedAt time.Time `gorm:"not null" json:"updated_at"`
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	RequestId   uint64    `gorm:"not null;uniqueIndex" json:"request_id"`
+	GoatBlock   uint64    `gorm:"not null" json:"goat_block"`                            // Goat block height
+	Amount      uint64    `gorm:"not null;index:withdraw_amount_index" json:"amount"`    // withdraw BTC satoshis, build tx out should minus tx fee
+	TxPrice     uint64    `gorm:"not null;index:withdraw_txprice_index" json:"tx_price"` // Unit is satoshis
+	LastTxPrice string    `gorm:"not null" json:"last_tx_price"`                         // Unit is satoshis
+	TxFee       uint64    `gorm:"not null" json:"tx_fee"`                                // will update when aggregating build
+	From        string    `gorm:"not null" json:"from"`
+	To          string    `gorm:"not null" json:"to"`                                    // BTC address, support all 4 types
+	Status      string    `gorm:"not null;index:withdraw_status_index" json:"status"`    // "create", "aggregating", "init", "signing", "pending", "unconfirm", "confirmed", "processed", "closed" - means user cancel
+	OrderId     string    `gorm:"not null;index:withdraw_orderid_index" json:"order_id"` // update when signing, it always can be query from SendOrder by BTC txid
+	Txid        string    `gorm:"not null;index:withdraw_txid_index" json:"txid"`        // update when signing
+	Reason      string    `gorm:"not null" json:"reason"`                                // reason for closed
+	CreatedAt   time.Time `gorm:"not null" json:"created_at"`
+	UpdatedAt   time.Time `gorm:"not null" json:"updated_at"`
 }
 
 // SendOrder model (should send withdraw, vin, vout via off-chain consensus)
