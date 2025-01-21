@@ -269,7 +269,7 @@ func (b *BaseOrderBroadcaster) Start(ctx context.Context) {
 	log.Debug("BaseOrderBroadcaster start")
 	b.state.EventBus.Subscribe(state.SendOrderBroadcasted, b.txBroadcastCh)
 
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -390,6 +390,7 @@ func (b *BaseOrderBroadcaster) broadcastOrders() {
 		})
 
 		log.Infof("OrderBroadcaster broadcastOrders tx broadcast success, txid: %s", sendOrder.Txid)
+		time.Sleep(time.Second)
 	}
 }
 
