@@ -424,7 +424,17 @@ func CreateRawTransaction(utxos []*db.Utxo, withdrawals []*db.Withdraw, changeAd
 		if changeAmount > 0 {
 			totalTxout++
 		}
+		// Calculate minimum relay fee based on estimated transaction size
+		// Default minimum fee rate is 1 satoshi/vbyte
+		const minFeeRate = 1                                      // satoshi per vbyte
+		estimatedVsize := (len(tx.TxIn)*180 + totalTxout*34 + 10) // rough estimation of vsize
+		minRelayFee := int64(estimatedVsize * minFeeRate)
+
+		// Use the larger value between estimated fee and minimum relay fee
 		actualFee = estimatedFee / int64(totalTxout)
+		if actualFee < minRelayFee/int64(totalTxout) {
+			actualFee = minRelayFee/int64(totalTxout) + 1 // Add 1 satoshi to ensure we're above minimum
+		}
 	}
 
 	// add outputs (withdrawals)
