@@ -228,6 +228,9 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 					if strings.Contains(rpcErr.Message, "mandatory-script-verify-flag-failed") {
 						log.Warnf("Transaction signature verification failed, reverting for re-signing: %v, txid: %s", rpcErr, txid)
 						return true, 0, 0, nil
+					} else {
+						log.Warnf("Transaction signature verification failed, error reason: %v, txid: %s", rpcErr, txid)
+						return false, 0, 0, fmt.Errorf("send raw transaction error: %v, txid: %s", err, txid)
 					}
 				}
 			}
