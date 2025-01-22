@@ -434,5 +434,6 @@ func (b *BaseOrderBroadcaster) broadcastPendingCheck() {
 		}
 
 		log.Debugf("OrderBroadcaster broadcastPendingCheck tx still pending, txid: %s, confirmations: %d", pendingOrder.Txid, confirmations)
+		time.Sleep(time.Second)
 	}
 }
