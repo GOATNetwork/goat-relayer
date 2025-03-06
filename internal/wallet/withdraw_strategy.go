@@ -642,7 +642,8 @@ func GenerateRawMeessageToFireblocks(tx *wire.MsgTx, utxos []*db.Utxo, net *chai
 		case types.WALLET_TYPE_P2WSH:
 			// P2WSH needs subScript
 			// assume subScript is known
-			prevPkScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_0).AddData(utxo.SubScript).Script()
+			redeemScriptHash := sha256.Sum256(utxo.SubScript)
+			prevPkScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_0).AddData(redeemScriptHash[:]).Script()
 			if err != nil {
 				return nil, err
 			}
