@@ -737,9 +737,30 @@ func convertToDERSignature(fbSig types.FbSignature) ([]byte, error) {
 		return nil, fmt.Errorf("error decoding R: %v", err)
 	}
 
+	if len(rBytes) > 32 {
+		return nil, fmt.Errorf("R is too long")
+	}
+
+	// Pad R to 32 bytes
+	if len(rBytes) < 32 {
+		paddedR := make([]byte, 32)
+		copy(paddedR[32-len(rBytes):], rBytes)
+		rBytes = paddedR
+	}
+
 	sBytes, err := hex.DecodeString(fbSig.S)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding S: %v", err)
+	}
+
+	if len(sBytes) > 32 {
+		return nil, fmt.Errorf("S is too long")
+	}
+	// Pad S to 32 bytes
+	if len(sBytes) < 32 {
+		paddedS := make([]byte, 32)
+		copy(paddedS[32-len(sBytes):], sBytes)
+		sBytes = paddedS
 	}
 
 	// Convert R and S into btcec.ModNScalar
