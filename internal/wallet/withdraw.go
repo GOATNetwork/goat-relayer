@@ -196,12 +196,12 @@ func (w *WalletServer) initWithdrawSig() {
 	}
 
 	// get utxos can spend, check consolidation process
-	utxos, err := w.state.GetUtxoCanSpend()
+	utxosFromDb, err := w.state.GetUtxoCanSpend()
 	if err != nil {
 		log.Errorf("WalletServer initWithdrawSig GetUtxoCanSpend error: %v", err)
 		return
 	}
-	if len(utxos) == 0 {
+	if len(utxosFromDb) == 0 {
 		log.Warn("WalletServer initWithdrawSig no utxos can spend")
 		return
 	}
@@ -209,7 +209,9 @@ func (w *WalletServer) initWithdrawSig() {
 	var msgSignSendOrder *types.MsgSignSendOrder
 	networkFee := btcState.NetworkFee
 
-	if len(utxos) >= CONSOLIDATION_TRIGGER_COUNT {
+	if len(utxosFromDb) >= CONSOLIDATION_TRIGGER_COUNT {
+		// 2025-03-07 reorg utxo for consolidation
+		utxos := w.reorgUtxo(utxosFromDb, true)
 		// 3. start consolidation
 		log.Infof("WalletServer initWithdrawSig should start consolidation, utxo count: %d", len(utxos))
 
@@ -237,6 +239,8 @@ func (w *WalletServer) initWithdrawSig() {
 			return
 		}
 	} else {
+		// 2025-03-07 reorg utxo for withdraw
+		utxos := w.reorgUtxo(utxosFromDb, false)
 		// 4. check withdraws can start
 		withdraws, err := w.state.GetWithdrawsCanStart()
 		if err != nil {
@@ -435,4 +439,13 @@ func (w *WalletServer) cleanWithdrawProcess() {
 	if err != nil {
 		log.Fatalf("WalletServer cleanWithdrawProcess unexpected error %v", err)
 	}
+}
+
+func (w *WalletServer) reorgUtxo(utxos []*db.Utxo, isConsolidation bool) []*db.Utxo {
+	if len(utxos) == 0 {
+		return utxos
+	}
+
+	// it can do some filter here
+	return utxos
 }

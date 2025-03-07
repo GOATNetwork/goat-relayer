@@ -3,8 +3,8 @@ package db
 import (
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/goatnetwork/goat-relayer/internal/models"
+	log "github.com/sirupsen/logrus"
 )
 
 // L2SyncStatus model
@@ -143,7 +143,7 @@ type SendOrder struct {
 	Txid         string    `gorm:"not null;index:sendorder_txid_index" json:"txid"`            // txid will update after signing status
 	NoWitnessTx  []byte    `json:"no_witness_tx"`                                              // no witness tx after tx build
 	TxFee        uint64    `gorm:"not null" json:"tx_fee"`                                     // the real tx fee will update after tx built
-	ExternalTxId string    `json:"external_tx_id"`                                             // fireblocks will return its special transaction id
+	ExternalTxId string    `gorm:"index:sendorder_external_txid_index" json:"external_tx_id"`  // fireblocks will return its special transaction id
 	UpdatedAt    time.Time `gorm:"not null" json:"updated_at"`
 }
 

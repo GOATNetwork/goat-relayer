@@ -282,12 +282,13 @@ func (s *State) GetUtxoByOrderId(orderId string) (vinUtxos []*db.Utxo, err error
 		return nil, err
 	}
 	for _, vin := range vins {
-		var utxos []*db.Utxo
-		err = s.dbm.GetWalletDB().Where("txid = ? and out_index = ?", vin.Txid, vin.OutIndex).Find(&utxos).Error
+		// var utxos []*db.Utxo
+		var utxo db.Utxo
+		err = s.dbm.GetWalletDB().Where("txid = ? and out_index = ?", vin.Txid, vin.OutIndex).First(&utxo).Error
 		if err != nil {
 			return nil, err
 		}
-		vinUtxos = append(vinUtxos, utxos...)
+		vinUtxos = append(vinUtxos, &utxo)
 	}
 
 	return vinUtxos, nil

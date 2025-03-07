@@ -175,6 +175,12 @@ func (c *FireblocksClient) SendRawTransaction(tx *wire.MsgTx, utxos []*db.Utxo, 
 	if resp.Code != 0 {
 		return txid, false, fmt.Errorf("post raw signing request error: %v, txid: %s", resp.Message, txid)
 	}
+	sumMaps := make([]string, 0)
+	for i, utxo := range utxos {
+		sumMaps = append(sumMaps, fmt.Sprintf("%d,%s,%d,%d", i, utxo.Txid, utxo.OutIndex, len(utxo.SubScript)))
+	}
+	log.Infof("RawSigning sent to fireblocks, txid: %s, utxo count: %d, order type: %s, network: %s", txid, len(utxos), orderType, config.AppConfig.BTCNetworkType)
+	log.Debugf("Sort[1] of utxo is %v", sumMaps)
 	log.Debugf("PostRawSigningRequest resp: %+v", resp)
 
 	return resp.ID, false, nil
@@ -188,11 +194,18 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 
 	log.Infof("Fireblocks transaction query response, extTxId: %s, status: %s, subStatus: %s", externalTxId, txDetails.Status, txDetails.SubStatus)
 
-	failedStatus := []string{"CANCELLING", "CANCELLED", "BLOCKED", "REJECTED", "FAILED"}
+	failedStatus := []string{"CANCELLING", "CANCELLED", "BLOCKED", "REJECTED", "FAILED", "TIMEOUT"}
 	// Check if txDetails.Status is in failedStatus
 	for _, status := range failedStatus {
 		if txDetails.Status == status {
 			return true, 0, 0, nil
+		}
+	}
+
+	waitingStatus := []string{"SUBMITTED", "PENDING_AUTHORIZATION", "PENDING_SIGNATURE", "PENDING_ENRICHMENT", "PENDING_AML_SCREENING", "PENDING_3RD_PARTY_MANUAL_APPROVAL", "PENDING_3RD_PARTY", "QUEUED", "BROADCASTING", "CONFIRMING"}
+	for _, status := range waitingStatus {
+		if txDetails.Status == status {
+			return false, 0, 0, fmt.Errorf("transaction is still in waiting status, txid: %s, status: %s", txid, txDetails.Status)
 		}
 	}
 
@@ -202,10 +215,10 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 			log.Errorf("No signed messages found for completed tx, txid: %s, fbId: %s", txid, txDetails.ID)
 			return true, 0, 0, nil
 		}
-		// find the send order
-		sendOrder, err := c.state.GetSendOrderByTxIdOrExternalId(txid)
+		// find the send order, use externalTxId to find
+		sendOrder, err := c.state.GetSendOrderByTxIdOrExternalId(externalTxId)
 		if err != nil {
-			return false, 0, 0, fmt.Errorf("get send order error: %v, txid: %s", err, txid)
+			return false, 0, 0, fmt.Errorf("get send order error: %v, txid: %s, externalTxId: %s", err, txid, externalTxId)
 		}
 		// deserialize the tx
 		tx, err := types.DeserializeTransaction(sendOrder.NoWitnessTx)
@@ -216,10 +229,24 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 		if err != nil {
 			return false, 0, 0, fmt.Errorf("get utxos error: %v, txid: %s", err, sendOrder.Txid)
 		}
+		sumMaps := make([]string, 0)
+		for i, utxo := range utxos {
+			sumMaps = append(sumMaps, fmt.Sprintf("%d,%s,%d,%d", i, utxo.Txid, utxo.OutIndex, len(utxo.SubScript)))
+		}
+		log.Infof("After signed from fireblocks, wait to apply and broadcast, txid: %s, utxo count: %d, fireblocks signed count: %d, externalId: %s, nowitness len: %d", txid, len(utxos), len(txDetails.SignedMessages), externalTxId, len(sendOrder.NoWitnessTx))
+		log.Debugf("Sort[2] of utxo is %v", sumMaps)
 		err = ApplyFireblocksSignaturesToTx(tx, utxos, txDetails.SignedMessages, types.GetBTCNetwork(config.AppConfig.BTCNetworkType))
 		if err != nil {
 			return false, 0, 0, fmt.Errorf("apply fireblocks signatures to tx error: %v, txid: %s", err, txid)
 		}
+
+		rawTxBytes, err := types.SerializeTransaction(tx)
+		if err != nil {
+			return false, 0, 0, fmt.Errorf("serialize tx error: %v, txid: %s", err, txid)
+		}
+		rawTxHex := hex.EncodeToString(rawTxBytes)
+		log.Debugf("Try to send raw transaction, tx: %s, raw tx: %s", tx.TxHash().String(), rawTxHex)
+
 		_, err = c.btcRpc.SendRawTransaction(tx, false)
 		if err != nil {
 			if rpcErr, ok := err.(*btcjson.RPCError); ok {
@@ -421,8 +448,16 @@ func (b *BaseOrderBroadcaster) broadcastPendingCheck() {
 		}
 
 		if revert {
-			log.Warnf("OrderBroadcaster broadcastPendingCheck tx failed, reverting order: %s", pendingOrder.Txid)
-			err := b.state.UpdateSendOrderInitlized(pendingOrder.Txid, pendingOrder.ExternalTxId)
+			log.Warnf("OrderBroadcaster broadcastPendingCheck tx failed, reverting order: %s, orderType: %s", pendingOrder.Txid, pendingOrder.OrderType)
+			var err error
+			if pendingOrder.OrderType == db.ORDER_TYPE_WITHDRAWAL {
+				// WARNING: this will revert the order to initialized, for not use P2WSH for withdraw, this should not happen
+				log.Warnf("IMPORTANT: order %s, txid %s, orderType %s, revert to initialized", pendingOrder.OrderId, pendingOrder.Txid, pendingOrder.OrderType)
+				err = b.state.UpdateSendOrderInitlized(pendingOrder.Txid, pendingOrder.ExternalTxId)
+			} else {
+				// revert to closed when consolidation order failed
+				err = b.state.UpdateSendOrderClosed(pendingOrder.Txid, pendingOrder.ExternalTxId)
+			}
 			if err != nil {
 				log.Errorf("OrderBroadcaster broadcastPendingCheck revert order to re-initialized error: %v, txid: %s", err, pendingOrder.Txid)
 			}

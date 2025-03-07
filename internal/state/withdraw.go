@@ -22,6 +22,7 @@ type WithdrawStateStore interface {
 	UpdateSendOrderInitlized(txid string, externalTxId string) error
 	UpdateSendOrderPending(txid string, externalTxId string) error
 	UpdateSendOrderConfirmed(txid string, blockHeight uint64) error
+	UpdateSendOrderClosed(txid string, externalTxId string) error
 	GetWithdrawsCanStart() ([]*db.Withdraw, error)
 	GetWithdrawsCanceling() ([]*db.Withdraw, error)
 	GetSendOrderInitlized() ([]*db.SendOrder, error)
@@ -424,6 +425,68 @@ func (s *State) UpdateSendOrderConfirmed(txid string, btcBlock uint64) error {
 		if err != nil {
 			return err
 		}
+		return nil
+	})
+	return err
+}
+
+// UpdateSendOrderClosed [DANGER]
+// when a consolidation request has sign issued, save to closed
+func (s *State) UpdateSendOrderClosed(txid string, externalTxId string) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
+		order, err := s.getOrderByExternalId(tx, externalTxId)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		// only consolidation order can be closed
+		if order == nil || order.OrderType != db.ORDER_TYPE_CONSOLIDATION {
+			return nil
+		}
+		if order.Status == db.ORDER_STATUS_CONFIRMED || order.Status == db.ORDER_STATUS_PROCESSED || order.Status == db.ORDER_STATUS_CLOSED {
+			return nil
+		}
+
+		// only pending order can be closed, aggregating order use closeWithdraw
+		if order.Status != db.ORDER_STATUS_PENDING {
+			return nil
+		}
+
+		order.Status = db.ORDER_STATUS_CLOSED
+		order.UpdatedAt = time.Now()
+
+		err = s.saveOrder(tx, order)
+		if err != nil {
+			return err
+		}
+
+		// update UTXO from pending to processed by vins
+		vins, err := s.getVinsByOrderId(tx, order.OrderId)
+		if err != nil {
+			return err
+		}
+		for _, vin := range vins {
+			var utxoInDb db.Utxo
+			if err = tx.Where("txid = ? and out_index = ?", vin.Txid, vin.OutIndex).First(&utxoInDb).Error; err != nil {
+				continue
+			}
+			if utxoInDb.Status != db.UTXO_STATUS_PENDING {
+				continue
+			}
+			err = tx.Model(&db.Utxo{}).Where("id = ?", utxoInDb.ID).Updates(&db.Utxo{Status: db.UTXO_STATUS_PROCESSED, UpdatedAt: time.Now()}).Error
+			if err != nil {
+				log.Errorf("State UpdateSendOrderClosed update utxo txid %s - out %d error: %v", utxoInDb.Txid, utxoInDb.OutIndex, err)
+				return err
+			}
+		}
+
+		err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_CLOSED, true)
+		if err != nil {
+			return err
+		}
+
 		return nil
 	})
 	return err
