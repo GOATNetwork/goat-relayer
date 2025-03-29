@@ -53,4 +53,15 @@ const (
 	DEPOSIT_STATUS_SIGNING   = "signing"
 	DEPOSIT_STATUS_PENDING   = "pending"
 	DEPOSIT_STATUS_PROCESSED = "processed"
+
+	TASK_STATUS_CREATE      = "create"
+	TASK_STATUS_RECEIVED    = "received"
+	TASK_STATUS_AGGREGATING = "aggregating"
+	TASK_STATUS_INIT        = "init"
+	TASK_STATUS_SIGNING     = "signing"
+	TASK_STATUS_PENDING     = "pending"
+	TASK_STATUS_CONFIRMED   = "confirmed"
+	TASK_STATUS_PROCESSED   = "processed"
+	TASK_STATUS_COMPLETED   = "completed"
+	TASK_STATUS_CLOSED      = "closed"
 )

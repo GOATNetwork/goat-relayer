@@ -371,8 +371,11 @@ func (lis *Layer2Listener) processNewDeposit(block uint64, attributes []abcitype
 		log.Errorf("Abci NewDeposit, add deposit result error: %v", err)
 		return err
 	}
-	log.Infof("Abci NewDeposit, block: %d, txid: %s, txout: %d, address: %v, amount: %d", block, txid, txout, address, amount)
-
+	// verify deposit task whether fund received
+	if err := lis.state.CheckAndUpdateTaskDepositStatus(txid, int(txout), address.Hex(), int64(amount)); err != nil {
+		log.Errorf("Abci NewDeposit, check and update task deposit status error: %v", err)
+		return err
+	}
 	return nil
 }
 
