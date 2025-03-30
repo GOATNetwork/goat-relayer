@@ -180,19 +180,19 @@ func (s *State) UpdateProcessedDeposit(txHash string, txout int, evmAddr string)
 	return nil
 }
 
-// CreateTaskDeposit create task deposit
-func (s *State) CreateTaskDeposit(taskId string, partnerId string, timelockEndTime uint64, deadline uint64, depositAddress string, amount int64, btcAddress string) error {
+// CreateSafeboxTask create safebox task
+func (s *State) CreateSafeboxTask(taskId string, partnerId string, timelockEndTime uint64, deadline uint64, depositAddress string, amount int64, btcAddress string) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
-	_, err := s.queryCreatedTaskDepositByEvmAddr(taskId)
+	_, err := s.queryCreatedSafeboxTaskByEvmAddr(taskId)
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return err
 	}
 	if err == nil {
 		return fmt.Errorf("task deposit already exists")
 	}
-	taskDeposit := db.TaskDeposit{
+	taskDeposit := db.SafeboxTask{
 		TaskId:          taskId,
 		PartnerId:       partnerId,
 		DepositAddress:  depositAddress,
@@ -210,7 +210,7 @@ func (s *State) CheckAndUpdateTaskDepositStatus(txid string, txout int, evmAddr 
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
-	taskDeposit, err := s.queryCreatedTaskDepositByEvmAddr(evmAddr)
+	taskDeposit, err := s.queryCreatedSafeboxTaskByEvmAddr(evmAddr)
 	if err != nil {
 		return err
 	}
@@ -343,11 +343,11 @@ func (s *State) queryDepositByTxHash(txHash string, outputIndex int) (*db.Deposi
 	return &deposit, nil
 }
 
-func (s *State) queryCreatedTaskDepositByEvmAddr(evmAddr string) (*db.TaskDeposit, error) {
-	var taskDeposit db.TaskDeposit
-	err := s.dbm.GetWalletDB().Where("deposit_address = ? and status = ?", evmAddr, db.TASK_STATUS_CREATE).First(&taskDeposit).Error
+func (s *State) queryCreatedSafeboxTaskByEvmAddr(evmAddr string) (*db.SafeboxTask, error) {
+	var task db.SafeboxTask
+	err := s.dbm.GetWalletDB().Where("deposit_address = ? and status = ?", evmAddr, db.TASK_STATUS_CREATE).First(&task).Error
 	if err != nil {
 		return nil, err
 	}
-	return &taskDeposit, nil
+	return &task, nil
 }

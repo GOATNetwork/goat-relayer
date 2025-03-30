@@ -391,6 +391,42 @@ func SelectWithdrawals(withdrawals []*db.Withdraw, networkFee types.BtcNetworkFe
 	return nil, nil, 0, 0, fmt.Errorf("no withdrawals found that meet the conditions")
 }
 
+// SelectSafeboxTxs select optimal safebox txs for safebox tx
+//
+// Parameters:
+//
+//	withdrawals - all withdrawals can start
+//	networkFee - network fee
+
+func SelectSafeboxTasks(tasks []*db.SafeboxTask, networkFee types.BtcNetworkFee, maxVout, immediateCount int, net *chaincfg.Params) (selectedTaskWithdraws []*db.Withdraw, receiverTypes []string, withdrawAmount int64, actualPrice int64, err error) {
+	if networkFee.HalfHourFee > uint64(config.AppConfig.BTCMaxNetworkFee) {
+		return nil, nil, 0, 0, fmt.Errorf("network fee is too high, cannot consolidate")
+	}
+
+	// sort safebox tasks by deadline in ascending order
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].Deadline < tasks[j].Deadline
+	})
+
+	selectedTasks := tasks[:immediateCount]
+	receiverTypes = make([]string, len(selectedTasks))
+
+	for i, task := range selectedTasks {
+		timelockP2WSHAddress, err := types.GenerateTimeLockP2WSHAddress(task.Pubkey[:], time.Unix(int64(task.Deadline), 0), net)
+		if err != nil {
+			log.Fatalf("Gen P2WPKH address from pubkey %s and timelock %d err %v", task.Pubkey, task.Deadline, err)
+		}
+		receiverTypes[i], _ = types.GetAddressType(timelockP2WSHAddress.EncodeAddress(), net)
+		selectedTaskWithdraws[i] = &db.Withdraw{
+			ID:      task.ID,
+			To:      timelockP2WSHAddress.EncodeAddress(),
+			Amount:  uint64(task.Amount),
+			TxPrice: uint64(networkFee.HalfHourFee),
+		}
+	}
+	return selectedTaskWithdraws, receiverTypes, int64(withdrawAmount), int64(actualPrice), nil
+}
+
 // CreateRawTransaction create raw transaction
 //
 // Parameters:

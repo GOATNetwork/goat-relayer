@@ -16,7 +16,7 @@ const (
 
 	ORDER_TYPE_WITHDRAWAL    = "withdrawal"
 	ORDER_TYPE_CONSOLIDATION = "consolidation"
-
+	ORDER_TYPE_SAFEBOX       = "safebox"
 	ORDER_STATUS_AGGREGATING = "aggregating"
 	ORDER_STATUS_INIT        = "init"
 	ORDER_STATUS_PENDING     = "pending"

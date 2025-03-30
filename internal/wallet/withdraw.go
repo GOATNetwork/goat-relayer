@@ -19,10 +19,12 @@ import (
 )
 
 const (
-	CONSOLIDATION_TRIGGER_COUNT = 100
-	CONSOLIDATION_MAX_VIN       = 500
-	WITHDRAW_IMMEDIATE_COUNT    = 150
-	WITHDRAW_MAX_VOUT           = 150
+	CONSOLIDATION_TRIGGER_COUNT  = 100
+	CONSOLIDATION_MAX_VIN        = 500
+	WITHDRAW_IMMEDIATE_COUNT     = 32
+	WITHDRAW_MAX_VOUT            = 32 // 32 is the max vout for goat validation
+	SAFEBOX_TASK_MAX_VOUT        = 1
+	SAFEBOX_TASK_IMMEDIATE_COUNT = 1
 )
 
 func (w *WalletServer) withdrawLoop(ctx context.Context) {
@@ -233,6 +235,34 @@ func (w *WalletServer) initWithdrawSig() {
 		log.Infof("WalletServer initWithdrawSig CreateRawTransaction for consolidation, tx: %s", tx.TxID())
 
 		msgSignSendOrder, err = w.createSendOrder(tx, db.ORDER_TYPE_CONSOLIDATION, selectedUtxos, nil, totalAmount, 0, finalAmount, uint64(totalAmount-finalAmount), actualFee, uint64(witnessSize), epochVoter, network)
+		if err != nil {
+			log.Errorf("WalletServer initWithdrawSig createSendOrder for consolidation error: %v", err)
+			return
+		}
+	} else if tasks, err := w.state.GetSafeboxTasks(); err == nil && len(tasks) > 0 {
+		safeboxTxFee := networkFee.HalfHourFee
+		selectedTaskWithdraws, receiverTypes, withdrawAmount, actualPrice, err := SelectSafeboxTasks(tasks, networkFee, WITHDRAW_MAX_VOUT, WITHDRAW_IMMEDIATE_COUNT, network)
+		if len(selectedTaskWithdraws) != 1 {
+			log.Infof("WalletServer initWithdrawSig no safebox tx after filter can start")
+			return
+		}
+		// create SendOrder for selectedWithdraws
+		selectOptimalUTXOs, totalSelectedAmount, _, changeAmount, estimateFee, witnessSize, err := SelectOptimalUTXOs(utxos, receiverTypes, withdrawAmount, actualPrice, len(selectedTaskWithdraws))
+		if err != nil {
+			log.Errorf("WalletServer initWithdrawSig SelectOptimalUTXOs error: %v", err)
+			return
+		}
+		log.Infof("WalletServer initWithdrawSig SelectOptimalUTXOs, totalSelectedAmount: %d, withdrawAmount: %d, changeAmount: %d, selectedUtxos: %d", totalSelectedAmount, withdrawAmount, changeAmount, len(selectOptimalUTXOs))
+
+		// create SendOrder for selectedUtxos consolidation
+		tx, actualFee, _, err := CreateRawTransaction(selectOptimalUTXOs, selectedTaskWithdraws, p2wpkhAddress.EncodeAddress(), changeAmount, estimateFee, int64(safeboxTxFee), witnessSize, network)
+		if err != nil {
+			log.Errorf("WalletServer initWithdrawSig CreateRawTransaction for consolidation error: %v", err)
+			return
+		}
+		log.Infof("WalletServer initWithdrawSig CreateRawTransaction for consolidation, tx: %s", tx.TxID())
+
+		msgSignSendOrder, err = w.createSendOrder(tx, db.ORDER_TYPE_SAFEBOX, selectOptimalUTXOs, selectedTaskWithdraws, totalSelectedAmount, withdrawAmount, changeAmount, actualFee, uint64(actualPrice), uint64(witnessSize), epochVoter, network)
 		if err != nil {
 			log.Errorf("WalletServer initWithdrawSig createSendOrder for consolidation error: %v", err)
 			return

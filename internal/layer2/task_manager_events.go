@@ -26,9 +26,7 @@ func (lis *Layer2Listener) handleTaskCreated(taskId *big.Int) error {
 		"partnerId":       task.PartnerId,
 	}).Info("new task created")
 
-	// TODO: save task info to db
-
-	lis.state.CreateTaskDeposit(taskId.String(), task.PartnerId.String(), uint64(task.TimelockEndTime), uint64(task.Deadline), task.DepositAddress.Hex(), task.Amount.Int64(), hex.EncodeToString(task.BtcAddress[:]))
+	lis.state.CreateSafeboxTask(taskId.String(), task.PartnerId.String(), uint64(task.TimelockEndTime), uint64(task.Deadline), task.DepositAddress.Hex(), task.Amount.Int64(), hex.EncodeToString(task.BtcAddress[:]))
 
 	return nil
 }
