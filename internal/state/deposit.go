@@ -181,11 +181,11 @@ func (s *State) UpdateProcessedDeposit(txHash string, txout int, evmAddr string)
 }
 
 // CreateSafeboxTask create safebox task
-func (s *State) CreateSafeboxTask(taskId string, partnerId string, timelockEndTime uint64, deadline uint64, depositAddress string, amount int64, btcAddress string) error {
+func (s *State) CreateSafeboxTask(taskId uint64, partnerId string, timelockEndTime uint64, deadline uint64, depositAddress string, amount int64, btcAddress string) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
-	_, err := s.queryCreatedSafeboxTaskByEvmAddr(taskId)
+	_, err := s.QueryCreatedSafeboxTaskByEvmAddr(depositAddress)
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return err
 	}
@@ -199,7 +199,7 @@ func (s *State) CreateSafeboxTask(taskId string, partnerId string, timelockEndTi
 		TimelockEndTime: timelockEndTime,
 		Deadline:        deadline,
 		Amount:          amount,
-		BtcAddress:      btcAddress,
+		BtcAddress:      []byte(btcAddress),
 		Status:          db.TASK_STATUS_CREATE,
 	}
 
@@ -210,7 +210,7 @@ func (s *State) CheckAndUpdateTaskDepositStatus(txid string, txout int, evmAddr 
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
-	taskDeposit, err := s.queryCreatedSafeboxTaskByEvmAddr(evmAddr)
+	taskDeposit, err := s.QueryCreatedSafeboxTaskByEvmAddr(evmAddr)
 	if err != nil {
 		return err
 	}
@@ -343,7 +343,7 @@ func (s *State) queryDepositByTxHash(txHash string, outputIndex int) (*db.Deposi
 	return &deposit, nil
 }
 
-func (s *State) queryCreatedSafeboxTaskByEvmAddr(evmAddr string) (*db.SafeboxTask, error) {
+func (s *State) QueryCreatedSafeboxTaskByEvmAddr(evmAddr string) (*db.SafeboxTask, error) {
 	var task db.SafeboxTask
 	err := s.dbm.GetWalletDB().Where("deposit_address = ? and status = ?", evmAddr, db.TASK_STATUS_CREATE).First(&task).Error
 	if err != nil {

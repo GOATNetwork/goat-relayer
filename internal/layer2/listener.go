@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +39,7 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/goatnetwork/goat-relayer/internal/tss"
 )
 
 func makeEncodingConfig() EncodingConfig {
@@ -83,6 +85,8 @@ type Layer2Listener struct {
 	txDecoder       sdktypes.TxDecoder
 
 	sigFinishChan chan interface{}
+
+	tssSigner *tss.Signer
 }
 
 func NewLayer2Listener(libp2p *p2p.LibP2PService, state *state.State, db *db.DatabaseManager) *Layer2Listener {
@@ -116,6 +120,9 @@ func NewLayer2Listener(libp2p *p2p.LibP2PService, state *state.State, db *db.Dat
 	encodingConfig := makeEncodingConfig()
 	txDecoder := encodingConfig.TxConfig.TxDecoder()
 
+	// 初始化TSS签名器
+	tssSigner := tss.NewSigner(config.AppConfig.TssEndpoint, big.NewInt(config.AppConfig.L2ChainId.Int64()))
+
 	return &Layer2Listener{
 		libp2p:    libp2p,
 		db:        db,
@@ -133,6 +140,7 @@ func NewLayer2Listener(libp2p *p2p.LibP2PService, state *state.State, db *db.Dat
 		txDecoder:       txDecoder,
 
 		sigFinishChan: make(chan interface{}, 256),
+		tssSigner:     tssSigner,
 	}
 }
 

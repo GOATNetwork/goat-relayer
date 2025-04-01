@@ -153,6 +153,7 @@ type Config struct {
 	FireblocksCallbackPriv string
 	FireblocksCallbackPub  string
 	FireblocksApiKey       string
+	TssEndpoint            string
 	EnableWebhook          bool
 	EnableRelayer          bool
 	DbDir                  string
