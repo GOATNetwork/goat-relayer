@@ -15,6 +15,8 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/core/types"
 	bitcointypes "github.com/goatnetwork/goat/x/bitcoin/types"
 	relayertypes "github.com/goatnetwork/goat/x/relayer/types"
 )
@@ -371,7 +373,41 @@ func (lis *Layer2Listener) processNewDeposit(block uint64, attributes []abcitype
 		log.Errorf("Abci NewDeposit, add deposit result error: %v", err)
 		return err
 	}
-	log.Infof("Abci NewDeposit, block: %d, txid: %s, txout: %d, address: %v, amount: %d", block, txid, txout, address, amount)
+	// verify deposit task whether fund received
+	if err := lis.state.CheckAndUpdateTaskDepositStatus(txid, int(txout), address.Hex(), int64(amount)); err != nil {
+		log.Errorf("Abci NewDeposit, check and update task deposit status error: %v", err)
+		return err
+	}
+
+	// Get task information
+	taskDeposit, err := lis.state.QueryCreatedSafeboxTaskByEvmAddr(address.Hex())
+	if err != nil {
+		log.Errorf("Abci NewDeposit, query task deposit error: %v", err)
+		return err
+	}
+
+	// Create unsigned transaction
+	opts := &bind.TransactOpts{
+		From: common.HexToAddress(address.Hex()),
+		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			// Sign transaction using TSS
+			return lis.tssSigner.SignTx(context.Background(), tx)
+		},
+	}
+
+	// Call receiveFunds contract method
+	tx, err := lis.contractTaskManager.ReceiveFunds(opts,
+		big.NewInt(int64(taskDeposit.TaskId)), // taskId
+		big.NewInt(int64(amount)),             // amount
+		common.HexToHash(txid),                // fundingTxHash
+		uint32(txout),                         // txOut
+	)
+	if err != nil {
+		log.Errorf("Abci NewDeposit, receiveFunds error: %v", err)
+		return err
+	}
+
+	log.Infof("Abci NewDeposit, receiveFunds tx sent: %s", tx.Hash().Hex())
 
 	return nil
 }

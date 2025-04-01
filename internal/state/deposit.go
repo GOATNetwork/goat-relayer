@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -179,6 +180,58 @@ func (s *State) UpdateProcessedDeposit(txHash string, txout int, evmAddr string)
 	return nil
 }
 
+// CreateSafeboxTask create safebox task
+func (s *State) CreateSafeboxTask(taskId uint64, partnerId string, timelockEndTime uint64, deadline uint64, depositAddress string, amount int64, btcAddress string) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	_, err := s.QueryCreatedSafeboxTaskByEvmAddr(depositAddress)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return err
+	}
+	if err == nil {
+		return fmt.Errorf("task deposit already exists")
+	}
+	taskDeposit := db.SafeboxTask{
+		TaskId:          taskId,
+		PartnerId:       partnerId,
+		DepositAddress:  depositAddress,
+		TimelockEndTime: timelockEndTime,
+		Deadline:        deadline,
+		Amount:          amount,
+		BtcAddress:      []byte(btcAddress),
+		Status:          db.TASK_STATUS_CREATE,
+	}
+
+	return s.dbm.GetWalletDB().Create(&taskDeposit).Error
+}
+
+func (s *State) CheckAndUpdateTaskDepositStatus(txid string, txout int, evmAddr string, amount int64) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	taskDeposit, err := s.QueryCreatedSafeboxTaskByEvmAddr(evmAddr)
+	if err != nil {
+		return err
+	}
+
+	// check if deadline is over
+	if time.Now().Unix() > int64(taskDeposit.Deadline) {
+		return fmt.Errorf("task deposit deadline over")
+	}
+
+	// check if amount is enough
+	if amount == int64(taskDeposit.Amount) {
+		return fmt.Errorf("task deposit amount not equal")
+	}
+
+	taskDeposit.Status = db.TASK_STATUS_RECEIVED
+	taskDeposit.FundingTxid = txid
+	taskDeposit.FundingOutIndex = txout
+	taskDeposit.UpdatedAt = time.Now()
+	return s.dbm.GetWalletDB().Save(&taskDeposit).Error
+}
+
 // GetDepositForSign get deposits for sign
 func (s *State) GetDepositForSign(size int, processedHeight uint64) ([]*db.Deposit, error) {
 	s.depositMu.RLock()
@@ -288,4 +341,13 @@ func (s *State) queryDepositByTxHash(txHash string, outputIndex int) (*db.Deposi
 		return nil, err
 	}
 	return &deposit, nil
+}
+
+func (s *State) QueryCreatedSafeboxTaskByEvmAddr(evmAddr string) (*db.SafeboxTask, error) {
+	var task db.SafeboxTask
+	err := s.dbm.GetWalletDB().Where("deposit_address = ? and status = ?", evmAddr, db.TASK_STATUS_CREATE).First(&task).Error
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
 }

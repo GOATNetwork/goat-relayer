@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,9 @@ import (
 	sdkclient "github.com/cosmos/cosmos-sdk/client"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/goatnetwork/goat-relayer/internal/tss"
 )
 
 func makeEncodingConfig() EncodingConfig {
@@ -69,9 +73,10 @@ type Layer2Listener struct {
 	hasVoterUpdate bool
 	voterUpdateMu  sync.Mutex
 
-	contractBitcoin *abis.BitcoinContract
-	contractBridge  *abis.BridgeContract
-	contractRelayer *abis.RelayerContract
+	contractBitcoin     *abis.BitcoinContract
+	contractBridge      *abis.BridgeContract
+	contractRelayer     *abis.RelayerContract
+	contractTaskManager *abis.TaskManagerContract
 
 	goatRpcClient   *rpchttp.HTTP
 	goatGrpcConn    *grpc.ClientConn
@@ -80,6 +85,8 @@ type Layer2Listener struct {
 	txDecoder       sdktypes.TxDecoder
 
 	sigFinishChan chan interface{}
+
+	tssSigner *tss.Signer
 }
 
 func NewLayer2Listener(libp2p *p2p.LibP2PService, state *state.State, db *db.DatabaseManager) *Layer2Listener {
@@ -100,6 +107,10 @@ func NewLayer2Listener(libp2p *p2p.LibP2PService, state *state.State, db *db.Dat
 	if err != nil {
 		log.Fatalf("Failed to instantiate contract bridge: %v", err)
 	}
+	contractTaskManager, err := abis.NewTaskManagerContract(abis.TaskManagerAddress, ethClient)
+	if err != nil {
+		log.Fatalf("Failed to instantiate contract task manager: %v", err)
+	}
 
 	goatRpcClient, goatGrpcConn, goatQueryCLient, err := DialCosmosClient()
 	if err != nil {
@@ -109,15 +120,19 @@ func NewLayer2Listener(libp2p *p2p.LibP2PService, state *state.State, db *db.Dat
 	encodingConfig := makeEncodingConfig()
 	txDecoder := encodingConfig.TxConfig.TxDecoder()
 
+	// Initialize TSS signer
+	tssSigner := tss.NewSigner(config.AppConfig.TssEndpoint, big.NewInt(config.AppConfig.L2ChainId.Int64()))
+
 	return &Layer2Listener{
 		libp2p:    libp2p,
 		db:        db,
 		state:     state,
 		ethClient: ethClient,
 
-		contractBitcoin: contractBitcoin,
-		contractBridge:  contractBridge,
-		contractRelayer: contractRelayer,
+		contractBitcoin:     contractBitcoin,
+		contractBridge:      contractBridge,
+		contractRelayer:     contractRelayer,
+		contractTaskManager: contractTaskManager,
 
 		goatRpcClient:   goatRpcClient,
 		goatGrpcConn:    goatGrpcConn,
@@ -125,6 +140,7 @@ func NewLayer2Listener(libp2p *p2p.LibP2PService, state *state.State, db *db.Dat
 		txDecoder:       txDecoder,
 
 		sigFinishChan: make(chan interface{}, 256),
+		tssSigner:     tssSigner,
 	}
 }
 
@@ -197,6 +213,11 @@ func (lis *Layer2Listener) checkAndReconnect() error {
 }
 
 func (lis *Layer2Listener) Start(ctx context.Context) {
+	go lis.listenExecutorEvents(ctx)
+	go lis.listenConsensusEvents(ctx)
+}
+
+func (lis *Layer2Listener) listenConsensusEvents(ctx context.Context) {
 	// Get latest sync height
 	var syncStatus db.L2SyncStatus
 	l2SyncDB := lis.db.GetL2SyncDB()
@@ -455,4 +476,30 @@ func (lis *Layer2Listener) getGoatChainGenesisState(ctx context.Context) (*db.L2
 	}
 
 	return l2Info, voters, relayerState.Relayer.Epoch, relayerState.Sequence, relayerState.Relayer.Proposer, nil
+}
+
+// listen executor events
+func (lis *Layer2Listener) listenExecutorEvents(ctx context.Context) {
+	// create event channel
+	taskCreatedChan := make(chan *abis.TaskManagerContractTaskCreated)
+
+	// create event filter
+	sub, err := lis.contractTaskManager.WatchTaskCreated(&bind.WatchOpts{}, taskCreatedChan)
+	if err != nil {
+		log.Fatalf("Failed to create TaskCreated event filter: %v", err)
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			sub.Unsubscribe()
+			return
+		case event := <-taskCreatedChan:
+			if err := lis.handleTaskCreated(event.TaskId); err != nil {
+				log.Errorf("Failed to process TaskCreated event: %v", err)
+			}
+		case err := <-sub.Err():
+			log.Errorf("Error in TaskCreated event filter: %v", err)
+		}
+	}
 }

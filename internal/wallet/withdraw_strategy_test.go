@@ -1,8 +1,11 @@
 package wallet_test
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -10,7 +13,9 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/types"
@@ -18,6 +23,61 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// UTXO Information Structure
+type UTXOInfo struct {
+	Txid   string `json:"txid"`
+	Vout   uint32 `json:"vout"`
+	Value  int64  `json:"value"`
+	Status struct {
+		Confirmed   bool   `json:"confirmed"`
+		BlockHeight uint64 `json:"block_height,omitempty"`
+		BlockHash   string `json:"block_hash,omitempty"`
+		BlockTime   int64  `json:"block_time,omitempty"`
+	} `json:"status"`
+}
+
+// GetUTXOsFromMempool Retrieves the UTXO list for an address from mempool.space
+func GetUTXOsFromMempool(address string, networkType string) ([]*UTXOInfo, error) {
+	// Select the API base URL based on the network type
+	baseURL := "https://mempool.space"
+	switch networkType {
+	case "testnet3":
+		baseURL = "https://mempool.space/testnet"
+	case "signet":
+		baseURL = "https://mempool.space/signet"
+	case "regtest":
+		baseURL = "http://127.0.0.1:8800"
+	}
+
+	// Construct the API URL
+	url := fmt.Sprintf("%s/api/address/%s/utxo", baseURL, address)
+
+	// Create an HTTP client
+	client := &http.Client{
+		Timeout: time.Second * 10,
+	}
+
+	// Send a GET request
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to request the mempool API: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check the response status
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API returned a non-200 status code: %d", resp.StatusCode)
+	}
+
+	// Parse the JSON response
+	var utxos []*UTXOInfo
+	if err := json.NewDecoder(resp.Body).Decode(&utxos); err != nil {
+		return nil, fmt.Errorf("failed to parse the JSON response: %v", err)
+	}
+
+	return utxos, nil
+}
 
 // Test ConsolidateSmallUTXOs function
 func TestConsolidateSmallUTXOs(t *testing.T) {
@@ -238,6 +298,280 @@ func TestSpentP2wsh(t *testing.T) {
 	txBytes, err := types.SerializeTransaction(tx)
 	assert.NoError(t, err)
 	t.Logf("txBytes: %s", hex.EncodeToString(txBytes))
+}
+
+func TestSpentTimeLockP2wsh(t *testing.T) {
+	t.Skip("This is a time lock test, please run it manually")
+	privKeyHex := "f275e00ed707eacdc6c0bd8cd68fa3b49e5d7161c1fb8592d631c26a882b1f38"
+	prevHash, err := chainhash.NewHashFromStr("9476550b6f636a63becb4b8c5656ee29958c0e50f148f4ea2269d08a4fa6f50d")
+	utxoAmount := int64(48946) // input amount
+	lockTime := time.Unix(1742728040, 0)
+
+	privKeyBytes, err := hex.DecodeString(privKeyHex)
+	require.NoError(t, err)
+	privKey, _ := btcec.PrivKeyFromBytes(privKeyBytes)
+
+	// Create new transaction
+	tx := wire.NewMsgTx(wire.TxVersion)
+	tx.LockTime = uint32(lockTime.Unix()) // Set transaction LockTime to timelock timestamp
+
+	// Add input - timelock UTXO
+	require.NoError(t, err)
+	outPoint := wire.NewOutPoint(prevHash, 0)
+	txIn := wire.NewTxIn(outPoint, nil, nil)
+	txIn.Sequence = 0xFFFFFFF0 // Use 0xFFFFFFF0 as sequence number for timelock transaction
+	tx.AddTxIn(txIn)
+
+	// Create timelock redeem script
+	pubKey := privKey.PubKey()
+	subScript, err := txscript.NewScriptBuilder().
+		AddInt64(lockTime.Unix()).
+		AddOp(txscript.OP_CHECKLOCKTIMEVERIFY).
+		AddOp(txscript.OP_DROP).
+		AddData(pubKey.SerializeCompressed()).
+		AddOp(txscript.OP_CHECKSIG).Script()
+	require.NoError(t, err)
+
+	// Create P2WSH output script
+	redeemScriptHash := sha256.Sum256(subScript)
+	scriptAddr, err := btcutil.NewAddressWitnessScriptHash(redeemScriptHash[:], &chaincfg.TestNet3Params)
+	require.NoError(t, err)
+
+	// Create P2WPKH output address
+	p2wpkhAddr, err := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(pubKey.SerializeCompressed()), &chaincfg.TestNet3Params)
+	require.NoError(t, err)
+	p2wpkhScript, err := txscript.PayToAddrScript(p2wpkhAddr)
+	require.NoError(t, err)
+
+	// Calculate transaction fee
+	fee := int64(1000) // 1000 satoshis as fixed fee
+	outputAmount := utxoAmount - fee
+
+	// Add output
+	txOut := wire.NewTxOut(outputAmount, p2wpkhScript)
+	tx.AddTxOut(txOut)
+
+	// Create input script
+	prevPkScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_0).AddData(redeemScriptHash[:]).Script()
+	require.NoError(t, err)
+
+	// Create signature
+	inputFetcher := txscript.NewCannedPrevOutputFetcher(prevPkScript, utxoAmount)
+	sigHashes := txscript.NewTxSigHashes(tx, inputFetcher)
+	sig, err := txscript.RawTxInWitnessSignature(tx, sigHashes, 0, utxoAmount, subScript, txscript.SigHashAll, privKey)
+	require.NoError(t, err)
+
+	// Set witness data
+	tx.TxIn[0].Witness = wire.TxWitness{sig, subScript}
+
+	// Serialize transaction
+	txBytes, err := types.SerializeTransaction(tx)
+	require.NoError(t, err)
+	t.Logf("txBytes: %s", hex.EncodeToString(txBytes))
+
+	// Verify transaction
+	utxo := &db.Utxo{
+		ReceiverType: "P2WSH",
+		Receiver:     scriptAddr.String(),
+		SubScript:    subScript,
+		Amount:       utxoAmount,
+	}
+
+	// Sign transaction
+	err = wallet.SignTransactionByPrivKey(privKey, tx, []*db.Utxo{utxo}, &chaincfg.TestNet3Params)
+	require.NoError(t, err)
+
+	// Initialize configuration
+	tempDir := t.TempDir()
+	t.Setenv("DB_DIR", tempDir)
+	t.Setenv("BTC_RPC", "127.0.0.1:18443")
+	t.Setenv("BTC_RPC_USER", "test")
+	t.Setenv("BTC_RPC_PASS", "test")
+	t.Setenv("BTC_NETWORK_TYPE", "regtest")
+	config.InitConfig()
+
+	// Create Bitcoin client
+	connConfig := &rpcclient.ConnConfig{
+		Host:         config.AppConfig.BTCRPC,
+		User:         config.AppConfig.BTCRPC_USER,
+		Pass:         config.AppConfig.BTCRPC_PASS,
+		HTTPPostMode: true,
+		DisableTLS:   true,
+	}
+	btcClient, err := rpcclient.New(connConfig, nil)
+	if err != nil {
+		t.Fatalf("Failed to create Bitcoin client: %v", err)
+	}
+	defer btcClient.Shutdown()
+	txid, err := btcClient.SendRawTransaction(tx, false)
+	// Get the current time
+	currentTime := time.Now()
+	t.Logf("Txid: %s", txid)
+	t.Logf("Current time: %v", currentTime)
+	t.Logf("Lock time: %v", lockTime)
+	// Ensure the lock time has expired
+	if currentTime.Before(lockTime) {
+		t.Logf("Lock time has not expired, current time: %v, lock time: %v, err: %v", currentTime, lockTime, err)
+		assert.Error(t, err)
+	} else {
+		assert.NoError(t, err)
+	}
+}
+
+// Create a time-locked transaction
+func createTimeLockTransaction(btcClient *rpcclient.Client, utxo *UTXOInfo, privKey *btcutil.WIF, targetAddr string, lockTime time.Time) (*wire.MsgTx, error) {
+	tx := wire.NewMsgTx(wire.TxVersion)
+	tx.LockTime = 0
+
+	// Add input
+	utxoHash, err := chainhash.NewHashFromStr(utxo.Txid)
+	if err != nil {
+		return nil, fmt.Errorf("Invalid UTXO hash: %v", err)
+	}
+	outPoint := wire.NewOutPoint(utxoHash, utxo.Vout)
+	txIn := wire.NewTxIn(outPoint, nil, nil)
+	txIn.Sequence = 0xFFFFFFF0 // Enable RBF
+	tx.AddTxIn(txIn)
+
+	// Create redeem script
+	builder := txscript.NewScriptBuilder()
+	builder.AddInt64(lockTime.Unix())
+	builder.AddOp(txscript.OP_CHECKLOCKTIMEVERIFY)
+	builder.AddOp(txscript.OP_DROP)
+	builder.AddData(privKey.PrivKey.PubKey().SerializeCompressed())
+	builder.AddOp(txscript.OP_CHECKSIG)
+	redeemScript, err := builder.Script()
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create redeem script: %v", err)
+	}
+
+	// Create P2WSH address
+	redeemScriptHash := chainhash.HashB(redeemScript)
+	scriptAddr, err := btcutil.NewAddressWitnessScriptHash(redeemScriptHash, &chaincfg.TestNet3Params)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create P2WSH address: %v", err)
+	}
+
+	// Create P2WSH output script
+	scriptPubKey, err := txscript.PayToAddrScript(scriptAddr)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create P2WSH output script: %v", err)
+	}
+
+	// Calculate transaction fee (simplified version)
+	fee := int64(1000) // 1000 satoshis as fixed fee
+	txOut := wire.NewTxOut(utxo.Value-fee, scriptPubKey)
+	tx.AddTxOut(txOut)
+
+	// Get input UTXO's raw transaction
+	utxoTx, err := btcClient.GetRawTransaction(utxoHash)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get UTXO: %v", err)
+	}
+
+	// Get original script
+	utxoScript := utxoTx.MsgTx().TxOut[utxo.Vout].PkScript
+
+	// Create signature
+	prevOutputFetcher := txscript.NewCannedPrevOutputFetcher(utxoScript, utxo.Value)
+	sigHashes := txscript.NewTxSigHashes(tx, prevOutputFetcher)
+	sig, err := txscript.RawTxInWitnessSignature(tx, sigHashes, 0, utxo.Value, utxoScript, txscript.SigHashAll, privKey.PrivKey)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create signature: %v", err)
+	}
+
+	// Set witness data
+	tx.TxIn[0].Witness = wire.TxWitness{sig, privKey.PrivKey.PubKey().SerializeCompressed()}
+	tx.TxIn[0].SignatureScript = nil
+
+	// Print redeem script details
+	fmt.Printf("Redeem Script Info:\n")
+	fmt.Printf("1. Redeem Script: %x\n", redeemScript)
+	fmt.Printf("2. Redeem Script Length: %d\n", len(redeemScript))
+	fmt.Printf("3. Redeem Script Hash: %x\n", chainhash.HashB(redeemScript))
+	fmt.Printf("4. Expected Witness Program Hash: %x\n", redeemScriptHash)
+
+	return tx, nil
+}
+
+func TestCreateTimeLockP2wsh(t *testing.T) {
+	t.Skip("This is a time lock test, please run it manually")
+	// Set lock time to 30 seconds later (reduce waiting time)
+	lockTime := time.Now().Add(30 * time.Second)
+	t.Logf("Set lock time to: %v", lockTime.Unix())
+
+	// Initialize configuration
+	tempDir := t.TempDir()
+	t.Setenv("DB_DIR", tempDir)
+	t.Setenv("BTC_RPC", "127.0.0.1:18443")
+	t.Setenv("BTC_RPC_USER", "test")
+	t.Setenv("BTC_RPC_PASS", "test")
+	t.Setenv("BTC_NETWORK_TYPE", "regtest")
+	config.InitConfig()
+
+	// Create Bitcoin client
+	connConfig := &rpcclient.ConnConfig{
+		Host:         config.AppConfig.BTCRPC,
+		User:         config.AppConfig.BTCRPC_USER,
+		Pass:         config.AppConfig.BTCRPC_PASS,
+		HTTPPostMode: true,
+		DisableTLS:   true,
+	}
+
+	btcClient, err := rpcclient.New(connConfig, nil)
+	if err != nil {
+		t.Fatalf("Failed to create Bitcoin client: %v", err)
+	}
+	defer btcClient.Shutdown()
+
+	// Test data
+	wif := "cVi1iEB39ARMhrt825f5v8eFuP5DfPkfQpgggZD1KxDjwdCCuhtq"
+	wifKey, err := btcutil.DecodeWIF(wif)
+	if err != nil {
+		t.Fatalf("Failed to decode WIF: %v", err)
+	}
+
+	// Get address UTXO
+	addr := "tb1qksncyqxd4857fa8uadklcj56a5g45zmqwjm40f"
+	utxos, err := GetUTXOsFromMempool(addr, "testnet3")
+	if err != nil {
+		t.Fatalf("Failed to get UTXO: %v", err)
+	}
+	if len(utxos) == 0 {
+		t.Skip("No available UTXO, skipping test")
+	}
+
+	// 1. Create time lock transaction
+	tx, err := createTimeLockTransaction(btcClient, utxos[0], wifKey, addr, lockTime)
+	if err != nil {
+		t.Fatalf("Failed to create time lock transaction: %v", err)
+	}
+
+	// Broadcast transaction
+	txHash, err := btcClient.SendRawTransaction(tx, false)
+	if err != nil {
+		t.Fatalf("Failed to broadcast transaction: %v", err)
+	}
+	t.Logf("Time lock transaction has been broadcast, transaction ID: %s", txHash.String())
+
+}
+
+func TestGetUTXOsFromMempool(t *testing.T) {
+	// Testnet address
+	testnetAddress := "bcrt1qksncyqxd4857fa8uadklcj56a5g45zmqvmzccq"
+	testnetUTXOs, err := GetUTXOsFromMempool(testnetAddress, "regtest")
+	if err != nil {
+		t.Logf("Failed to get testnet UTXOs (possibly no UTXO for the address): %v", err)
+	}
+	for _, utxo := range testnetUTXOs {
+		t.Logf("Testnet UTXO info:\n"+
+			"  Transaction ID: %s\n"+
+			"  Output Index: %d\n"+
+			"  Amount: %d satoshis",
+			utxo.Txid,
+			utxo.Vout,
+			utxo.Value)
+	}
 }
 
 // Test GenerateRawMeessageToFireblocks function

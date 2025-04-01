@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -76,6 +77,35 @@ func TestGenerateV0P2WSHAddress(t *testing.T) {
 
 	// Call function to generate P2WSH address
 	p2wshAddress, err := GenerateV0P2WSHAddress(pubKey, evmAddress, net)
+	if err != nil {
+		t.Fatalf("Failed to generate P2WSH address: %v", err)
+	}
+
+	// Validate the generated address
+	if p2wshAddress == nil {
+		t.Fatal("Generated P2WSH address is nil")
+	}
+
+	// Check if the address prefix is correct (testnet3 P2WSH addresses start with "tb1q")
+	if !strings.HasPrefix(p2wshAddress.EncodeAddress(), "tb1q") {
+		t.Errorf("Generated address prefix is incorrect, expected to start with 'tb1q', actual: %s", p2wshAddress.EncodeAddress())
+	}
+
+	// Print the generated address
+	t.Logf("Generated P2WSH address: %s", p2wshAddress.EncodeAddress())
+}
+
+func TestGenerateTimeLockP2WSHAddress(t *testing.T) {
+	pubKeyHex := "0383560def84048edefe637d0119a4428dd12a42765a118b2bf77984057633c50e"
+	pubKey, err := hex.DecodeString(pubKeyHex)
+	if err != nil {
+		t.Fatalf("Failed to decode public key: %v", err)
+	}
+
+	lockTime := time.Now().Add(time.Hour * 24 * 30)
+	net := &chaincfg.TestNet3Params
+
+	p2wshAddress, err := GenerateTimeLockP2WSHAddress(pubKey, lockTime, net)
 	if err != nil {
 		t.Fatalf("Failed to generate P2WSH address: %v", err)
 	}
