@@ -6,6 +6,7 @@ import (
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/state"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,6 +17,9 @@ func TestAddUnconfirmDeposit(t *testing.T) {
 
 	// Initialize config module
 	config.InitConfig()
+
+	// Set log level to error to suppress warnings
+	logrus.SetLevel(logrus.ErrorLevel)
 
 	// Initialize State
 	// Initialize DatabaseManager

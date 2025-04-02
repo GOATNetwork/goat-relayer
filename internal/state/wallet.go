@@ -7,6 +7,7 @@ import (
 
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/types"
+	bitcointypes "github.com/goatnetwork/goat/x/bitcoin/types"
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
@@ -85,8 +86,15 @@ func (s *State) AddUtxo(utxo *db.Utxo, pk []byte, blockHash string, blockHeight 
 				}
 				utxo.SubScript = subScript
 			}
-		} else if len(noWitnessTx) > 0 && isDeposit {
-			// check deposit cache table, if it not exist, save deposit cache table
+		} else if isDeposit {
+			// if not found
+			l := len(noWitnessTx)
+			// if noWitnessTx size invalid, skip save deposit to cache table
+			if l < bitcointypes.MinDepositTxSize || l > bitcointypes.MaxAllowedBtcTxSize {
+				log.Warnf("State AddUtxo noWitnessTx size invalid: %v", l)
+				return nil
+			}
+			// save deposit to cache table
 			err = s.SaveConfirmDeposit(utxo.Txid, utxo.Amount, hex.EncodeToString(noWitnessTx), utxo.EvmAddr, 1, utxo.OutIndex, blockHash, blockHeight, merkleRoot, proofBytes, txIndex)
 			if err != nil {
 				log.Errorf("State AddUtxo SaveConfirmDeposit error: %v", err)

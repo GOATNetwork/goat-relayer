@@ -13,7 +13,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func (lis *Layer2Listener) processMsgInitializeWithdrawal(msg *bitcointypes.MsgProcessWithdrawal) error {
+func (lis *Layer2Listener) processMsgInitializeWithdrawal(msg *bitcointypes.MsgProcessWithdrawalV2) error {
 	log.Debugf("Process MsgInitializeWithdrawal, no witness tx: %v, tx fee: %d, withdraw ids: %v", msg.NoWitnessTx, msg.TxFee, msg.Id)
 	network := types.GetBTCNetwork(config.AppConfig.BTCNetworkType)
 	tx, err := types.DeserializeTransaction(msg.NoWitnessTx)

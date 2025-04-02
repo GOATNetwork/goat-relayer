@@ -6,6 +6,7 @@ GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
 GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
+GO_IMAGE_VERSION=1.23.3-bullseye
 BINARY_NAME=goat-relayer
 
 # Build binary
@@ -36,4 +37,7 @@ docker-build:
 docker-build-x:
 	docker buildx build --platform linux/arm64 -t goatnetwork/goat-relayer:latest --load .
 
-.PHONY: all build clean test deps run docker-build
+docker-test:
+	docker run --rm -v $(shell pwd):/app -w /app golang:$(GO_IMAGE_VERSION) go test -v ./...
+
+.PHONY: all build clean test deps run docker-build docker-build-all docker-build-x docker-test

@@ -54,7 +54,7 @@ func (s *Signer) handleSigStartSendOrder(ctx context.Context, e types.MsgSignSen
 			Epoch:        e.Epoch,
 			IsProposer:   true,
 			VoterAddress: s.address, // proposer address
-			SigData:      s.makeSigSendOrder(order.OrderType, e.WithdrawIds, order.NoWitnessTx, order.TxFee),
+			SigData:      s.makeSigSendOrder(order.OrderType, e.WithdrawIds, e.WitnessSize, order.NoWitnessTx, order.TxFee),
 			CreateTime:   time.Now().Unix(),
 		},
 		SendOrder: e.SendOrder,
@@ -64,6 +64,7 @@ func (s *Signer) handleSigStartSendOrder(ctx context.Context, e types.MsgSignSen
 		Withdraws: e.Withdraws,
 
 		WithdrawIds: e.WithdrawIds,
+		WitnessSize: e.WitnessSize,
 	}
 
 	// p2p broadcast
@@ -94,7 +95,7 @@ func (s *Signer) handleSigStartSendOrder(ctx context.Context, e types.MsgSignSen
 	}
 
 	if order.OrderType == db.ORDER_TYPE_WITHDRAWAL && msgWithdrawal != nil {
-		newProposal := layer2.NewProposal[*bitcointypes.MsgProcessWithdrawal](s.layer2Listener)
+		newProposal := layer2.NewProposal[*bitcointypes.MsgProcessWithdrawalV2](s.layer2Listener)
 		err = newProposal.RetrySubmit(ctx, e.RequestId, msgWithdrawal, config.AppConfig.L2SubmitRetry)
 		if err != nil {
 			log.Errorf("SigStart proposer submit MsgSignSendOrder to RPC error, request id: %s, err: %v", e.RequestId, err)
@@ -160,7 +161,7 @@ func (s *Signer) handleSigReceiveSendOrder(ctx context.Context, e types.MsgSignS
 
 		// withdrawal && consolidation both submit to layer2, this
 		if msgWithdrawal != nil {
-			newProposal := layer2.NewProposal[*bitcointypes.MsgProcessWithdrawal](s.layer2Listener)
+			newProposal := layer2.NewProposal[*bitcointypes.MsgProcessWithdrawalV2](s.layer2Listener)
 			err = newProposal.RetrySubmit(ctx, e.RequestId, msgWithdrawal, config.AppConfig.L2SubmitRetry)
 			if err != nil {
 				log.Errorf("SigReceive send withdrawal proposer submit NewBlock to RPC error, request id: %s, err: %v", e.RequestId, err)
@@ -231,6 +232,12 @@ func (s *Signer) handleSigReceiveSendOrder(ctx context.Context, e types.MsgSignS
 				log.Errorf("SigReceive SendOrder request id %s unmarshal withdraws err: %v", e.RequestId, err)
 				return err
 			}
+		} else if order.OrderType == db.ORDER_TYPE_CONSOLIDATION {
+			// check consolidation in init, aggregating, pending, if true, return
+			if s.state.HasConsolidationInProgress() {
+				log.Warnf("SigReceive SendOrder ignore, there is a consolidation in progress, request id: %s", e.RequestId)
+				return fmt.Errorf("SigReceive SendOrder cannot handle, there is a consolidation in progress, request id: %s", e.RequestId)
+			}
 		}
 
 		// check txid
@@ -265,7 +272,7 @@ func (s *Signer) handleSigReceiveSendOrder(ctx context.Context, e types.MsgSignS
 				Epoch:        e.Epoch,
 				IsProposer:   false,
 				VoterAddress: s.address, // voter address
-				SigData:      s.makeSigSendOrder(order.OrderType, e.WithdrawIds, order.NoWitnessTx, order.TxFee),
+				SigData:      s.makeSigSendOrder(order.OrderType, e.WithdrawIds, e.WitnessSize, order.NoWitnessTx, order.TxFee),
 				CreateTime:   time.Now().Unix(),
 			},
 			SendOrder: e.SendOrder,
@@ -294,7 +301,7 @@ func (s *Signer) handleSigReceiveSendOrder(ctx context.Context, e types.MsgSignS
 	}
 }
 
-func (s *Signer) makeSigSendOrder(orderType string, withdrawIds []uint64, noWitnessTx []byte, txFee uint64) []byte {
+func (s *Signer) makeSigSendOrder(orderType string, withdrawIds []uint64, witnessSize uint64, noWitnessTx []byte, txFee uint64) []byte {
 	voters := make(bitmap.Bitmap, 5)
 	votes := &relayertypes.Votes{
 		Sequence:  0,
@@ -304,12 +311,13 @@ func (s *Signer) makeSigSendOrder(orderType string, withdrawIds []uint64, noWitn
 	}
 	epochVoter := s.state.GetEpochVoter()
 	if orderType == db.ORDER_TYPE_WITHDRAWAL {
-		msg := bitcointypes.MsgProcessWithdrawal{
+		msg := bitcointypes.MsgProcessWithdrawalV2{
 			Proposer:    "",
 			Vote:        votes,
 			Id:          withdrawIds,
 			NoWitnessTx: noWitnessTx,
 			TxFee:       txFee,
+			WitnessSize: witnessSize,
 		}
 		sigDoc := relayertypes.VoteSignDoc(msg.MethodName(), config.AppConfig.GoatChainID, epochVoter.Proposer, epochVoter.Sequence, uint64(epochVoter.Epoch), msg.VoteSigDoc())
 		return goatcryp.Sign(s.sk, sigDoc)
@@ -324,7 +332,7 @@ func (s *Signer) makeSigSendOrder(orderType string, withdrawIds []uint64, noWitn
 	}
 }
 
-func (s *Signer) aggSigSendOrder(requestId string) (*bitcointypes.MsgProcessWithdrawal, *bitcointypes.MsgNewConsolidation, error) {
+func (s *Signer) aggSigSendOrder(requestId string) (*bitcointypes.MsgProcessWithdrawalV2, *bitcointypes.MsgNewConsolidation, error) {
 	epochVoter := s.state.GetEpochVoter()
 
 	voteMap, ok := s.sigExists(requestId)
@@ -337,6 +345,7 @@ func (s *Signer) aggSigSendOrder(requestId string) (*bitcointypes.MsgProcessWith
 	var txFee, epoch, sequence uint64
 	var noWitnessTx []byte
 	var withdrawIds []uint64
+	var witnessSize uint64
 	var bmp bitmap.Bitmap
 	var proposerSig []byte
 	voteSig := make([][]byte, 0)
@@ -354,6 +363,7 @@ func (s *Signer) aggSigSendOrder(requestId string) (*bitcointypes.MsgProcessWith
 			sequence = msgSendOrder.Sequence
 			epoch = msgSendOrder.Epoch
 			withdrawIds = msgSendOrder.WithdrawIds
+			witnessSize = msgSendOrder.WitnessSize
 			proposerSig = msgSendOrder.SigData
 
 			txFee = order.TxFee
@@ -402,12 +412,13 @@ func (s *Signer) aggSigSendOrder(requestId string) (*bitcointypes.MsgProcessWith
 	}
 
 	if orderType == db.ORDER_TYPE_WITHDRAWAL {
-		msgWithdrawal := bitcointypes.MsgProcessWithdrawal{
+		msgWithdrawal := bitcointypes.MsgProcessWithdrawalV2{
 			Proposer:    proposer,
 			Vote:        votes,
 			Id:          withdrawIds,
 			NoWitnessTx: noWitnessTx,
 			TxFee:       txFee,
+			WitnessSize: witnessSize,
 		}
 		return &msgWithdrawal, nil, nil
 	} else {

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -185,6 +186,8 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 		return false, 0, 0, fmt.Errorf("get tx details from fireblocks error: %v, txid: %s", err, txid)
 	}
 
+	log.Infof("Fireblocks transaction query response, extTxId: %s, status: %s, subStatus: %s", externalTxId, txDetails.Status, txDetails.SubStatus)
+
 	failedStatus := []string{"CANCELLING", "CANCELLED", "BLOCKED", "REJECTED", "FAILED"}
 	// Check if txDetails.Status is in failedStatus
 	for _, status := range failedStatus {
@@ -223,10 +226,14 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 				switch rpcErr.Code {
 				case btcjson.ErrRPCTxAlreadyInChain:
 					return false, 0, 0, nil
-				// ErrRPCVerifyRejected indicates that transaction or block was rejected by network rules
 				case btcjson.ErrRPCVerifyRejected:
-					log.Warnf("transaction was rejected by network rules, reverting for re-signing: %v, txid: %s", rpcErr, txid)
-					return true, 0, 0, nil
+					if strings.Contains(rpcErr.Message, "mandatory-script-verify-flag-failed") {
+						log.Warnf("Transaction signature verification failed, reverting for re-signing: %v, txid: %s", rpcErr, txid)
+						return true, 0, 0, nil
+					} else {
+						log.Warnf("Transaction signature verification failed, error reason: %v, txid: %s", rpcErr, txid)
+						return false, 0, 0, fmt.Errorf("send raw transaction error: %v, txid: %s", err, txid)
+					}
 				}
 			}
 			return false, 0, 0, fmt.Errorf("send raw transaction error: %v, txid: %s", err, txid)
@@ -267,7 +274,7 @@ func (b *BaseOrderBroadcaster) Start(ctx context.Context) {
 	log.Debug("BaseOrderBroadcaster start")
 	b.state.EventBus.Subscribe(state.SendOrderBroadcasted, b.txBroadcastCh)
 
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -388,6 +395,7 @@ func (b *BaseOrderBroadcaster) broadcastOrders() {
 		})
 
 		log.Infof("OrderBroadcaster broadcastOrders tx broadcast success, txid: %s", sendOrder.Txid)
+		time.Sleep(time.Second)
 	}
 }
 
@@ -431,5 +439,6 @@ func (b *BaseOrderBroadcaster) broadcastPendingCheck() {
 		}
 
 		log.Debugf("OrderBroadcaster broadcastPendingCheck tx still pending, txid: %s, confirmations: %d", pendingOrder.Txid, confirmations)
+		time.Sleep(time.Second)
 	}
 }

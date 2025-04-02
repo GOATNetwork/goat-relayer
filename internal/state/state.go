@@ -35,9 +35,10 @@ type State struct {
 }
 
 var (
-	_ StateLoader        = (*State)(nil)
-	_ WalletStateStore   = (*State)(nil)
-	_ WithdrawStateStore = (*State)(nil)
+	_ StateLoader             = (*State)(nil)
+	_ WalletStateStore        = (*State)(nil)
+	_ WithdrawStateStore      = (*State)(nil)
+	_ ConsolidationStateStore = (*State)(nil)
 )
 
 // InitializeState initializes the state by reading from the DB

@@ -56,6 +56,7 @@ type MsgSignSendOrder struct {
 	Withdraws []byte `json:"withdraws"`
 
 	WithdrawIds []uint64 `json:"withdraw_ids"`
+	WitnessSize uint64   `json:"witness_size"`
 }
 
 type MsgSignFinalizeWithdraw struct {

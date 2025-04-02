@@ -72,18 +72,18 @@ func TestSelectOptimalUTXOs(t *testing.T) {
 	}
 
 	// valid selection of UTXOs
-	selectedUtxos, totalSelectedAmount, withdrawAmount, changeAmount, estimatedFee, err := wallet.SelectOptimalUTXOs(utxos, []string{types.WALLET_TYPE_P2WPKH}, 40000000, 100, 1)
+	selectedUtxos, totalSelectedAmount, withdrawAmount, changeAmount, estimatedFee, _, err := wallet.SelectOptimalUTXOs(utxos, []string{types.WALLET_TYPE_P2WPKH}, 40000000, 100, 1)
 	assert.NoError(t, err)
 	assert.NotNil(t, selectedUtxos)
 	assert.Greater(t, totalSelectedAmount, int64(0))
 	assert.Equal(t, int64(40000000), withdrawAmount)
 	assert.Greater(t, changeAmount, int64(0))
-	assert.Greater(t, estimatedFee, int64(0))
+	assert.Greater(t, estimatedFee, float64(0))
 
 	// when not enough UTXOs
-	_, _, _, _, estimatedFee, err = wallet.SelectOptimalUTXOs(utxos, []string{types.WALLET_TYPE_P2WPKH}, 150000000, 100, 1)
+	_, _, _, _, estimatedFee, _, err = wallet.SelectOptimalUTXOs(utxos, []string{types.WALLET_TYPE_P2WPKH}, 150000000, 100, 1)
 	assert.Error(t, err)
-	assert.EqualError(t, err, fmt.Sprintf("not enough utxos to satisfy the withdrawal amount and network fee, withdraw amount: 150000000, selected amount: 115000000, estimated fee: %d", estimatedFee))
+	assert.EqualError(t, err, fmt.Sprintf("not enough utxos to satisfy the withdrawal amount and network fee, withdraw amount: 150000000, selected amount: 115000000, estimated fee: %f", estimatedFee))
 }
 
 // Test SelectWithdrawals function
@@ -137,7 +137,7 @@ func TestCreateRawTransaction(t *testing.T) {
 	net := &chaincfg.MainNetParams
 
 	// valid transaction creation
-	tx, dustWithdraw, err := wallet.CreateRawTransaction(utxos, withdrawals, "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", 5000000, 1000, 10, net)
+	tx, _, dustWithdraw, err := wallet.CreateRawTransaction(utxos, withdrawals, "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", 5000000, 1000, 10, 10, net)
 	assert.NoError(t, err)
 	assert.NotNil(t, tx)
 	assert.Equal(t, uint(0), dustWithdraw)
@@ -160,15 +160,15 @@ func TestCreateRawTransaction(t *testing.T) {
 		expectedScript, err := txscript.PayToAddrScript(addr)
 		assert.NoError(t, err)
 		assert.Equal(t, expectedScript, tx.TxOut[i].PkScript)
-		assert.Equal(t, int64(withdrawal.Amount)-1000/3, tx.TxOut[i].Value) // minus fee
+		assert.Equal(t, int64(withdrawal.Amount)-500, tx.TxOut[i].Value) // minus fee
 	}
 
 	// when withdrawal amount is too small (dust)
 	withdrawals[0].Amount = 500 // less than dust limit
-	_, dustWithdraw, err = wallet.CreateRawTransaction(utxos, withdrawals, "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", 5000000, 1000, 10, net)
+	_, _, dustWithdraw, err = wallet.CreateRawTransaction(utxos, withdrawals, "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", 5000000, 1000, 10, 10, net)
 	assert.Error(t, err)
 	assert.Equal(t, uint(1), dustWithdraw) // the ID of the withdrawal with the small amount
-	assert.EqualError(t, err, fmt.Sprintf("withdrawal amount too small after fee deduction: %d", withdrawals[0].Amount-1000/3))
+	assert.EqualError(t, err, fmt.Sprintf("withdrawal amount too small after fee deduction: %d", withdrawals[0].Amount-500))
 }
 
 // Test SignTransactionByPrivKey function

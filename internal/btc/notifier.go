@@ -121,6 +121,12 @@ func (bn *BTCNotifier) checkConfirmations(ctx context.Context, blockDoneCh chan 
 				continue
 			}
 
+			err = bn.updateNetworkFee()
+			if err != nil {
+				log.Errorf("Failed to update network fee at best height: %d, error: %v", bestHeight, err)
+				continue
+			}
+
 			bn.initOnce.Do(func() {
 				for len(bn.reindexBlocks) > 0 {
 					height := bn.reindexBlocks[0]
@@ -169,11 +175,6 @@ func (bn *BTCNotifier) checkConfirmations(ctx context.Context, blockDoneCh chan 
 			}
 
 			bn.poller.state.UpdateBtcSyncing(true)
-			err = bn.updateNetworkFee()
-			if err != nil {
-				log.Errorf("Failed to update network fee at best height: %d, error: %v", bestHeight, err)
-				break
-			}
 
 			newSyncHeight := syncConfirmedHeight
 			log.Infof("BTC sync started: best height=%d, from=%d, to=%d", bestHeight, syncConfirmedHeight+1, confirmedHeight)
@@ -221,7 +222,17 @@ func (bn *BTCNotifier) updateNetworkFee() error {
 	fee, err := bn.feeFetcher.GetNetworkFee()
 	if err != nil {
 		log.Errorf("Failed to get network fee from fee fetcher: %v", err)
-		return err
+
+		// Use default values when fee fetching fails completely
+		defaultFee := &types.BtcNetworkFee{
+			FastestFee:  3,
+			HalfHourFee: 3,
+			HourFee:     3,
+		}
+
+		log.Warnf("Using default network fee values: %+v", defaultFee)
+		bn.poller.state.UpdateBtcNetworkFee(defaultFee.FastestFee, defaultFee.HalfHourFee, defaultFee.HourFee)
+		return nil // Return nil to prevent error propagation
 	}
 
 	log.Infof("BTC network fee (sat/vbyte): %+v", fee)

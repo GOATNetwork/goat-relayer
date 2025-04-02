@@ -26,7 +26,7 @@ type WithdrawStateStore interface {
 	GetWithdrawsCanceling() ([]*db.Withdraw, error)
 	GetSendOrderInitlized() ([]*db.SendOrder, error)
 	GetSendOrderPending(limit int) ([]*db.SendOrder, error)
-	GetLatestSendOrderConfirmed() (*db.SendOrder, error)
+	GetLatestWithdrawSendOrderConfirmed() (*db.SendOrder, error)
 }
 
 // CreateWithdrawal, when a new withdrawal request is detected, save to unconfirmed
@@ -298,6 +298,11 @@ func (s *State) UpdateWithdrawCanceled(id uint64) error {
 
 	withdraw, err := s.getWithdrawByRequestId(nil, id)
 	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// ignore
+			log.Warnf("State UpdateWithdrawCanceled not found withdraw by request id: %d", id)
+			return nil
+		}
 		return err
 	}
 
@@ -401,6 +406,17 @@ func (s *State) UpdateSendOrderConfirmed(txid string, btcBlock uint64) error {
 			err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_CONFIRMED, false)
 			if err != nil {
 				return err
+			}
+			vins, err := s.getVinsByOrderId(tx, order.OrderId)
+			if err != nil {
+				return err
+			}
+			for _, vin := range vins {
+				// update utxo to spent
+				err = s.updateUtxoStatusSpent(tx, vin.Txid, vin.OutIndex, order.BtcBlock)
+				if err != nil {
+					return err
+				}
 			}
 			return nil
 		}
@@ -699,12 +715,12 @@ func (s *State) GetSendOrderByTxIdOrExternalId(id string) (*db.SendOrder, error)
 }
 
 // GetLatestSendOrderConfirmed get confirmed send order
-func (s *State) GetLatestSendOrderConfirmed() (*db.SendOrder, error) {
+func (s *State) GetLatestWithdrawSendOrderConfirmed() (*db.SendOrder, error) {
 	s.walletMu.RLock()
 	defer s.walletMu.RUnlock()
 
 	var sendOrder *db.SendOrder
-	err := s.dbm.GetWalletDB().Where("status = ?", db.ORDER_STATUS_CONFIRMED).First(&sendOrder).Error
+	err := s.dbm.GetWalletDB().Where("status = ? and order_type = ?", db.ORDER_STATUS_CONFIRMED, db.ORDER_TYPE_WITHDRAWAL).First(&sendOrder).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, err
 	}

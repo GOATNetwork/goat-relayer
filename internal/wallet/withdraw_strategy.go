@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -75,8 +76,8 @@ func ConsolidateSmallUTXOs(utxos []*db.Utxo, networkFee, threshold int64, maxVin
 		utxoTypes[i] = utxo.ReceiverType
 	}
 
-	txSize := types.TransactionSizeEstimate(len(smallUTXOs), []string{types.WALLET_TYPE_P2WPKH}, 1, utxoTypes) // 1 vout
-	estimatedFee := txSize * networkFee
+	txSize, _ := types.TransactionSizeEstimateV2(len(smallUTXOs), []string{types.WALLET_TYPE_P2WPKH}, 1, utxoTypes) // 1 vout
+	estimatedFee := int64(math.Ceil(txSize)) * networkFee
 
 	if totalAmount < types.GetDustAmount(networkFee) {
 		return nil, 0, 0, fmt.Errorf("total amount is too low, cannot consolidate")
@@ -92,12 +93,12 @@ func ConsolidateSmallUTXOs(utxos []*db.Utxo, networkFee, threshold int64, maxVin
 }
 
 // ConsolidateUTXOsByCount consolidate utxos by count
-func ConsolidateUTXOsByCount(utxos []*db.Utxo, networkFee int64, maxVin, trigerNum int) (selectedUTXOs []*db.Utxo, totalAmount int64, finalAmount int64, err error) {
+func ConsolidateUTXOsByCount(utxos []*db.Utxo, networkFee int64, maxVin, trigerNum int) (selectedUTXOs []*db.Utxo, totalAmount int64, finalAmount int64, witnessSize int64, err error) {
 	if networkFee > int64(config.AppConfig.BTCMaxNetworkFee) {
-		return nil, 0, 0, fmt.Errorf("network fee is too high, cannot consolidate")
+		return nil, 0, 0, 0, fmt.Errorf("network fee is too high, cannot consolidate")
 	}
 	if len(utxos) < trigerNum {
-		return nil, 0, 0, fmt.Errorf("not enough utxos to consolidate")
+		return nil, 0, 0, 0, fmt.Errorf("not enough utxos to consolidate")
 	}
 
 	// select all utxos until maxVin
@@ -119,20 +120,20 @@ func ConsolidateUTXOsByCount(utxos []*db.Utxo, networkFee int64, maxVin, trigerN
 		utxoTypes[i] = utxo.ReceiverType
 	}
 
-	txSize := types.TransactionSizeEstimate(len(selectedUTXOs), []string{types.WALLET_TYPE_P2WPKH}, 1, utxoTypes) // 1 vout
-	estimatedFee := txSize * networkFee
+	txSize, witnessSize := types.TransactionSizeEstimateV2(len(selectedUTXOs), []string{types.WALLET_TYPE_P2WPKH}, 1, utxoTypes) // 1 vout
+	estimatedFee := int64(math.Ceil(txSize)) * networkFee
 
 	if totalAmount < types.GetDustAmount(networkFee) {
-		return nil, 0, 0, fmt.Errorf("total amount is too low, cannot consolidate")
+		return nil, 0, 0, 0, fmt.Errorf("total amount is too low, cannot consolidate")
 	}
 
 	// calculate the remaining amount after consolidation
 	finalAmount = totalAmount - estimatedFee
 	if finalAmount <= 0 {
-		return nil, 0, 0, fmt.Errorf("consolidation fee is too high, cannot consolidate")
+		return nil, 0, 0, 0, fmt.Errorf("consolidation fee is too high, cannot consolidate")
 	}
 
-	return selectedUTXOs, totalAmount, finalAmount, nil
+	return selectedUTXOs, totalAmount, finalAmount, witnessSize, nil
 }
 
 // SelectOptimalUTXOs select optimal utxos for withdrawal
@@ -151,10 +152,13 @@ func ConsolidateUTXOsByCount(utxos []*db.Utxo, networkFee int64, maxVin, trigerN
 //	withdrawAmount - total amount to withdraw (not minus tx fee yet)
 //	changeAmount - change amount after withdrawal
 //	estimatedFee - estimate fee
+//	witnessSize - witness size
 //	error - error if any
-func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount, networkFee int64, withdrawTotal int) ([]*db.Utxo, int64, int64, int64, int64, error) {
+func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount, networkFee int64, withdrawTotal int) ([]*db.Utxo, int64, int64, int64, float64, int64, error) {
 	var selectedUTXOs []*db.Utxo
 	var totalSelectedAmount int64 = 0
+	var witnessSize int64 = 0
+	var txSize float64 = 0
 	var maxVin int = 10
 	if withdrawAmount > 50*1e8 {
 		// max vin is 50 for large amount than 50 BTC
@@ -163,8 +167,8 @@ func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount
 
 	// calculate the current transaction fee with no UTXO selected yet
 	utxoTypes := make([]string, 0)
-	txSize := types.TransactionSizeEstimate(len(utxoTypes), receiverTypes, withdrawTotal, utxoTypes) // +1 for change output
-	estimatedFee := txSize * networkFee
+	txSize, witnessSize = types.TransactionSizeEstimateV2(len(utxoTypes), receiverTypes, withdrawTotal, utxoTypes) // +1 for change output
+	estimatedFee := txSize * float64(networkFee)
 
 	// sort utxos by amount from small to large
 	sort.Slice(utxos, func(i, j int) bool {
@@ -201,8 +205,8 @@ func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount
 	}
 	// if found a suitable utxo or combination, calculate transaction size and fee
 	if found {
-		txSize = types.TransactionSizeEstimate(len(selectedUTXOs), receiverTypes, withdrawTotal, utxoTypes)
-		estimatedFee = txSize * networkFee
+		txSize, witnessSize = types.TransactionSizeEstimateV2(len(selectedUTXOs), receiverTypes, withdrawTotal, utxoTypes)
+		estimatedFee = txSize * float64(networkFee)
 		// totalTarget = withdrawAmount + estimatedFee // not used, fee should minus from withdraw txout value
 	} else {
 		// if not found a suitable utxo or combination, accumulate utxos by amount from large to small
@@ -220,8 +224,8 @@ func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount
 
 			// update transaction size and fee
 			utxoTypes = append(utxoTypes, utxo.ReceiverType)
-			txSize = types.TransactionSizeEstimate(len(selectedUTXOs), receiverTypes, withdrawTotal, utxoTypes)
-			estimatedFee = txSize * networkFee
+			txSize, witnessSize = types.TransactionSizeEstimateV2(len(selectedUTXOs), receiverTypes, withdrawTotal, utxoTypes)
+			estimatedFee = txSize * float64(networkFee)
 
 			// recalculate totalTarget (withdrawAmount + estimatedFee)
 			// totalTarget = withdrawAmount + estimatedFee // not used, fee should minus from withdraw txout value
@@ -263,8 +267,8 @@ func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount
 
 		// update transaction size and estimated fee with the current UTXO selection
 		utxoTypes = append(utxoTypes, smallestUTXO.ReceiverType)
-		txSize = types.TransactionSizeEstimate(len(selectedUTXOs), receiverTypes, withdrawTotal, utxoTypes)
-		estimatedFee = txSize * networkFee
+		txSize, witnessSize = types.TransactionSizeEstimateV2(len(selectedUTXOs), receiverTypes, withdrawTotal, utxoTypes)
+		estimatedFee = txSize * float64(networkFee)
 
 		// recalculate the total target (withdraw amount + estimated fee)
 		// totalTarget = withdrawAmount + estimatedFee // not used, fee should minus from withdraw txout value
@@ -272,22 +276,22 @@ func SelectOptimalUTXOs(utxos []*db.Utxo, receiverTypes []string, withdrawAmount
 
 	// after selecting, check if we have enough UTXO to cover the total target
 	if totalSelectedAmount < withdrawAmount {
-		return nil, 0, 0, 0, estimatedFee, fmt.Errorf("not enough utxos to satisfy the withdrawal amount and network fee, withdraw amount: %d, selected amount: %d, estimated fee: %d", withdrawAmount, totalSelectedAmount, estimatedFee)
+		return nil, 0, 0, 0, estimatedFee, 0, fmt.Errorf("not enough utxos to satisfy the withdrawal amount and network fee, withdraw amount: %d, selected amount: %d, estimated fee: %f", withdrawAmount, totalSelectedAmount, estimatedFee)
 	}
 
 	// calculate the change amount
 	changeAmount := totalSelectedAmount - withdrawAmount // - estimatedFee, fee should minus from withdraw txout value
 	if changeAmount > types.GetDustAmount(networkFee) {
 		// if change amount > dust limit + network fee * 31 (P2WPKH output size), we need to add a change output
-		txSize = types.TransactionSizeEstimate(len(selectedUTXOs), receiverTypes, withdrawTotal+1, utxoTypes)
-		estimatedFee = txSize * networkFee
+		txSize, witnessSize = types.TransactionSizeEstimateV2(len(selectedUTXOs), receiverTypes, withdrawTotal+1, utxoTypes)
+		estimatedFee = txSize * float64(networkFee)
 	} else {
 		// no change output
-		estimatedFee += changeAmount
+		estimatedFee += float64(changeAmount)
 		changeAmount = 0
 	}
 
-	return selectedUTXOs, totalSelectedAmount, withdrawAmount, changeAmount, estimatedFee, nil
+	return selectedUTXOs, totalSelectedAmount, withdrawAmount, changeAmount, estimatedFee, witnessSize, nil
 }
 
 // SelectWithdrawals select optimal withdrawals for withdrawal
@@ -402,14 +406,22 @@ func SelectWithdrawals(withdrawals []*db.Withdraw, networkFee types.BtcNetworkFe
 //	tx - raw transaction
 //	dustWithdraw - value lower than dust limit withdraw id
 //	error - error if any
-func CreateRawTransaction(utxos []*db.Utxo, withdrawals []*db.Withdraw, changeAddress string, changeAmount, estimatedFee, networkFee int64, net *chaincfg.Params) (*wire.MsgTx, uint, error) {
+func CreateRawTransaction(
+	utxos []*db.Utxo,
+	withdrawals []*db.Withdraw,
+	changeAddress string,
+	changeAmount int64,
+	estimatedFee float64,
+	witnessSize int64,
+	networkFee int64,
+	net *chaincfg.Params) (*wire.MsgTx, uint64, uint, error) {
 	tx := wire.NewMsgTx(wire.TxVersion)
 
 	// add utxos as transaction inputs
 	for _, utxo := range utxos {
 		hash, err := chainhash.NewHashFromStr(utxo.Txid)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
 		}
 		outPoint := wire.NewOutPoint(hash, uint32(utxo.OutIndex))
 		txIn := wire.NewTxIn(outPoint, nil, nil)
@@ -419,61 +431,67 @@ func CreateRawTransaction(utxos []*db.Utxo, withdrawals []*db.Withdraw, changeAd
 
 	// actual fee for withdraw
 	actualFee := int64(0)
+	changeFee := int64(0)
 	if len(withdrawals) > 0 {
 		totalTxout := len(withdrawals)
-		if changeAmount > 0 {
-			totalTxout++
-		}
-		actualFee = estimatedFee / int64(totalTxout)
+		// NOTE: not to share fee with change output
+		// if changeAmount > 0 {
+		// 	totalTxout++
+		// }
+		actualFee = int64(math.Ceil(estimatedFee / float64(totalTxout)))
+	} else {
+		// no withdrawals, use estimated fee for consolidation
+		changeFee = int64(math.Ceil(estimatedFee))
 	}
 
 	// add outputs (withdrawals)
 	for _, withdrawal := range withdrawals {
 		addr, err := btcutil.DecodeAddress(withdrawal.To, net)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
 		}
 		pkScript, err := txscript.PayToAddrScript(addr)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
 		}
 		val := int64(withdrawal.Amount) - actualFee
 		if val <= types.GetDustAmount(networkFee) {
-			return nil, withdrawal.ID, fmt.Errorf("withdrawal amount too small after fee deduction: %d", val)
+			return nil, 0, withdrawal.ID, fmt.Errorf("withdrawal amount too small after fee deduction: %d", val)
 		}
 		// re-set TxFee field
 		withdrawal.TxFee = withdrawal.Amount - uint64(val)
 		tx.AddTxOut(wire.NewTxOut(val, pkScript))
 	}
 
-	val := changeAmount - actualFee
+	val := int64(changeAmount) - changeFee
 	// add change output
 	if val > 0 {
 		changeAddr, err := btcutil.DecodeAddress(changeAddress, net)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
 		}
 		changePkScript, err := txscript.PayToAddrScript(changeAddr)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
 		}
 		if val <= types.GetDustAmount(networkFee) {
-			return nil, 0, fmt.Errorf("change amount too small after fee deduction: %d", val)
+			return nil, 0, 0, fmt.Errorf("change amount too small after fee deduction: %d", val)
 		}
 		tx.AddTxOut(wire.NewTxOut(val, changePkScript))
 	}
 	noWitnessTx, err := types.SerializeTransactionNoWitness(tx)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 	// recaulate real tx price and compare with user fee
-	actualTxPrice := uint64(estimatedFee) / uint64(len(noWitnessTx))
+	actualTxPrice := float64(estimatedFee) / (float64(len(noWitnessTx)) + float64(witnessSize)/4)
+
 	for _, withdrawal := range withdrawals {
-		if actualTxPrice > withdrawal.TxPrice {
-			return nil, 0, fmt.Errorf("actual tx price is higher than withdrawal tx price, withdrawal id: %d, %d > %d", withdrawal.ID, actualTxPrice, withdrawal.TxPrice)
+		if actualTxPrice > float64(withdrawal.TxPrice) {
+			return nil, 0, 0, fmt.Errorf("actual tx price is higher than withdrawal tx price, withdrawal id: %d, %f > %d", withdrawal.ID, actualTxPrice, withdrawal.TxPrice)
 		}
 	}
-	return tx, 0, nil
+	return tx, uint64(actualFee), 0, nil
 }
 
 // SignTransactionByPrivKey, use PrivKey to sign the transaction, and select the corresponding signature method according to the UTXO type
@@ -646,13 +664,31 @@ func GenerateRawMeessageToFireblocks(tx *wire.MsgTx, utxos []*db.Utxo, net *chai
 	return hashes, nil
 }
 
+func FindFireblocksSignedMessage(rawHash []byte, fbSignedMessages []types.FbSignedMessage) (*types.FbSignedMessage, error) {
+	for _, signedMessage := range fbSignedMessages {
+		if signedMessage.Content == hex.EncodeToString(rawHash) {
+			return &signedMessage, nil
+		}
+	}
+	return nil, fmt.Errorf("signed message not found")
+}
+
 func ApplyFireblocksSignaturesToTx(tx *wire.MsgTx, utxos []*db.Utxo, fbSignedMessages []types.FbSignedMessage, net *chaincfg.Params) error {
 	if len(utxos) != len(fbSignedMessages) {
 		return fmt.Errorf("number of UTXOs and signed messages do not match")
 	}
 
+	// match the signed messages with utxos
+	rawHashes, err := GenerateRawMeessageToFireblocks(tx, utxos, net)
+	if err != nil {
+		return fmt.Errorf("error generating raw message to fireblocks: %v", err)
+	}
+
 	for i, utxo := range utxos {
-		signedMessage := fbSignedMessages[i]
+		signedMessage, err := FindFireblocksSignedMessage(rawHashes[i], fbSignedMessages)
+		if err != nil {
+			return fmt.Errorf("error finding fireblocks signed message: %v", err)
+		}
 
 		// Convert the Fireblocks signature to DER format
 		derSignature, err := convertToDERSignature(signedMessage.Signature)
@@ -718,9 +754,30 @@ func convertToDERSignature(fbSig types.FbSignature) ([]byte, error) {
 		return nil, fmt.Errorf("error decoding R: %v", err)
 	}
 
+	if len(rBytes) > 32 {
+		return nil, fmt.Errorf("R is too long")
+	}
+
+	// Pad R to 32 bytes
+	if len(rBytes) < 32 {
+		paddedR := make([]byte, 32)
+		copy(paddedR[32-len(rBytes):], rBytes)
+		rBytes = paddedR
+	}
+
 	sBytes, err := hex.DecodeString(fbSig.S)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding S: %v", err)
+	}
+
+	if len(sBytes) > 32 {
+		return nil, fmt.Errorf("S is too long")
+	}
+	// Pad S to 32 bytes
+	if len(sBytes) < 32 {
+		paddedS := make([]byte, 32)
+		copy(paddedS[32-len(sBytes):], sBytes)
+		sBytes = paddedS
 	}
 
 	// Convert R and S into btcec.ModNScalar

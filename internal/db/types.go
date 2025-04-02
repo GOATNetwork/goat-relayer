@@ -19,7 +19,6 @@ const (
 
 	ORDER_STATUS_AGGREGATING = "aggregating"
 	ORDER_STATUS_INIT        = "init"
-	ORDER_STATUS_SIGNING     = "signing"
 	ORDER_STATUS_PENDING     = "pending"
 	ORDER_STATUS_RBF_REQUEST = "rbf-request"
 	ORDER_STATUS_UNCONFIRM   = "unconfirm"
