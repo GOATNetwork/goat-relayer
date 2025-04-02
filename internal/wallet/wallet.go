@@ -24,6 +24,9 @@ type WalletServer struct {
 	// after sig, it can start a new sig 2 blocks later
 	sigMu                        sync.Mutex
 	sigStatus                    bool
+	lastProposerAddress          string
+	proposerChanged              bool
+	proposerMutex                sync.Mutex
 	sigFinishHeight              uint64
 	finalizeWithdrawStatus       bool
 	finalizeWithdrawFinishHeight uint64
@@ -59,6 +62,9 @@ func NewWalletServer(libp2p *p2p.LibP2PService, st *state.State, signer *bls.Sig
 		orderBroadcaster: NewOrderBroadcaster(btcClient, st),
 		blockCh:          make(chan interface{}, state.BTC_BLOCK_CHAN_LENGTH),
 
+		lastProposerAddress: "",
+		proposerChanged:     false,
+
 		withdrawSigFailChan:    make(chan interface{}, 10),
 		withdrawSigFinishChan:  make(chan interface{}, 10),
 		withdrawSigTimeoutChan: make(chan interface{}, 10),
@@ -90,4 +96,23 @@ func (w *WalletServer) Stop() {
 		close(w.withdrawSigFinishChan)
 		close(w.withdrawSigTimeoutChan)
 	})
+}
+
+func (w *WalletServer) updateProposerStatus(currentProposer string) {
+	w.proposerMutex.Lock()
+	defer w.proposerMutex.Unlock()
+
+	if w.lastProposerAddress != currentProposer {
+		w.proposerChanged = true
+		log.Infof("WalletServer detected proposer change from %s to %s", w.lastProposerAddress, currentProposer)
+
+		w.lastProposerAddress = currentProposer
+	}
+}
+
+func (w *WalletServer) clearProposerChange() {
+	w.proposerMutex.Lock()
+	defer w.proposerMutex.Unlock()
+
+	w.proposerChanged = false
 }
