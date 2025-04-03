@@ -181,11 +181,11 @@ func (s *State) UpdateProcessedDeposit(txHash string, txout int, evmAddr string)
 }
 
 // CreateSafeboxTask create safebox task
-func (s *State) CreateSafeboxTask(taskId uint64, partnerId string, timelockEndTime uint64, deadline uint64, depositAddress string, amount int64, btcAddress string) error {
+func (s *State) CreateSafeboxTask(taskId uint64, partnerId string, timelockEndTime, deadline, amount uint64, depositAddress, btcAddress string) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
-	_, err := s.QueryCreatedSafeboxTaskByEvmAddr(depositAddress)
+	_, err := s.QueryCreatedSafeboxTaskByEvmAddr(nil, depositAddress)
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return err
 	}
@@ -206,30 +206,42 @@ func (s *State) CreateSafeboxTask(taskId uint64, partnerId string, timelockEndTi
 	return s.dbm.GetWalletDB().Create(&taskDeposit).Error
 }
 
-func (s *State) CheckAndUpdateTaskDepositStatus(txid string, txout int, evmAddr string, amount int64) error {
+func (s *State) CheckAndUpdateTaskDepositStatus(txid, evmAddr string, txout, amount uint64) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
-	taskDeposit, err := s.QueryCreatedSafeboxTaskByEvmAddr(evmAddr)
-	if err != nil {
-		return err
-	}
+	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
+		taskDeposit, err := s.QueryCreatedSafeboxTaskByEvmAddr(tx, evmAddr)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		// should not return error if task deposit not found
+		if err == gorm.ErrRecordNotFound {
+			return nil
+		}
 
-	// check if deadline is over
-	if time.Now().Unix() > int64(taskDeposit.Deadline) {
-		return fmt.Errorf("task deposit deadline over")
-	}
+		// check if deadline is over
+		if time.Now().Unix() > int64(taskDeposit.Deadline) {
+			log.Info("found a task deposit with deadline over, txid: %s, txout: %d, amount: %s, evmAddr: %s", txid, txout, amount, evmAddr)
+			// close it
+			taskDeposit.Status = db.TASK_STATUS_CLOSED
+			taskDeposit.UpdatedAt = time.Now()
+			return tx.Save(&taskDeposit).Error
+		}
 
-	// check if amount is enough
-	if amount == int64(taskDeposit.Amount) {
-		return fmt.Errorf("task deposit amount not equal")
-	}
+		// check if amount is enough
+		if amount != taskDeposit.Amount {
+			// not match, ignore
+			return nil
+		}
 
-	taskDeposit.Status = db.TASK_STATUS_RECEIVED
-	taskDeposit.FundingTxid = txid
-	taskDeposit.FundingOutIndex = txout
-	taskDeposit.UpdatedAt = time.Now()
-	return s.dbm.GetWalletDB().Save(&taskDeposit).Error
+		taskDeposit.Status = db.TASK_STATUS_RECEIVED
+		taskDeposit.FundingTxid = txid
+		taskDeposit.FundingOutIndex = txout
+		taskDeposit.UpdatedAt = time.Now()
+		return tx.Save(&taskDeposit).Error
+	})
+	return err
 }
 
 // GetDepositForSign get deposits for sign
@@ -343,9 +355,12 @@ func (s *State) queryDepositByTxHash(txHash string, outputIndex int) (*db.Deposi
 	return &deposit, nil
 }
 
-func (s *State) QueryCreatedSafeboxTaskByEvmAddr(evmAddr string) (*db.SafeboxTask, error) {
+func (s *State) QueryCreatedSafeboxTaskByEvmAddr(tx *gorm.DB, evmAddr string) (*db.SafeboxTask, error) {
+	if tx == nil {
+		tx = s.dbm.GetWalletDB()
+	}
 	var task db.SafeboxTask
-	err := s.dbm.GetWalletDB().Where("deposit_address = ? and status = ?", evmAddr, db.TASK_STATUS_CREATE).First(&task).Error
+	err := tx.Where("deposit_address = ? and status = ?", evmAddr, db.TASK_STATUS_CREATE).First(&task).Error
 	if err != nil {
 		return nil, err
 	}

@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/node"
@@ -213,7 +214,6 @@ func (lis *Layer2Listener) checkAndReconnect() error {
 }
 
 func (lis *Layer2Listener) Start(ctx context.Context) {
-	go lis.listenExecutorEvents(ctx)
 	go lis.listenConsensusEvents(ctx)
 }
 
@@ -334,7 +334,15 @@ func (lis *Layer2Listener) listenConsensusEvents(ctx context.Context) {
 				// Query cosmos tx or event
 				goatRpcAbort := false
 				for height := fromBlock; height <= toBlock; height++ {
-					err := lis.getGoatBlock(ctx, height)
+					// filter evm events
+					err := lis.filterEvmEvents(ctx, height)
+					if err != nil {
+						log.Errorf("Failed to filter evm events: %v", err)
+						goatRpcAbort = true
+						break
+					}
+
+					err = lis.getGoatBlock(ctx, height)
 					if err != nil {
 						log.Errorf("Failed to process block %d: %v", height, err)
 						goatRpcAbort = true
@@ -373,6 +381,30 @@ func min(a, b uint64) uint64 {
 		return a
 	}
 	return b
+}
+
+func (lis *Layer2Listener) filterEvmEvents(ctx context.Context, height uint64) error {
+
+	block, err := lis.ethClient.BlockByNumber(ctx, big.NewInt(int64(height)))
+	if err != nil {
+		return fmt.Errorf("failed to get evm block by number: %w", err)
+	}
+
+	blockHash := block.Hash()
+	logs, err := lis.ethClient.FilterLogs(ctx, ethereum.FilterQuery{
+		BlockHash: &blockHash,
+		Addresses: []common.Address{
+			abis.TaskManagerAddress,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to filter evm events: %w", err)
+	}
+
+	log.Debugf("Filtered %d evm events", len(logs))
+	// TODO: process evm events
+
+	return nil
 }
 
 func (lis *Layer2Listener) getGoatBlock(ctx context.Context, height uint64) error {
@@ -502,4 +534,12 @@ func (lis *Layer2Listener) listenExecutorEvents(ctx context.Context) {
 			log.Errorf("Error in TaskCreated event filter: %v", err)
 		}
 	}
+}
+
+func (lis *Layer2Listener) GetContractTaskManager() *abis.TaskManagerContract {
+	return lis.contractTaskManager
+}
+
+func (lis *Layer2Listener) GetGoatEthClient() *ethclient.Client {
+	return lis.ethClient
 }
