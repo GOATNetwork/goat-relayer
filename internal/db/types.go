@@ -56,6 +56,7 @@ const (
 
 	TASK_STATUS_CREATE      = "create"
 	TASK_STATUS_RECEIVED    = "received"
+	TASK_STATUS_RECEIVED_OK = "received_ok" // this status means contract task is received after BTC deposit and tss signed TX submit to goat success
 	TASK_STATUS_AGGREGATING = "aggregating"
 	TASK_STATUS_INIT        = "init"
 	TASK_STATUS_SIGNING     = "signing"

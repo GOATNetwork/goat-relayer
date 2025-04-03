@@ -26,7 +26,9 @@ func (lis *Layer2Listener) handleTaskCreated(taskId *big.Int) error {
 		"partnerId":       task.PartnerId,
 	}).Info("new task created")
 
-	lis.state.CreateSafeboxTask(taskId.Uint64(), task.PartnerId.String(), uint64(task.TimelockEndTime), uint64(task.Deadline), task.DepositAddress.Hex(), task.Amount.Int64(), hex.EncodeToString(task.BtcAddress[:]))
+	// NOTE: contract task amount decimal is 18, but UTXO amount decimal is 8
+	amount := new(big.Int).Div(task.Amount, big.NewInt(1e10))
+	lis.state.CreateSafeboxTask(taskId.Uint64(), task.PartnerId.String(), uint64(task.TimelockEndTime), uint64(task.Deadline), amount.Uint64(), task.DepositAddress.Hex(), hex.EncodeToString(task.BtcAddress[:]))
 
 	return nil
 }

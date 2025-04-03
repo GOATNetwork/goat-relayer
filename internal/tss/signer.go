@@ -11,6 +11,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/goatnetwork/tss/pkg/crypto"
+	tssTypes "github.com/goatnetwork/tss/pkg/types"
+)
+
+const (
+	SignStartPath = "/evm/sign/start"
+	SignQueryPath = "/evm/sign/query"
 )
 
 // Signer TSS signer
@@ -31,24 +37,32 @@ func NewSigner(tssEndpoint string, chainID *big.Int) *Signer {
 	}
 }
 
-// SignRequest TSS signing request
-type SignRequest struct {
-	MessageHash []byte `json:"message_hash"`
-	ChainID     int64  `json:"chain_id"`
+// QuerySignResult queries the sign result of a session using TSS
+// should call ApplySignResult when result.Signature not nil
+func (s *Signer) QuerySignResult(ctx context.Context, sessionID string) (*tssTypes.EvmSignQueryResponse, error) {
+	resp, err := s.httpClient.Get(s.tssEndpoint + SignQueryPath + "?sessionId=" + sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("query sign result http request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var signResp tssTypes.Response[tssTypes.EvmSignQueryResponse]
+	if err := json.NewDecoder(resp.Body).Decode(&signResp); err != nil {
+		return nil, fmt.Errorf("decode response failed: %w", err)
+	}
+
+	if signResp.Status != tssTypes.ResponseStatusSuccess {
+		return nil, fmt.Errorf("query sign result failed: %v", signResp.Error)
+	}
+
+	return &signResp.Data, nil
 }
 
-// SignResponse TSS signing response
-type SignResponse struct {
-	Signature *crypto.Signature `json:"signature"`
-	Success   bool              `json:"success"`
-	Error     string            `json:"error,omitempty"`
-}
-
-// Sign signs a message using TSS
-func (s *Signer) Sign(ctx context.Context, messageHash []byte, chainID int64) (*crypto.Signature, error) {
-	req := SignRequest{
-		MessageHash: messageHash,
-		ChainID:     chainID,
+// StartSign starts a sign session using TSS
+func (s *Signer) StartSign(ctx context.Context, messageHash []byte, sessionID string) (*tssTypes.EvmSignStartResponse, error) {
+	req := tssTypes.EvmSignStartRequest{
+		Hash:      messageHash,
+		SessionID: sessionID,
 	}
 
 	reqBody, err := json.Marshal(req)
@@ -56,39 +70,46 @@ func (s *Signer) Sign(ctx context.Context, messageHash []byte, chainID int64) (*
 		return nil, fmt.Errorf("marshal request failed: %w", err)
 	}
 
-	resp, err := s.httpClient.Post(s.tssEndpoint+"/sign", "application/json", bytes.NewBuffer(reqBody))
+	resp, err := s.httpClient.Post(s.tssEndpoint+SignStartPath, "application/json", bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("http request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	var signResp SignResponse
+	var signResp tssTypes.Response[tssTypes.EvmSignStartResponse]
 	if err := json.NewDecoder(resp.Body).Decode(&signResp); err != nil {
 		return nil, fmt.Errorf("decode response failed: %w", err)
 	}
 
-	if !signResp.Success {
-		return nil, fmt.Errorf("sign failed: %s", signResp.Error)
+	if signResp.Status != tssTypes.ResponseStatusSuccess {
+		return nil, fmt.Errorf("start sign failed: %v", signResp.Error)
 	}
 
-	return signResp.Signature, nil
+	return &signResp.Data, nil
 }
 
-// SignTx signs a transaction using TSS
-func (s *Signer) SignTx(ctx context.Context, tx *types.Transaction) (*types.Transaction, error) {
+// StartSignWithUnsignedTx starts a sign session for a transaction using TSS
+func (s *Signer) StartSignWithUnsignedTx(ctx context.Context, unsignedTx *types.Transaction, sessionID string) (*tssTypes.EvmSignStartResponse, error) {
 	// Get transaction hash
-	messageHash := tx.Hash()
+	messageHash := unsignedTx.Hash()
 
 	// Request TSS signature
-	signature, err := s.Sign(ctx, messageHash.Bytes(), s.chainID.Int64())
+	resp, err := s.StartSign(ctx, messageHash.Bytes(), sessionID)
 	if err != nil {
-		return nil, fmt.Errorf("tss sign failed: %w", err)
+		return nil, err
+	}
+	return resp, nil
+}
+
+// ApplySignResult applies the TSS signature to the unsigned transaction
+func (s *Signer) ApplySignResult(ctx context.Context, unsignedTx *types.Transaction, signature *crypto.Signature) (*types.Transaction, error) {
+	if signature == nil {
+		return nil, fmt.Errorf("tss signature is nil")
 	}
 
-	// Sign transaction using tss/pkg/crypto methods
-	signedTx, err := crypto.SignEIP1559TxWithTss(tx, s.chainID, signature)
+	signedTx, err := crypto.SignEIP1559TxWithTss(unsignedTx, s.chainID, signature)
 	if err != nil {
-		return nil, fmt.Errorf("sign tx failed: %w", err)
+		return nil, fmt.Errorf("apply tss sign result failed: %w", err)
 	}
 
 	return signedTx, nil
