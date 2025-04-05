@@ -176,8 +176,8 @@ func (w *WalletServer) initWithdrawSig() {
 		log.Debug("WalletServer initWithdrawSig ignore, there is a sig")
 		return
 	}
-	if l2Info.Height <= w.sigFinishHeight+2 {
-		log.Debug("WalletServer initWithdrawSig ignore, last finish sig in 2 blocks")
+	if l2Info.Height <= w.sigFinishHeight+5 {
+		log.Debug("WalletServer initWithdrawSig ignore, last finish sig in 5 blocks")
 		return
 	}
 	// clean process, become proposer again, remove all status "create", "aggregating"
