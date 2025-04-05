@@ -39,6 +39,7 @@ import (
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/goatnetwork/goat-relayer/internal/tss"
 )
@@ -74,10 +75,11 @@ type Layer2Listener struct {
 	hasVoterUpdate bool
 	voterUpdateMu  sync.Mutex
 
-	contractBitcoin     *abis.BitcoinContract
-	contractBridge      *abis.BridgeContract
-	contractRelayer     *abis.RelayerContract
-	contractTaskManager *abis.TaskManagerContract
+	contractBitcoin        *abis.BitcoinContract
+	contractBridge         *abis.BridgeContract
+	contractRelayer        *abis.RelayerContract
+	contractTaskManager    *abis.TaskManagerContract
+	contractTaskManagerAbi *abi.ABI
 
 	goatRpcClient   *rpchttp.HTTP
 	goatGrpcConn    *grpc.ClientConn
@@ -95,7 +97,11 @@ func NewLayer2Listener(libp2p *p2p.LibP2PService, state *state.State, db *db.Dat
 	if err != nil {
 		log.Fatalf("Error creating Layer2 EVM RPC client: %v", err)
 	}
-
+	contractTaskManagerAbi, err := abi.JSON(strings.NewReader(abis.TaskManagerContractABI))
+	if err != nil {
+		log.Fatalf("Failed to parse task manager abi: %v", err)
+		return nil
+	}
 	contractRelayer, err := abis.NewRelayerContract(abis.RelayerAddress, ethClient)
 	if err != nil {
 		log.Fatalf("Failed to instantiate contract relayer: %v", err)
@@ -130,10 +136,11 @@ func NewLayer2Listener(libp2p *p2p.LibP2PService, state *state.State, db *db.Dat
 		state:     state,
 		ethClient: ethClient,
 
-		contractBitcoin:     contractBitcoin,
-		contractBridge:      contractBridge,
-		contractRelayer:     contractRelayer,
-		contractTaskManager: contractTaskManager,
+		contractBitcoin:        contractBitcoin,
+		contractBridge:         contractBridge,
+		contractRelayer:        contractRelayer,
+		contractTaskManager:    contractTaskManager,
+		contractTaskManagerAbi: &contractTaskManagerAbi,
 
 		goatRpcClient:   goatRpcClient,
 		goatGrpcConn:    goatGrpcConn,
@@ -334,14 +341,6 @@ func (lis *Layer2Listener) listenConsensusEvents(ctx context.Context) {
 				// Query cosmos tx or event
 				goatRpcAbort := false
 				for height := fromBlock; height <= toBlock; height++ {
-					// filter evm events
-					err := lis.filterEvmEvents(ctx, height)
-					if err != nil {
-						log.Errorf("Failed to filter evm events: %v", err)
-						goatRpcAbort = true
-						break
-					}
-
 					err = lis.getGoatBlock(ctx, height)
 					if err != nil {
 						log.Errorf("Failed to process block %d: %v", height, err)
@@ -383,14 +382,8 @@ func min(a, b uint64) uint64 {
 	return b
 }
 
-func (lis *Layer2Listener) filterEvmEvents(ctx context.Context, height uint64) error {
-
-	block, err := lis.ethClient.BlockByNumber(ctx, big.NewInt(int64(height)))
-	if err != nil {
-		return fmt.Errorf("failed to get evm block by number: %w", err)
-	}
-
-	blockHash := block.Hash()
+func (lis *Layer2Listener) filterEvmEvents(ctx context.Context, hash string) error {
+	blockHash := common.HexToHash(hash)
 	logs, err := lis.ethClient.FilterLogs(ctx, ethereum.FilterQuery{
 		BlockHash: &blockHash,
 		Addresses: []common.Address{
@@ -403,6 +396,34 @@ func (lis *Layer2Listener) filterEvmEvents(ctx context.Context, height uint64) e
 
 	log.Debugf("Filtered %d evm events", len(logs))
 	// TODO: process evm events
+	for _, vlog := range logs {
+		switch vlog.Topics[0] {
+		case lis.contractTaskManagerAbi.Events["TaskCreated"].ID:
+			taskCreatedEvent := abis.TaskManagerContractTaskCreated{}
+			err := lis.contractTaskManagerAbi.UnpackIntoInterface(&taskCreatedEvent, "TaskCreated", vlog.Data)
+			if err != nil {
+				log.Errorf("failed to unpack task created event: %w", err)
+				return err
+			}
+			err = lis.handleTaskCreated(taskCreatedEvent.TaskId)
+			if err != nil {
+				log.Errorf("failed to handle task created event: %w", err)
+				return err
+			}
+		case lis.contractTaskManagerAbi.Events["FundsReceived"].ID:
+			fundsReceivedEvent := abis.TaskManagerContractFundsReceived{}
+			err := lis.contractTaskManagerAbi.UnpackIntoInterface(&fundsReceivedEvent, "FundsReceived", vlog.Data)
+			if err != nil {
+				log.Errorf("failed to unpack funds received event: %w", err)
+				return err
+			}
+			err = lis.handleFundsReceived(fundsReceivedEvent.TaskId, fundsReceivedEvent.FundingTxHash[:], uint64(fundsReceivedEvent.TxOut))
+			if err != nil {
+				log.Errorf("failed to handle funds received event: %w", err)
+				return err
+			}
+		}
+	}
 
 	return nil
 }
@@ -438,14 +459,14 @@ func (lis *Layer2Listener) getGoatBlock(ctx context.Context, height uint64) erro
 		}
 
 		for _, event := range txResult.Events {
-			if err := lis.processEvent(height, event); err != nil {
+			if err := lis.processEvent(ctx, height, event); err != nil {
 				return fmt.Errorf("failed to process tx event %s: %w", event.Type, err)
 			}
 		}
 	}
 
 	for _, event := range blockResults.FinalizeBlockEvents {
-		if err := lis.processEvent(height, event); err != nil {
+		if err := lis.processEvent(ctx, height, event); err != nil {
 			return fmt.Errorf("failed to process EndBlock event %s: %w", event.Type, err)
 		}
 	}

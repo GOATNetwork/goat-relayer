@@ -23,11 +23,12 @@ const (
 	WithdrawFinalize
 	SendOrderBroadcasted
 	NewVoter
+	SafeboxTask
 )
 
 func (e EventType) String() string {
 	return [...]string{"EventUnkown", "SigStart", "SigReceive", "SigFinish", "SigFailed", "SigTimeout", "DepositReceive",
-		"BlockScanned", "WithdrawRequest", "WithdrawFinalize", "SendOrderBroadcasted", "NewVoter"}[e]
+		"BlockScanned", "WithdrawRequest", "WithdrawFinalize", "SendOrderBroadcasted", "NewVoter", "SafeboxTask"}[e]
 }
 
 type EventBus struct {

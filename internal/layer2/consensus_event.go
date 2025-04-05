@@ -16,11 +16,14 @@ import (
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	bitcointypes "github.com/goatnetwork/goat/x/bitcoin/types"
+	goattypes "github.com/goatnetwork/goat/x/goat/types"
 	relayertypes "github.com/goatnetwork/goat/x/relayer/types"
 )
 
-func (lis *Layer2Listener) processEvent(block uint64, event abcitypes.Event) error {
+func (lis *Layer2Listener) processEvent(ctx context.Context, block uint64, event abcitypes.Event) error {
 	switch event.Type {
+	case goattypes.EventTypeNewEthBlock:
+		return lis.processNewEthBlock(ctx, block, event.Attributes)
 	case relayertypes.EventTypeNewEpoch:
 		return lis.processNewEpochEvent(block, event.Attributes)
 	case relayertypes.EventFinalizedProposal:
@@ -444,6 +447,28 @@ func (lis *Layer2Listener) processNewBtcBlockHash(block uint64, attributes []abc
 			log.Errorf("Abci processNewBtcBlockHash UpdateConfirmedDepositsByBtcHeight error: %v", err)
 			return err
 		}
+	}
+	return nil
+}
+
+func (lis *Layer2Listener) processNewEthBlock(ctx context.Context, block uint64, attributes []abcitypes.EventAttribute) error {
+	// filter evm events
+	var hash string
+	for _, attr := range attributes {
+		key := attr.Key
+		value := attr.Value
+
+		if key == "hash" {
+			hash = value
+		}
+	}
+	if hash == "" {
+		return nil
+	}
+	err := lis.filterEvmEvents(ctx, hash)
+	if err != nil {
+		log.Errorf("Failed to filter evm events: %v", err)
+		return err
 	}
 	return nil
 }

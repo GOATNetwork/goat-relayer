@@ -1,13 +1,33 @@
 package layer2
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"math/big"
 	"time"
 
+	abcitypes "github.com/cometbft/cometbft/abci/types"
+	goattypes "github.com/goatnetwork/goat/x/goat/types"
 	log "github.com/sirupsen/logrus"
 )
+
+func (lis *Layer2Listener) processGethEvent(ctx context.Context, block uint64, event abcitypes.Event) error {
+	switch event.Type {
+	case goattypes.EventTypeNewEthBlock:
+		return lis.processNewEthBlock(ctx, block, event.Attributes)
+
+	default:
+		return nil
+	}
+}
+
+func (lis *Layer2Listener) handleFundsReceived(taskId *big.Int, fundingTxHash []byte, txOut uint64) error {
+	// TODO: handle funds received event
+
+	lis.state.UpdateSafeboxTask(taskId.Uint64(), fundingTxHash, txOut)
+	return nil
+}
 
 // Handle TaskCreated event
 func (lis *Layer2Listener) handleTaskCreated(taskId *big.Int) error {

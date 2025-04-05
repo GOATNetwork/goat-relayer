@@ -103,6 +103,8 @@ func (libp2p *LibP2PService) handlePubSubMessages(ctx context.Context, sub *pubs
 				libp2p.state.EventBus.Publish(state.SendOrderBroadcasted, convertMsgData(receivedMsg))
 			case MessageTypeNewVoter:
 				libp2p.state.EventBus.Publish(state.NewVoter, convertMsgData(receivedMsg))
+			case MessageTypeSafeboxTask:
+				libp2p.state.EventBus.Publish(state.SafeboxTask, convertMsgData(receivedMsg))
 			default:
 				log.Warnf("Unknown message type: %d", receivedMsg.MessageType)
 			}
@@ -161,6 +163,8 @@ func convertMsgData(msg Message[json.RawMessage]) any {
 		return unmarshal[types.MsgSendOrderBroadcasted](msg.Data)
 	case "MsgSignNewVoter":
 		return unmarshal[types.MsgSignNewVoter](msg.Data)
+	case "MsgSafeboxTask":
+		return unmarshal[types.TssSession](msg.Data)
 	}
 	return unmarshal[any](msg.Data)
 }

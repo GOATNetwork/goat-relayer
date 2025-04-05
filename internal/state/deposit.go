@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -185,7 +186,7 @@ func (s *State) CreateSafeboxTask(taskId uint64, partnerId string, timelockEndTi
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
-	_, err := s.QueryCreatedSafeboxTaskByEvmAddr(nil, depositAddress)
+	_, err := s.queryCreatedSafeboxTaskByEvmAddr(nil, depositAddress)
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return err
 	}
@@ -206,12 +207,28 @@ func (s *State) CreateSafeboxTask(taskId uint64, partnerId string, timelockEndTi
 	return s.dbm.GetWalletDB().Create(&taskDeposit).Error
 }
 
-func (s *State) CheckAndUpdateTaskDepositStatus(txid, evmAddr string, txout, amount uint64) error {
+// UpdateSafeboxTask update safebox task
+func (s *State) UpdateSafeboxTask(taskId uint64, fundingTxHash []byte, txOut uint64) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	taskDeposit, err := s.queryCreatedSafeboxTaskByTaskId(nil, taskId)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return err
+	}
+	taskDeposit.FundingTxid = hex.EncodeToString(fundingTxHash)
+	taskDeposit.FundingOutIndex = txOut
+	taskDeposit.Status = db.TASK_STATUS_RECEIVED_OK
+	taskDeposit.UpdatedAt = time.Now()
+	return s.dbm.GetWalletDB().Save(&taskDeposit).Error
+}
+
+func (s *State) CheckAndUpdateTaskDepositStatus(txid, evmAddr string, txout uint64, amount uint64) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
 	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
-		taskDeposit, err := s.QueryCreatedSafeboxTaskByEvmAddr(tx, evmAddr)
+		taskDeposit, err := s.queryCreatedSafeboxTaskByEvmAddr(tx, evmAddr)
 		if err != nil && err != gorm.ErrRecordNotFound {
 			return err
 		}
@@ -355,7 +372,19 @@ func (s *State) queryDepositByTxHash(txHash string, outputIndex int) (*db.Deposi
 	return &deposit, nil
 }
 
-func (s *State) QueryCreatedSafeboxTaskByEvmAddr(tx *gorm.DB, evmAddr string) (*db.SafeboxTask, error) {
+func (s *State) queryCreatedSafeboxTaskByTaskId(tx *gorm.DB, taskId uint64) (*db.SafeboxTask, error) {
+	if tx == nil {
+		tx = s.dbm.GetWalletDB()
+	}
+	var task db.SafeboxTask
+	err := tx.Where("task_id = ? and status = ?", taskId, db.TASK_STATUS_CREATE).First(&task).Error
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
+}
+
+func (s *State) queryCreatedSafeboxTaskByEvmAddr(tx *gorm.DB, evmAddr string) (*db.SafeboxTask, error) {
 	if tx == nil {
 		tx = s.dbm.GetWalletDB()
 	}

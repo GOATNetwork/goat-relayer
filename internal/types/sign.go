@@ -1,6 +1,10 @@
 package types
 
-import "context"
+import (
+	"context"
+
+	evmTypes "github.com/ethereum/go-ethereum/core/types"
+)
 
 type MsgSign struct {
 	RequestId    string `json:"request_id"`
@@ -84,6 +88,26 @@ type MsgSignNewVoter struct {
 	VoterTxKey       []byte `json:"voter_tx_key"`
 	VoterTxKeyProof  []byte `json:"voter_tx_key_proof"`
 	VoterBlsKeyProof []byte `json:"voter_bls_key_proof"`
+}
+
+// TssSession defines the tss session for contract call
+type TssSession struct {
+	TaskId uint64 `json:"task_id"` // task id from db
+
+	SessionId     string                `json:"session_id"`
+	SignExpiredTs int64                 `json:"sign_expired_ts"`
+	MessageToSign []byte                `json:"message_to_sign"`
+	UnsignedTx    *evmTypes.Transaction `json:"unsigned_tx"`
+
+	Status           string `json:"status"`
+	Amount           uint64 `json:"amount"`
+	DepositAddress   string `json:"deposit_address"`
+	FundingTxid      string `json:"funding_txid"`
+	FundingOutIndex  uint64 `json:"funding_out_index"`
+	TimelockTxid     string `json:"timelock_txid"`
+	TimelockOutIndex uint64 `json:"timelock_out_index"`
+
+	SignedTx *evmTypes.Transaction `json:"signed_tx"`
 }
 
 // BlsSignProcessor defines the interface for the BLS signature processor

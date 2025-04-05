@@ -40,6 +40,7 @@ func InitConfig() {
 	viper.SetDefault("L2_REQUEST_INTERVAL", "10s")
 	viper.SetDefault("L2_SUBMIT_RETRY", 10)
 	viper.SetDefault("TSS_ENDPOINT", "http://localhost:8080")
+	viper.SetDefault("TSS_ADDRESS", "")
 	viper.SetDefault("ENABLE_WEBHOOK", true)
 	viper.SetDefault("ENABLE_RELAYER", true)
 	viper.SetDefault("LOG_LEVEL", "info")
@@ -96,6 +97,7 @@ func InitConfig() {
 		L2RequestInterval:      viper.GetDuration("L2_REQUEST_INTERVAL"),
 		L2SubmitRetry:          viper.GetInt("L2_SUBMIT_RETRY"),
 		TssEndpoint:            viper.GetString("TSS_ENDPOINT"),
+		TssAddress:             viper.GetString("TSS_ADDRESS"),
 		FireblocksSecret:       viper.GetString("FIREBLOCKS_SECRET"),
 		FireblocksCallbackPriv: viper.GetString("FIREBLOCKS_CALLBACK_PRIVATE"),
 		FireblocksCallbackPub:  viper.GetString("FIREBLOCKS_CALLBACK_PUBLIC"),
@@ -156,6 +158,7 @@ type Config struct {
 	FireblocksCallbackPub  string
 	FireblocksApiKey       string
 	TssEndpoint            string
+	TssAddress             string
 	EnableWebhook          bool
 	EnableRelayer          bool
 	DbDir                  string
