@@ -250,7 +250,7 @@ func (s *State) CheckAndUpdateTaskDepositStatus(txid, evmAddr string, txout uint
 		// check if amount is enough
 		if amount != taskDeposit.Amount {
 			// not match, ignore
-			return nil
+			return fmt.Errorf("amount not match, task deposit amount: %d, amount: %d", taskDeposit.Amount, amount)
 		}
 
 		taskDeposit.Status = db.TASK_STATUS_RECEIVED

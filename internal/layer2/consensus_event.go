@@ -379,6 +379,7 @@ func (lis *Layer2Listener) processNewDeposit(block uint64, attributes []abcitype
 		log.Errorf("Abci NewDeposit, check and update safebox task deposit status error: %v", err)
 		return err
 	}
+	log.Infof("Abci NewDeposit, block: %d, txid: %s, txout: %d, address: %v, amount: %d", block, txid, txout, address, amount)
 
 	return nil
 }
