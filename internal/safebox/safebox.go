@@ -51,8 +51,8 @@ type SafeboxProcessor struct {
 	tssMu      sync.Mutex
 	tssStatus  bool
 	tssSession *types.TssSession
-
-	tssSignCh chan interface{}
+	tssAddress string
+	tssSignCh  chan interface{}
 }
 
 func NewSafeboxProcessor(state *state.State, libp2p *p2p.LibP2PService, layer2Listener *layer2.Layer2Listener, signer *bls.Signer, db *db.DatabaseManager) *SafeboxProcessor {
@@ -68,10 +68,16 @@ func NewSafeboxProcessor(state *state.State, libp2p *p2p.LibP2PService, layer2Li
 		}),
 
 		tssSigner: tss.NewSigner(config.AppConfig.TssEndpoint, big.NewInt(config.AppConfig.L2ChainId.Int64())),
+		tssSignCh: make(chan interface{}, 1000),
 	}
 }
 
 func (s *SafeboxProcessor) Start(ctx context.Context) {
+	tssAddress, err := s.tssSigner.GetTssAddress(ctx)
+	if err != nil {
+		s.logger.Fatalf("SafeboxProcessor, get tss address error: %v", err)
+	}
+	s.tssAddress = tssAddress
 
 	go s.taskLoop(ctx)
 
@@ -191,7 +197,7 @@ func (s *SafeboxProcessor) process(ctx context.Context) {
 			s.logger.Errorf("SafeboxProcessor, task contract abi not found")
 			return
 		}
-		to := abis.TaskManagerAddress
+		to := common.HexToAddress(config.AppConfig.ContractTaskManager)
 
 		goatEthClient := s.layer2Listener.GetGoatEthClient()
 		block, err := goatEthClient.BlockByNumber(ctx, nil)

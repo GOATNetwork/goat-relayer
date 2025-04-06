@@ -557,6 +557,7 @@ func TestCreateTimeLockP2wsh(t *testing.T) {
 }
 
 func TestGetUTXOsFromMempool(t *testing.T) {
+	t.Skip("This is a test for get UTXOs from mempool, please run it manually")
 	// Testnet address
 	testnetAddress := "bcrt1qksncyqxd4857fa8uadklcj56a5g45zmqvmzccq"
 	testnetUTXOs, err := GetUTXOsFromMempool(testnetAddress, "regtest")

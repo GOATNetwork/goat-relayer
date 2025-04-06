@@ -454,6 +454,7 @@ func (lis *Layer2Listener) processNewBtcBlockHash(block uint64, attributes []abc
 func (lis *Layer2Listener) processNewEthBlock(ctx context.Context, block uint64, attributes []abcitypes.EventAttribute) error {
 	// filter evm events
 	var hash string
+	var height string
 	for _, attr := range attributes {
 		key := attr.Key
 		value := attr.Value
@@ -461,10 +462,14 @@ func (lis *Layer2Listener) processNewEthBlock(ctx context.Context, block uint64,
 		if key == "hash" {
 			hash = value
 		}
+		if key == "number" {
+			height = value
+		}
 	}
 	if hash == "" {
 		return nil
 	}
+	log.Infof("Abci NewEthBlock: %s, block: %d, height: %s", hash, block, height)
 	err := lis.filterEvmEvents(ctx, hash)
 	if err != nil {
 		log.Errorf("Failed to filter evm events: %v", err)

@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	SignStartPath = "/evm/sign/start"
-	SignQueryPath = "/evm/sign/query"
+	SignStartPath  = "/api/v1/evm/sign/start"
+	SignQueryPath  = "/api/v1/evm/sign/query"
+	TssAddressPath = "/api/v1/evm/address"
 )
 
 // Signer TSS signer
@@ -35,6 +36,26 @@ func NewSigner(tssEndpoint string, chainID *big.Int) *Signer {
 			Timeout: 30 * time.Second,
 		},
 	}
+}
+
+// GetTssAddress gets the TSS address
+func (s *Signer) GetTssAddress(ctx context.Context) (string, error) {
+	resp, err := s.httpClient.Get(s.tssEndpoint + TssAddressPath + "?kdd=1")
+	if err != nil {
+		return "", fmt.Errorf("get tss address http request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var tssResp tssTypes.Response[string]
+	if err := json.NewDecoder(resp.Body).Decode(&tssResp); err != nil {
+		return "", fmt.Errorf("decode response failed: %w", err)
+	}
+
+	if tssResp.Status != tssTypes.ResponseStatusSuccess {
+		return "", fmt.Errorf("get tss address failed: %v", tssResp.Error)
+	}
+
+	return tssResp.Data, nil
 }
 
 // QuerySignResult queries the sign result of a session using TSS

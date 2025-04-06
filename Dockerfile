@@ -2,6 +2,11 @@ FROM golang:1.23-alpine AS builder
 
 RUN apk add --no-cache gcc musl-dev git
 
+ENV GOPRIVATE=github.com/goatnetwork/tss
+ARG GITHUB_TOKEN
+RUN echo "machine github.com login ${GITHUB_TOKEN} password x-oauth-basic" > ~/.netrc && \
+    chmod 600 ~/.netrc
+
 WORKDIR /app
 
 COPY go.mod go.sum ./

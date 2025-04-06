@@ -1,6 +1,8 @@
 module github.com/goatnetwork/goat-relayer
 
-go 1.24.1
+go 1.23.2
+
+toolchain go1.23.7
 
 require (
 	github.com/btcsuite/btcd v0.24.2
@@ -12,7 +14,7 @@ require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-errors/errors v1.4.2
 	github.com/goatnetwork/goat v0.2.3
-	github.com/goatnetwork/tss v0.0.0-20240329000000-000000000000
+	github.com/goatnetwork/tss v1.0.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
@@ -307,5 +309,4 @@ require (
 replace (
 	github.com/agl/ed25519 => github.com/bnb-chain/edwards25519 v0.0.0-20200305024217-f36fc4b53d43
 	github.com/ethereum/go-ethereum => github.com/GOATNetwork/goat-geth v0.2.1
-	github.com/goatnetwork/tss => ../tss
 )

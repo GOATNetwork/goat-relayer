@@ -350,6 +350,8 @@ github.com/go-task/slim-sprig/v3 v3.0.0 h1:sUs3vkvUymDpBKi3qH1YSqBQk9+9D/8M2mN1v
 github.com/go-task/slim-sprig/v3 v3.0.0/go.mod h1:W848ghGpv3Qj3dhTPRyJypKRiqCdHZiAzKg9hl15HA8=
 github.com/goatnetwork/goat v0.2.3 h1:1urXJDS0WEdimgfaoI2Ani/nsr4L13q7kqyFC8p2MlI=
 github.com/goatnetwork/goat v0.2.3/go.mod h1:0vofzZQkUGMkQNztuHRrLCr1YUuX1uG+bJSqaes7H0k=
+github.com/goatnetwork/tss v1.0.0 h1:0K2VLbauvUfVtu/DBhYxuxteRcHEBHBruwq+Ht+9vjw=
+github.com/goatnetwork/tss v1.0.0/go.mod h1:dTbuJ3SzMgPl+99ouLPa0VcgurHjqcw7TCiKMs2yj/s=
 github.com/gobwas/httphead v0.0.0-20180130184737-2c6c146eadee h1:s+21KNqlpePfkah2I+gwHF8xmJWRjooY+5248k6m4A0=
 github.com/gobwas/httphead v0.0.0-20180130184737-2c6c146eadee/go.mod h1:L0fX3K22YWvt/FAX9NnzrNzcI4wNYi9Yku4O0LKYflo=
 github.com/gobwas/pool v0.2.0 h1:QEmUOlnSjWtnpRGHF3SauEiOsy82Cup83Vf2LcMlnc8=

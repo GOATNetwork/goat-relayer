@@ -40,7 +40,6 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/goatnetwork/goat-relayer/internal/tss"
 )
 
@@ -114,7 +113,7 @@ func NewLayer2Listener(libp2p *p2p.LibP2PService, state *state.State, db *db.Dat
 	if err != nil {
 		log.Fatalf("Failed to instantiate contract bridge: %v", err)
 	}
-	contractTaskManager, err := abis.NewTaskManagerContract(abis.TaskManagerAddress, ethClient)
+	contractTaskManager, err := abis.NewTaskManagerContract(common.HexToAddress(config.AppConfig.ContractTaskManager), ethClient)
 	if err != nil {
 		log.Fatalf("Failed to instantiate contract task manager: %v", err)
 	}
@@ -384,42 +383,49 @@ func min(a, b uint64) uint64 {
 
 func (lis *Layer2Listener) filterEvmEvents(ctx context.Context, hash string) error {
 	blockHash := common.HexToHash(hash)
+	contractAddr := common.HexToAddress(config.AppConfig.ContractTaskManager)
+
+	log.Infof("Filtering EVM events for block hash: %s, contract address: %s", hash, contractAddr.Hex())
+
 	logs, err := lis.ethClient.FilterLogs(ctx, ethereum.FilterQuery{
 		BlockHash: &blockHash,
 		Addresses: []common.Address{
-			abis.TaskManagerAddress,
+			contractAddr,
 		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to filter evm events: %w", err)
 	}
 
-	log.Debugf("Filtered %d evm events", len(logs))
-	// TODO: process evm events
+	log.Infof("Filtered %d evm events", len(logs))
 	for _, vlog := range logs {
+		log.Infof("Processing event with topics: %v", vlog.Topics)
 		switch vlog.Topics[0] {
 		case lis.contractTaskManagerAbi.Events["TaskCreated"].ID:
+			log.Infof("Found TaskCreated event")
 			taskCreatedEvent := abis.TaskManagerContractTaskCreated{}
 			err := lis.contractTaskManagerAbi.UnpackIntoInterface(&taskCreatedEvent, "TaskCreated", vlog.Data)
 			if err != nil {
-				log.Errorf("failed to unpack task created event: %w", err)
+				log.Errorf("failed to unpack task created event: %v", err)
 				return err
 			}
-			err = lis.handleTaskCreated(taskCreatedEvent.TaskId)
+			log.Infof("Successfully unpacked TaskCreated event with taskId: %v", taskCreatedEvent.TaskId)
+			err = lis.handleTaskCreated(ctx, taskCreatedEvent.TaskId)
 			if err != nil {
-				log.Errorf("failed to handle task created event: %w", err)
+				log.Errorf("failed to handle task created event: %v", err)
 				return err
 			}
+			log.Infof("Successfully handled TaskCreated event")
 		case lis.contractTaskManagerAbi.Events["FundsReceived"].ID:
 			fundsReceivedEvent := abis.TaskManagerContractFundsReceived{}
 			err := lis.contractTaskManagerAbi.UnpackIntoInterface(&fundsReceivedEvent, "FundsReceived", vlog.Data)
 			if err != nil {
-				log.Errorf("failed to unpack funds received event: %w", err)
+				log.Errorf("failed to unpack funds received event: %v", err)
 				return err
 			}
 			err = lis.handleFundsReceived(fundsReceivedEvent.TaskId, fundsReceivedEvent.FundingTxHash[:], uint64(fundsReceivedEvent.TxOut))
 			if err != nil {
-				log.Errorf("failed to handle funds received event: %w", err)
+				log.Errorf("failed to handle funds received event: %v", err)
 				return err
 			}
 		}
@@ -529,32 +535,6 @@ func (lis *Layer2Listener) getGoatChainGenesisState(ctx context.Context) (*db.L2
 	}
 
 	return l2Info, voters, relayerState.Relayer.Epoch, relayerState.Sequence, relayerState.Relayer.Proposer, nil
-}
-
-// listen executor events
-func (lis *Layer2Listener) listenExecutorEvents(ctx context.Context) {
-	// create event channel
-	taskCreatedChan := make(chan *abis.TaskManagerContractTaskCreated)
-
-	// create event filter
-	sub, err := lis.contractTaskManager.WatchTaskCreated(&bind.WatchOpts{}, taskCreatedChan)
-	if err != nil {
-		log.Fatalf("Failed to create TaskCreated event filter: %v", err)
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			sub.Unsubscribe()
-			return
-		case event := <-taskCreatedChan:
-			if err := lis.handleTaskCreated(event.TaskId); err != nil {
-				log.Errorf("Failed to process TaskCreated event: %v", err)
-			}
-		case err := <-sub.Err():
-			log.Errorf("Error in TaskCreated event filter: %v", err)
-		}
-	}
 }
 
 func (lis *Layer2Listener) GetContractTaskManager() *abis.TaskManagerContract {
