@@ -241,7 +241,11 @@ func (w *WalletServer) initWithdrawSig() {
 		}
 	} else if tasks, err := w.state.GetSafeboxTasks(); err == nil && len(tasks) > 0 {
 		safeboxTxFee := networkFee.HalfHourFee
-		selectedTaskWithdraws, receiverTypes, withdrawAmount, actualPrice, err := SelectSafeboxTasks(tasks, networkFee, WITHDRAW_MAX_VOUT, WITHDRAW_IMMEDIATE_COUNT, network)
+		selectedTaskWithdraws, receiverTypes, withdrawAmount, actualPrice, err := SelectSafeboxTasks(tasks, networkFee, SAFEBOX_TASK_MAX_VOUT, SAFEBOX_TASK_IMMEDIATE_COUNT, network)
+		if err != nil {
+			log.Errorf("WalletServer initWithdrawSig SelectSafeboxTasks error: %v", err)
+			return
+		}
 		if len(selectedTaskWithdraws) != 1 {
 			log.Infof("WalletServer initWithdrawSig no safebox tx after filter can start")
 			return

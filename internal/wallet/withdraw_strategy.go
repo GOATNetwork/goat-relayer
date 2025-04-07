@@ -410,9 +410,10 @@ func SelectSafeboxTasks(tasks []*db.SafeboxTask, networkFee types.BtcNetworkFee,
 
 	selectedTasks := tasks[:immediateCount]
 	receiverTypes = make([]string, len(selectedTasks))
+	selectedTaskWithdraws = make([]*db.Withdraw, len(selectedTasks))
 
 	for i, task := range selectedTasks {
-		timelockP2WSHAddress, err := types.GenerateTimeLockP2WSHAddress(task.Pubkey[:], time.Unix(int64(task.Deadline), 0), net)
+		timelockP2WSHAddress, err := types.GenerateTimeLockP2WSHAddress(task.Pubkey, time.Unix(int64(task.TimelockEndTime), 0), net)
 		if err != nil {
 			log.Fatalf("Gen P2WPKH address from pubkey %s and timelock %d err %v", task.Pubkey, task.Deadline, err)
 		}
