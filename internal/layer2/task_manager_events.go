@@ -52,9 +52,9 @@ func (lis *Layer2Listener) handleTaskCreated(ctx context.Context, taskId *big.In
 	copy(btcAddress[len(task.BtcAddress[0]):], task.BtcAddress[1][:])
 	log.Infof("Constructed BTC address from parts: %s", hex.EncodeToString(btcAddress))
 
-	pubkey := make([]byte, len(task.BtcPubKey[0])+len(task.BtcPubKey[1]))
+	pubkey := make([]byte, 33)
 	copy(pubkey, task.BtcPubKey[0][:])
-	copy(pubkey[len(task.BtcPubKey[0]):], task.BtcPubKey[1][:])
+	pubkey[32] = task.BtcPubKey[1][0]
 	log.Infof("Constructed BTC pubkey from parts: %s", hex.EncodeToString(pubkey))
 
 	err = lis.state.CreateSafeboxTask(
@@ -65,7 +65,7 @@ func (lis *Layer2Listener) handleTaskCreated(ctx context.Context, taskId *big.In
 		amount.Uint64(),
 		task.DepositAddress.Hex(),
 		hex.EncodeToString(btcAddress),
-		hex.EncodeToString(pubkey),
+		pubkey,
 	)
 	if err != nil {
 		log.Errorf("Failed to create safebox task: %v", err)
