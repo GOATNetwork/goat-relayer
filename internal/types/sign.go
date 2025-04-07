@@ -3,7 +3,7 @@ package types
 import (
 	"context"
 
-	evmTypes "github.com/ethereum/go-ethereum/core/types"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
 type MsgSign struct {
@@ -97,7 +97,7 @@ type TssSession struct {
 	SessionId     string                `json:"session_id"`
 	SignExpiredTs int64                 `json:"sign_expired_ts"`
 	MessageToSign []byte                `json:"message_to_sign"`
-	UnsignedTx    *evmTypes.Transaction `json:"unsigned_tx"`
+	UnsignedTx    *ethtypes.Transaction `json:"unsigned_tx"`
 
 	Status           string `json:"status"`
 	Amount           uint64 `json:"amount"`
@@ -107,7 +107,7 @@ type TssSession struct {
 	TimelockTxid     string `json:"timelock_txid"`
 	TimelockOutIndex uint64 `json:"timelock_out_index"`
 
-	SignedTx *evmTypes.Transaction `json:"signed_tx"`
+	SignedTx *ethtypes.Transaction `json:"signed_tx"`
 }
 
 // BlsSignProcessor defines the interface for the BLS signature processor
