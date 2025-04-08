@@ -172,6 +172,21 @@ func GenerateV0P2WSHAddress(pubKey []byte, evmAddress string, net *chaincfg.Para
 	return p2wsh, nil
 }
 
+func GenerateTimeLockP2WSHAddress(pubKey []byte, lockTime time.Time, net *chaincfg.Params) (*btcutil.AddressWitnessScriptHash, error) {
+	subScript, err := BuildTimeLockScriptForP2WSH(pubKey, lockTime, net)
+	if err != nil {
+		return nil, err
+	}
+
+	witnessProg := sha256.Sum256(subScript)
+	p2wsh, err := btcutil.NewAddressWitnessScriptHash(witnessProg[:], net)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create v0 p2wsh address: %v", err)
+	}
+
+	return p2wsh, nil
+}
+
 func GenerateSPVProof(txHash string, txHashes []string) ([]byte, []byte, int, error) {
 	// Find the transaction's position in the block
 	txIndex := -1
@@ -317,6 +332,23 @@ func BuildSubScriptForP2WSH(evmAddress string, pubKey []byte) ([]byte, error) {
 
 	subScript, err := txscript.NewScriptBuilder().
 		AddData(addr).
+		AddOp(txscript.OP_DROP).
+		AddData(posPubkey.SerializeCompressed()).
+		AddOp(txscript.OP_CHECKSIG).Script()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build subscript: %v", err)
+	}
+	return subScript, nil
+}
+
+func BuildTimeLockScriptForP2WSH(pubKey []byte, lockTime time.Time, net *chaincfg.Params) ([]byte, error) {
+	posPubkey, err := btcec.ParsePubKey(pubKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse public key: %v", err)
+	}
+	subScript, err := txscript.NewScriptBuilder().
+		AddInt64(lockTime.Unix()).
+		AddOp(txscript.OP_CHECKLOCKTIMEVERIFY).
 		AddOp(txscript.OP_DROP).
 		AddData(posPubkey.SerializeCompressed()).
 		AddOp(txscript.OP_CHECKSIG).Script()

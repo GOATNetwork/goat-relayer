@@ -31,6 +31,7 @@ func InitConfig() {
 	viper.SetDefault("BTC_NETWORK_TYPE", "")
 	viper.SetDefault("BTC_MAX_NETWORK_FEE", 500)
 	viper.SetDefault("BTC_REINDEX_BLOCKS", "")
+	viper.SetDefault("CONTRACT_TASK_MANAGER", "0x6827D591faDa19A1274Df0Ab2608901AaaEA14C9")
 	viper.SetDefault("L2_RPC", "http://localhost:8545")
 	viper.SetDefault("L2_JWT_SECRET", "")
 	viper.SetDefault("L2_CHAIN_ID", "2345")
@@ -39,6 +40,7 @@ func InitConfig() {
 	viper.SetDefault("L2_MAX_BLOCK_RANGE", 500)
 	viper.SetDefault("L2_REQUEST_INTERVAL", "10s")
 	viper.SetDefault("L2_SUBMIT_RETRY", 10)
+	viper.SetDefault("TSS_ENDPOINT", "http://localhost:8080")
 	viper.SetDefault("ENABLE_WEBHOOK", true)
 	viper.SetDefault("ENABLE_RELAYER", true)
 	viper.SetDefault("LOG_LEVEL", "info")
@@ -86,6 +88,7 @@ func InitConfig() {
 		BTCConfirmations:       viper.GetInt("BTC_CONFIRMATIONS"),
 		BTCNetworkType:         viper.GetString("BTC_NETWORK_TYPE"),
 		BTCMaxNetworkFee:       viper.GetInt("BTC_MAX_NETWORK_FEE"),
+		ContractTaskManager:    viper.GetString("CONTRACT_TASK_MANAGER"),
 		L2RPC:                  viper.GetString("L2_RPC"),
 		L2JwtSecret:            viper.GetString("L2_JWT_SECRET"),
 		L2ChainId:              big.NewInt(l2ChainId),
@@ -94,6 +97,7 @@ func InitConfig() {
 		L2MaxBlockRange:        viper.GetInt("L2_MAX_BLOCK_RANGE"),
 		L2RequestInterval:      viper.GetDuration("L2_REQUEST_INTERVAL"),
 		L2SubmitRetry:          viper.GetInt("L2_SUBMIT_RETRY"),
+		TssEndpoint:            viper.GetString("TSS_ENDPOINT"),
 		FireblocksSecret:       viper.GetString("FIREBLOCKS_SECRET"),
 		FireblocksCallbackPriv: viper.GetString("FIREBLOCKS_CALLBACK_PRIVATE"),
 		FireblocksCallbackPub:  viper.GetString("FIREBLOCKS_CALLBACK_PUBLIC"),
@@ -141,6 +145,7 @@ type Config struct {
 	BTCNetworkType         string
 	BTCMaxNetworkFee       int
 	BTCReindexBlocks       string
+	ContractTaskManager    string
 	L2RPC                  string
 	L2JwtSecret            string
 	L2ChainId              *big.Int
@@ -153,6 +158,7 @@ type Config struct {
 	FireblocksCallbackPriv string
 	FireblocksCallbackPub  string
 	FireblocksApiKey       string
+	TssEndpoint            string
 	EnableWebhook          bool
 	EnableRelayer          bool
 	DbDir                  string

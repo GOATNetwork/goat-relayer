@@ -1,7 +1,9 @@
 package state
 
 import (
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -179,6 +181,87 @@ func (s *State) UpdateProcessedDeposit(txHash string, txout int, evmAddr string)
 	return nil
 }
 
+// CreateSafeboxTask create safebox task
+func (s *State) CreateSafeboxTask(taskId uint64, partnerId string, timelockEndTime, deadline, amount uint64, depositAddress, btcAddress string, btcPubKey []byte) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	_, err := s.queryCreatedSafeboxTaskByEvmAddr(nil, depositAddress)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return err
+	}
+	if err == nil {
+		return fmt.Errorf("task deposit already exists")
+	}
+	taskDeposit := db.SafeboxTask{
+		TaskId:          taskId,
+		PartnerId:       partnerId,
+		DepositAddress:  depositAddress,
+		TimelockEndTime: timelockEndTime,
+		Deadline:        deadline,
+		Amount:          amount,
+		BtcAddress:      btcAddress,
+		Pubkey:          btcPubKey,
+		Status:          db.TASK_STATUS_CREATE,
+	}
+
+	return s.dbm.GetWalletDB().Create(&taskDeposit).Error
+}
+
+// UpdateSafeboxTask update safebox task
+func (s *State) UpdateSafeboxTask(taskId uint64, fundingTxHash []byte, txOut uint64) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	taskDeposit, err := s.queryCreatedSafeboxTaskByTaskId(nil, taskId)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return err
+	}
+	taskDeposit.FundingTxid = hex.EncodeToString(fundingTxHash)
+	taskDeposit.FundingOutIndex = txOut
+	taskDeposit.Status = db.TASK_STATUS_RECEIVED_OK
+	taskDeposit.UpdatedAt = time.Now()
+	return s.dbm.GetWalletDB().Save(&taskDeposit).Error
+}
+
+func (s *State) CheckAndUpdateTaskDepositStatus(txid, evmAddr string, txout uint64, amount uint64) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
+		taskDeposit, err := s.queryCreatedSafeboxTaskByEvmAddr(tx, evmAddr)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		// should not return error if task deposit not found
+		if err == gorm.ErrRecordNotFound {
+			return nil
+		}
+
+		// check if deadline is over
+		if time.Now().Unix() > int64(taskDeposit.Deadline) {
+			log.Info("found a task deposit with deadline over, txid: %s, txout: %d, amount: %s, evmAddr: %s", txid, txout, amount, evmAddr)
+			// close it
+			taskDeposit.Status = db.TASK_STATUS_CLOSED
+			taskDeposit.UpdatedAt = time.Now()
+			return tx.Save(&taskDeposit).Error
+		}
+
+		// check if amount is enough
+		if amount != taskDeposit.Amount {
+			// not match, ignore
+			return fmt.Errorf("amount not match, task deposit amount: %d, amount: %d", taskDeposit.Amount, amount)
+		}
+
+		taskDeposit.Status = db.TASK_STATUS_RECEIVED
+		taskDeposit.FundingTxid = txid
+		taskDeposit.FundingOutIndex = txout
+		taskDeposit.UpdatedAt = time.Now()
+		return tx.Save(&taskDeposit).Error
+	})
+	return err
+}
+
 // GetDepositForSign get deposits for sign
 func (s *State) GetDepositForSign(size int, processedHeight uint64) ([]*db.Deposit, error) {
 	s.depositMu.RLock()
@@ -288,4 +371,28 @@ func (s *State) queryDepositByTxHash(txHash string, outputIndex int) (*db.Deposi
 		return nil, err
 	}
 	return &deposit, nil
+}
+
+func (s *State) queryCreatedSafeboxTaskByTaskId(tx *gorm.DB, taskId uint64) (*db.SafeboxTask, error) {
+	if tx == nil {
+		tx = s.dbm.GetWalletDB()
+	}
+	var task db.SafeboxTask
+	err := tx.Where("task_id = ? and status = ?", taskId, db.TASK_STATUS_CREATE).First(&task).Error
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
+}
+
+func (s *State) queryCreatedSafeboxTaskByEvmAddr(tx *gorm.DB, evmAddr string) (*db.SafeboxTask, error) {
+	if tx == nil {
+		tx = s.dbm.GetWalletDB()
+	}
+	var task db.SafeboxTask
+	err := tx.Where("deposit_address = ? and status = ?", evmAddr, db.TASK_STATUS_CREATE).First(&task).Error
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
 }

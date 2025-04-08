@@ -119,7 +119,7 @@ func (dm *DatabaseManager) runMigrations() error {
 	// Run migrations for wallet database
 	log.Debugf("Running UTXO records migration")
 	migrates := make(map[string](func(*gorm.DB) error), 0)
-	if config.AppConfig.L2ChainId.String() == "2345" {
+	if config.AppConfig.L2ChainId.String() == "2345" && config.AppConfig.BTCNetworkType == "mainnet" {
 		migrates["20241220_2345_add_utxo_records"] = migrations.AddUtxoRecords
 	}
 
