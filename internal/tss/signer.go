@@ -61,7 +61,7 @@ func (s *Signer) GetTssAddress(ctx context.Context) (string, error) {
 // QuerySignResult queries the sign result of a session using TSS
 // should call ApplySignResult when result.Signature not nil
 func (s *Signer) QuerySignResult(ctx context.Context, sessionID string) (*tssTypes.EvmSignQueryResponse, error) {
-	resp, err := s.httpClient.Get(s.tssEndpoint + SignQueryPath + "?sessionId=" + sessionID)
+	resp, err := s.httpClient.Get(s.tssEndpoint + SignQueryPath + "?sessionId=" + sessionID + "&kdd=1")
 	if err != nil {
 		return nil, fmt.Errorf("query sign result http request failed: %w", err)
 	}
@@ -91,7 +91,9 @@ func (s *Signer) StartSign(ctx context.Context, messageHash []byte, sessionID st
 		return nil, fmt.Errorf("marshal request failed: %w", err)
 	}
 
-	resp, err := s.httpClient.Post(s.tssEndpoint+SignStartPath, "application/json", bytes.NewBuffer(reqBody))
+	// Add kdd=1 parameter to the URL, same as GetTssAddress
+	signURL := s.tssEndpoint + SignStartPath + "?kdd=1"
+	resp, err := s.httpClient.Post(signURL, "application/json", bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("http request failed: %w", err)
 	}
@@ -131,6 +133,17 @@ func (s *Signer) ApplySignResult(ctx context.Context, unsignedTx *types.Transact
 	signedTx, err := crypto.SignEIP1559TxWithTss(unsignedTx, s.chainID, signature)
 	if err != nil {
 		return nil, fmt.Errorf("apply tss sign result failed: %w", err)
+	}
+
+	// Debug information: Check the signed transaction
+	signer := types.LatestSignerForChainID(s.chainID)
+	sender, err := types.Sender(signer, signedTx)
+	if err != nil {
+		s.logger.Errorf("TssSigner ApplySignResult - ERROR RECOVERING SENDER FROM SIGNED TX: %v", err)
+	} else {
+		s.logger.Debugf("TssSigner ApplySignResult - SIGNED TX RECOVERED SENDER: %s", sender.Hex())
+		s.logger.Debugf("TssSigner ApplySignResult - SIGNED TX HASH: %s", signedTx.Hash().Hex())
+		s.logger.Debugf("TssSigner ApplySignResult - SIGNED TX CHAIN ID: %v", signedTx.ChainId())
 	}
 
 	return signedTx, nil

@@ -254,41 +254,41 @@ func (s *SafeboxProcessor) sendRawTx(ctx context.Context, tx *ethtypes.Transacti
 	s.logger.Infof("SafeboxProcessor sendRawTx - Sending transaction: Hash=%x, Nonce=%d, To=%s",
 		tx.Hash(), tx.Nonce(), tx.To().Hex())
 
-	// 显示交易链ID和当前配置的链ID
+	// Show transaction chain ID and current configured chain ID
 	txChainID := tx.ChainId()
 	configChainID := big.NewInt(config.AppConfig.L2ChainId.Int64())
-	s.logger.Infof("======== TRANSACTION CHAIN ID: %v, CONFIG CHAIN ID: %v ========", txChainID, configChainID)
+	s.logger.Debugf("SafeboxProcessor sendRawTx - TRANSACTION CHAIN ID: %v, CONFIG CHAIN ID: %v", txChainID, configChainID)
 	if txChainID.Cmp(configChainID) != 0 {
-		s.logger.Errorf("======== CHAIN ID MISMATCH! TX: %v, CONFIG: %v ========", txChainID, configChainID)
+		s.logger.Errorf("SafeboxProcessor sendRawTx - CHAIN ID MISMATCH! TX: %v, CONFIG: %v", txChainID, configChainID)
 	}
 
-	// check TSS address balance
+	// Check TSS address balance
 	fromAddr := common.HexToAddress(s.tssAddress)
-	s.logger.Infof("======== TRANSACTION FROM ADDRESS: %s ========", fromAddr.Hex())
+	s.logger.Debugf("SafeboxProcessor sendRawTx - TRANSACTION FROM ADDRESS: %s", fromAddr.Hex())
 
-	// 检查交易是否被正确签名
+	// Check if the transaction is correctly signed
 	signer := ethtypes.LatestSignerForChainID(big.NewInt(config.AppConfig.L2ChainId.Int64()))
 	sender, err := ethtypes.Sender(signer, tx)
 	if err != nil {
-		s.logger.Errorf("======== TRANSACTION SENDER ERROR: %v ========", err)
+		s.logger.Errorf("SafeboxProcessor sendRawTx - TRANSACTION SENDER ERROR: %v", err)
 	} else {
-		s.logger.Infof("======== RECOVERED TRANSACTION SENDER: %s ========", sender.Hex())
+		s.logger.Debugf("SafeboxProcessor sendRawTx - RECOVERED TRANSACTION SENDER: %s", sender.Hex())
 		if sender != fromAddr {
-			s.logger.Errorf("======== SENDER ADDRESS MISMATCH! Expected: %s, Got: %s ========", fromAddr.Hex(), sender.Hex())
+			s.logger.Errorf("SafeboxProcessor sendRawTx - SENDER ADDRESS MISMATCH! Expected: %s, Got: %s", fromAddr.Hex(), sender.Hex())
 		}
 	}
 
-	// 检查RPC连接信息
+	// Check RPC connection information
 	goatEthClient := s.layer2Listener.GetGoatEthClient()
 
-	// 获取当前网络ID
+	// Get current network ID
 	networkID, err := goatEthClient.NetworkID(ctx)
 	if err != nil {
-		s.logger.Errorf("======== FAILED TO GET NETWORK ID: %v ========", err)
+		s.logger.Errorf("SafeboxProcessor sendRawTx - FAILED TO GET NETWORK ID: %v", err)
 	} else {
-		s.logger.Infof("======== CURRENT NETWORK ID: %v ========", networkID)
+		s.logger.Debugf("SafeboxProcessor sendRawTx - CURRENT NETWORK ID: %v", networkID)
 		if networkID.Cmp(configChainID) != 0 {
-			s.logger.Errorf("======== NETWORK ID MISMATCH! NETWORK: %v, CONFIG: %v ========", networkID, configChainID)
+			s.logger.Errorf("SafeboxProcessor sendRawTx - NETWORK ID MISMATCH! NETWORK: %v, CONFIG: %v", networkID, configChainID)
 		}
 	}
 
@@ -298,19 +298,19 @@ func (s *SafeboxProcessor) sendRawTx(ctx context.Context, tx *ethtypes.Transacti
 		return fmt.Errorf("failed to get TSS address balance: %v", err)
 	}
 
-	// 记录余额，包括十进制表示
+	// Record balance, including decimal representation
 	ethBalance := new(big.Float).Quo(new(big.Float).SetInt(balance), new(big.Float).SetInt(big.NewInt(1e18)))
-	s.logger.Infof("======== FROM ADDRESS BALANCE: %s ETH (%s wei) ========",
+	s.logger.Debugf("SafeboxProcessor sendRawTx - FROM ADDRESS BALANCE: %s ETH (%s wei)",
 		ethBalance.Text('f', 18), balance.String())
 
-	// 再次检查sender的余额
+	// Check sender's balance again
 	if sender != fromAddr {
 		senderBalance, err := goatEthClient.BalanceAt(ctx, sender, nil)
 		if err != nil {
-			s.logger.Errorf("======== FAILED TO GET SENDER BALANCE: %v ========", err)
+			s.logger.Errorf("SafeboxProcessor sendRawTx - FAILED TO GET SENDER BALANCE: %v", err)
 		} else {
 			senderEthBalance := new(big.Float).Quo(new(big.Float).SetInt(senderBalance), new(big.Float).SetInt(big.NewInt(1e18)))
-			s.logger.Infof("======== SENDER ADDRESS BALANCE: %s ETH (%s wei) ========",
+			s.logger.Debugf("SafeboxProcessor sendRawTx - SENDER ADDRESS BALANCE: %s ETH (%s wei)",
 				senderEthBalance.Text('f', 18), senderBalance.String())
 		}
 	}
@@ -344,18 +344,6 @@ func (s *SafeboxProcessor) sendRawTx(ctx context.Context, tx *ethtypes.Transacti
 		s.logger.Errorf("SafeboxProcessor sendRawTx - Insufficient balance: from address=%s, balance=%v, txCost=%v", fromAddr.Hex(), balance, txCost)
 		return fmt.Errorf("insufficient balance: balance=%v, txCost=%v", balance, txCost)
 	}
-
-	// 添加更多的交易发送信息
-	s.logger.Infof("======== SENDING TRANSACTION WITH DATA ========")
-	s.logger.Infof("======== TX HASH: %s ========", tx.Hash().Hex())
-	s.logger.Infof("======== TX TYPE: %d ========", tx.Type())
-	s.logger.Infof("======== TX GAS: %d ========", tx.Gas())
-	s.logger.Infof("======== TX GAS PRICE: %v ========", tx.GasPrice())
-	s.logger.Infof("======== TX GAS TIP CAP: %v ========", tx.GasTipCap())
-	s.logger.Infof("======== TX GAS FEE CAP: %v ========", tx.GasFeeCap())
-	s.logger.Infof("======== TX VALUE: %v ========", tx.Value())
-	s.logger.Infof("======== TX DATA LENGTH: %d ========", len(tx.Data()))
-	s.logger.Infof("======== TX CHAIN ID: %v ========", tx.ChainId())
 
 	err = goatEthClient.SendTransaction(ctx, tx)
 	if err != nil {
@@ -408,10 +396,10 @@ func (s *SafeboxProcessor) process(ctx context.Context) {
 			s.logger.Infof("SafeboxProcessor process - Signature received, applying to transaction, SessionId: %s", s.tssSession.SessionId)
 
 			// Record signature information
-			s.logger.Debugf("SafeboxProcessor process - SIGNATURE INFO ========")
-			s.logger.Debugf("SafeboxProcessor process - SIGNATURE TYPE: %T ========", resp.Signature)
-			s.logger.Debugf("SafeboxProcessor process - UNSIGNED TX TYPE: %T ========", s.tssSession.UnsignedTx)
-			s.logger.Debugf("SafeboxProcessor process - UNSIGNED TX CHAIN ID: %v ========", s.tssSession.UnsignedTx.ChainId())
+			s.logger.Debugf("SafeboxProcessor process - SIGNATURE INFO")
+			s.logger.Debugf("SafeboxProcessor process - SIGNATURE TYPE: %T", resp.Signature)
+			s.logger.Debugf("SafeboxProcessor process - UNSIGNED TX TYPE: %T", s.tssSession.UnsignedTx)
+			s.logger.Debugf("SafeboxProcessor process - UNSIGNED TX CHAIN ID: %v", s.tssSession.UnsignedTx.ChainId())
 
 			signedTx, err := s.tssSigner.ApplySignResult(ctx, s.tssSession.UnsignedTx, resp.Signature)
 			if err != nil {
@@ -420,19 +408,19 @@ func (s *SafeboxProcessor) process(ctx context.Context) {
 			}
 
 			// Compare transaction information before and after signing
-			s.logger.Debugf("SafeboxProcessor process - TX BEFORE/AFTER SIGNING ========")
-			s.logger.Debugf("SafeboxProcessor process - UNSIGNED TX HASH: %s ========", s.tssSession.UnsignedTx.Hash().Hex())
-			s.logger.Debugf("SafeboxProcessor process - SIGNED TX HASH: %s ========", signedTx.Hash().Hex())
+			s.logger.Debugf("SafeboxProcessor process - TX BEFORE/AFTER SIGNING")
+			s.logger.Debugf("SafeboxProcessor process - UNSIGNED TX HASH: %s", s.tssSession.UnsignedTx.Hash().Hex())
+			s.logger.Debugf("SafeboxProcessor process - SIGNED TX HASH: %s", signedTx.Hash().Hex())
 
 			signer := ethtypes.LatestSignerForChainID(signedTx.ChainId())
 			sender, err := ethtypes.Sender(signer, signedTx)
 			if err != nil {
-				s.logger.Errorf("SafeboxProcessor process - FAILED TO RECOVER SENDER: %v ========", err)
+				s.logger.Errorf("SafeboxProcessor process - FAILED TO RECOVER SENDER: %v", err)
 			} else {
-				s.logger.Debugf("SafeboxProcessor process - RECOVERED SENDER: %s ========", sender.Hex())
-				s.logger.Debugf("SafeboxProcessor process - TSS ADDRESS: %s ========", s.tssAddress)
+				s.logger.Debugf("SafeboxProcessor process - RECOVERED SENDER: %s", sender.Hex())
+				s.logger.Debugf("SafeboxProcessor process - TSS ADDRESS: %s", s.tssAddress)
 				if sender.Hex() != strings.ToLower(s.tssAddress) && sender.Hex() != strings.ToUpper(s.tssAddress) {
-					s.logger.Errorf("SafeboxProcessor process - ADDRESSES DON'T MATCH! ========")
+					s.logger.Errorf("SafeboxProcessor process - ADDRESSES DON'T MATCH!")
 				}
 			}
 

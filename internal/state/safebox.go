@@ -39,7 +39,7 @@ func (s *State) GetSafeboxTasks() ([]*db.SafeboxTask, error) {
 	defer s.walletMu.RUnlock()
 
 	var tasks []*db.SafeboxTask
-	err := s.dbm.GetWalletDB().Where("status IN (?)", []string{db.TASK_STATUS_RECEIVED}).Order("id desc").Find(&tasks).Error
+	err := s.dbm.GetWalletDB().Where("status IN (?)", []string{db.TASK_STATUS_RECEIVED_OK}).Order("id desc").Find(&tasks).Error
 	if err != nil {
 		return nil, err
 	}
