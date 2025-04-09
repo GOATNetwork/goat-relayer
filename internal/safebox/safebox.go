@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/goatnetwork/goat-relayer/internal/types"
 	"github.com/google/uuid"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	tssCrypto "github.com/goatnetwork/tss/pkg/crypto"
@@ -78,6 +80,10 @@ func (s *SafeboxProcessor) Start(ctx context.Context) {
 		s.logger.Fatalf("SafeboxProcessor, get tss address error: %v", err)
 	}
 	s.tssAddress = tssAddress
+	s.logger.Infof("SafeboxProcessor - TSS ADDRESS: %s", s.tssAddress)
+
+	// Check balance
+	s.checkTssBalance(ctx)
 
 	go s.taskLoop(ctx)
 
@@ -122,10 +128,11 @@ func (s *SafeboxProcessor) checkTssStatus(ctx context.Context) bool {
 		return false
 	}
 	s.logger.WithFields(log.Fields{
-		"status":    s.tssStatus,
-		"sessionId": s.tssSession.SessionId,
-		"taskId":    s.tssSession.TaskId,
-		"expiredTs": s.tssSession.SignExpiredTs,
+		"status":        s.tssStatus,
+		"sessionId":     s.tssSession.SessionId,
+		"taskId":        s.tssSession.TaskId,
+		"expiredTs":     s.tssSession.SignExpiredTs,
+		"messageToSign": fmt.Sprintf("%x", s.tssSession.MessageToSign),
 	}).Info("TSS signing in progress")
 
 	if s.tssSession.SignedTx != nil {
@@ -172,13 +179,17 @@ func (s *SafeboxProcessor) setTssSession(task *db.SafeboxTask, messageToSign []b
 }
 
 func (s *SafeboxProcessor) buildUnsignedTx(ctx context.Context, task *db.SafeboxTask) (*ethtypes.Transaction, []byte, error) {
+	// Get contract abi
 	safeBoxAbi, err := abis.TaskManagerContractMetaData.GetAbi()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get task contract ABI: %v", err)
 	}
-	to := common.HexToAddress(config.AppConfig.ContractTaskManager)
-	s.logger.Infof("Building unsigned transaction - Contract address: %s", to.Hex())
 
+	// Get tss address and contract call address
+	fromAddr := common.HexToAddress(s.tssAddress)
+	toAddr := common.HexToAddress(config.AppConfig.ContractTaskManager)
+
+	// Get base fee
 	goatEthClient := s.layer2Listener.GetGoatEthClient()
 	block, err := goatEthClient.BlockByNumber(ctx, nil)
 	if err != nil {
@@ -187,49 +198,54 @@ func (s *SafeboxProcessor) buildUnsignedTx(ctx context.Context, task *db.Safebox
 	baseFee := block.BaseFee()
 	tip := big.NewInt(5000000) // current mainnet tip
 	maxFeePerGas := new(big.Int).Add(baseFee, tip)
-	s.logger.Infof("Gas settings - BaseFee: %v, Tip: %v, MaxFeePerGas: %v",
-		baseFee, tip, maxFeePerGas)
+	s.logger.Debugf("SafeboxProcessor buildUnsignedTx - BaseFee: %v, Tip: %v, MaxFeePerGas: %v", baseFee, tip, maxFeePerGas)
 
-	fromAddr := common.HexToAddress(s.tssAddress)
-	s.logger.Infof("TSS address: %s", fromAddr.Hex())
-
+	// Get current nonce
 	nonce, err := goatEthClient.PendingNonceAt(ctx, fromAddr)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get pending nonce: %v", err)
 	}
-	s.logger.Infof("Current nonce: %d", nonce)
+	s.logger.Debugf("SafeboxProcessor buildUnsignedTx - Current nonce: %d", nonce)
 
 	// NOTE: UTXO amount decimal is 8, contract task amount decimal is 18
 	amount := new(big.Int).Mul(big.NewInt(int64(task.Amount)), big.NewInt(1e10))
-	s.logger.Infof("Converted amount: %v (from UTXO decimal 8 to contract decimal 18)", amount)
 
+	// Fullfill input data
 	// Convert slice to fixed length array
-	txHashBytes := common.HexToHash(task.FundingTxid).Bytes()
+	txHashBytes, err := types.DecodeBtcHash(task.FundingTxid)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to decode funding transaction hash: %v", err)
+	}
 	var fundingTxHash [32]byte
 	copy(fundingTxHash[:], txHashBytes)
-	s.logger.Infof("Funding transaction hash: %x", fundingTxHash)
-
 	input, err := safeBoxAbi.Pack("receiveFunds", big.NewInt(int64(task.TaskId)), amount, fundingTxHash, uint32(task.FundingOutIndex))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to pack receiveFunds input: %v", err)
 	}
-	s.logger.Infof("Packed input data length: %d bytes", len(input))
+	s.logger.Debugf("SafeboxProcessor buildUnsignedTx - Packed input data length: %d bytes", len(input))
 
-	gasLimit := uint64(100000)
-	s.logger.Infof("Using fixed gas limit: %d", gasLimit)
+	// Estimate gas limit
+	gasLimit, err := goatEthClient.EstimateGas(ctx, ethereum.CallMsg{
+		From:  fromAddr,
+		To:    &toAddr,
+		Value: new(big.Int).SetUint64(0), // set to 0, because funding amount is passed as a parameter
+		Data:  input,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to estimate gas: %v", err)
+	}
 
 	// Call receiveFunds contract method
-	s.logger.Infof("Creating unsigned transaction")
 	unsignTx, messageToSign := tssCrypto.CreateEIP1559UnsignTx(
 		big.NewInt(config.AppConfig.L2ChainId.Int64()),
 		nonce,
 		gasLimit,
-		&to,
+		&toAddr,
 		maxFeePerGas,
 		tip,
 		new(big.Int).SetUint64(0), // value 0
 		input)
-	s.logger.Infof("Created unsigned transaction with chain ID: %d", config.AppConfig.L2ChainId.Int64())
+	s.logger.Infof("SafeboxProcessor buildUnsignedTx - Created unsigned transaction with chain ID: %d", config.AppConfig.L2ChainId.Int64())
 
 	return unsignTx, messageToSign, nil
 }
@@ -238,8 +254,110 @@ func (s *SafeboxProcessor) sendRawTx(ctx context.Context, tx *ethtypes.Transacti
 	s.logger.Infof("SafeboxProcessor sendRawTx - Sending transaction: Hash=%x, Nonce=%d, To=%s",
 		tx.Hash(), tx.Nonce(), tx.To().Hex())
 
+	// 显示交易链ID和当前配置的链ID
+	txChainID := tx.ChainId()
+	configChainID := big.NewInt(config.AppConfig.L2ChainId.Int64())
+	s.logger.Infof("======== TRANSACTION CHAIN ID: %v, CONFIG CHAIN ID: %v ========", txChainID, configChainID)
+	if txChainID.Cmp(configChainID) != 0 {
+		s.logger.Errorf("======== CHAIN ID MISMATCH! TX: %v, CONFIG: %v ========", txChainID, configChainID)
+	}
+
+	// check TSS address balance
+	fromAddr := common.HexToAddress(s.tssAddress)
+	s.logger.Infof("======== TRANSACTION FROM ADDRESS: %s ========", fromAddr.Hex())
+
+	// 检查交易是否被正确签名
+	signer := ethtypes.LatestSignerForChainID(big.NewInt(config.AppConfig.L2ChainId.Int64()))
+	sender, err := ethtypes.Sender(signer, tx)
+	if err != nil {
+		s.logger.Errorf("======== TRANSACTION SENDER ERROR: %v ========", err)
+	} else {
+		s.logger.Infof("======== RECOVERED TRANSACTION SENDER: %s ========", sender.Hex())
+		if sender != fromAddr {
+			s.logger.Errorf("======== SENDER ADDRESS MISMATCH! Expected: %s, Got: %s ========", fromAddr.Hex(), sender.Hex())
+		}
+	}
+
+	// 检查RPC连接信息
 	goatEthClient := s.layer2Listener.GetGoatEthClient()
-	err := goatEthClient.SendTransaction(ctx, tx)
+
+	// 获取当前网络ID
+	networkID, err := goatEthClient.NetworkID(ctx)
+	if err != nil {
+		s.logger.Errorf("======== FAILED TO GET NETWORK ID: %v ========", err)
+	} else {
+		s.logger.Infof("======== CURRENT NETWORK ID: %v ========", networkID)
+		if networkID.Cmp(configChainID) != 0 {
+			s.logger.Errorf("======== NETWORK ID MISMATCH! NETWORK: %v, CONFIG: %v ========", networkID, configChainID)
+		}
+	}
+
+	balance, err := goatEthClient.BalanceAt(ctx, fromAddr, nil)
+	if err != nil {
+		s.logger.Errorf("SafeboxProcessor sendRawTx - Failed to get TSS address balance: %v", err)
+		return fmt.Errorf("failed to get TSS address balance: %v", err)
+	}
+
+	// 记录余额，包括十进制表示
+	ethBalance := new(big.Float).Quo(new(big.Float).SetInt(balance), new(big.Float).SetInt(big.NewInt(1e18)))
+	s.logger.Infof("======== FROM ADDRESS BALANCE: %s ETH (%s wei) ========",
+		ethBalance.Text('f', 18), balance.String())
+
+	// 再次检查sender的余额
+	if sender != fromAddr {
+		senderBalance, err := goatEthClient.BalanceAt(ctx, sender, nil)
+		if err != nil {
+			s.logger.Errorf("======== FAILED TO GET SENDER BALANCE: %v ========", err)
+		} else {
+			senderEthBalance := new(big.Float).Quo(new(big.Float).SetInt(senderBalance), new(big.Float).SetInt(big.NewInt(1e18)))
+			s.logger.Infof("======== SENDER ADDRESS BALANCE: %s ETH (%s wei) ========",
+				senderEthBalance.Text('f', 18), senderBalance.String())
+		}
+	}
+
+	// estimate gas price
+	gasPrice, err := goatEthClient.SuggestGasPrice(ctx)
+	if err != nil {
+		s.logger.Errorf("SafeboxProcessor sendRawTx - Failed to get gas price: %v", err)
+		return fmt.Errorf("failed to get gas price: %v", err)
+	}
+
+	// estimate gas limit
+	gasLimit, err := goatEthClient.EstimateGas(ctx, ethereum.CallMsg{
+		From:  fromAddr,
+		To:    tx.To(),
+		Value: tx.Value(),
+		Data:  tx.Data(),
+	})
+	if err != nil {
+		s.logger.Errorf("SafeboxProcessor sendRawTx - Failed to estimate gas: %v", err)
+		return fmt.Errorf("failed to estimate gas: %v", err)
+	}
+
+	// calculate tx cost
+	txCost := new(big.Int).Mul(gasPrice, big.NewInt(int64(gasLimit)))
+	s.logger.Infof("======== TRANSACTION COST: %s ETH ========",
+		new(big.Float).Quo(new(big.Float).SetInt(txCost), new(big.Float).SetInt(big.NewInt(1e18))).Text('f', 18))
+
+	// check balance is enough
+	if balance.Cmp(txCost) < 0 {
+		s.logger.Errorf("SafeboxProcessor sendRawTx - Insufficient balance: from address=%s, balance=%v, txCost=%v", fromAddr.Hex(), balance, txCost)
+		return fmt.Errorf("insufficient balance: balance=%v, txCost=%v", balance, txCost)
+	}
+
+	// 添加更多的交易发送信息
+	s.logger.Infof("======== SENDING TRANSACTION WITH DATA ========")
+	s.logger.Infof("======== TX HASH: %s ========", tx.Hash().Hex())
+	s.logger.Infof("======== TX TYPE: %d ========", tx.Type())
+	s.logger.Infof("======== TX GAS: %d ========", tx.Gas())
+	s.logger.Infof("======== TX GAS PRICE: %v ========", tx.GasPrice())
+	s.logger.Infof("======== TX GAS TIP CAP: %v ========", tx.GasTipCap())
+	s.logger.Infof("======== TX GAS FEE CAP: %v ========", tx.GasFeeCap())
+	s.logger.Infof("======== TX VALUE: %v ========", tx.Value())
+	s.logger.Infof("======== TX DATA LENGTH: %d ========", len(tx.Data()))
+	s.logger.Infof("======== TX CHAIN ID: %v ========", tx.ChainId())
+
+	err = goatEthClient.SendTransaction(ctx, tx)
 	if err != nil {
 		s.logger.Errorf("SafeboxProcessor sendRawTx - Failed to send transaction: %v, Hash=%x", err, tx.Hash())
 		return fmt.Errorf("failed to send transaction: %v", err)
@@ -288,10 +406,34 @@ func (s *SafeboxProcessor) process(ctx context.Context) {
 		}
 		if resp.Signature != nil {
 			s.logger.Infof("SafeboxProcessor process - Signature received, applying to transaction, SessionId: %s", s.tssSession.SessionId)
+
+			// Record signature information
+			s.logger.Debugf("SafeboxProcessor process - SIGNATURE INFO ========")
+			s.logger.Debugf("SafeboxProcessor process - SIGNATURE TYPE: %T ========", resp.Signature)
+			s.logger.Debugf("SafeboxProcessor process - UNSIGNED TX TYPE: %T ========", s.tssSession.UnsignedTx)
+			s.logger.Debugf("SafeboxProcessor process - UNSIGNED TX CHAIN ID: %v ========", s.tssSession.UnsignedTx.ChainId())
+
 			signedTx, err := s.tssSigner.ApplySignResult(ctx, s.tssSession.UnsignedTx, resp.Signature)
 			if err != nil {
 				s.logger.Errorf("SafeboxProcessor process - Failed to apply TSS sign result: %v, SessionId: %s", err, s.tssSession.SessionId)
 				return
+			}
+
+			// Compare transaction information before and after signing
+			s.logger.Debugf("SafeboxProcessor process - TX BEFORE/AFTER SIGNING ========")
+			s.logger.Debugf("SafeboxProcessor process - UNSIGNED TX HASH: %s ========", s.tssSession.UnsignedTx.Hash().Hex())
+			s.logger.Debugf("SafeboxProcessor process - SIGNED TX HASH: %s ========", signedTx.Hash().Hex())
+
+			signer := ethtypes.LatestSignerForChainID(signedTx.ChainId())
+			sender, err := ethtypes.Sender(signer, signedTx)
+			if err != nil {
+				s.logger.Errorf("SafeboxProcessor process - FAILED TO RECOVER SENDER: %v ========", err)
+			} else {
+				s.logger.Debugf("SafeboxProcessor process - RECOVERED SENDER: %s ========", sender.Hex())
+				s.logger.Debugf("SafeboxProcessor process - TSS ADDRESS: %s ========", s.tssAddress)
+				if sender.Hex() != strings.ToLower(s.tssAddress) && sender.Hex() != strings.ToUpper(s.tssAddress) {
+					s.logger.Errorf("SafeboxProcessor process - ADDRESSES DON'T MATCH! ========")
+				}
 			}
 
 			s.tssSession.SignedTx = signedTx
@@ -305,8 +447,8 @@ func (s *SafeboxProcessor) process(ctx context.Context) {
 			}
 			return
 		}
-		s.resetTssAndSession(ctx)
 		s.logger.Infof("SafeboxProcessor process - No signature received yet, SessionId: %s", s.tssSession.SessionId)
+		s.resetTssAndSession(ctx)
 		return
 	}
 
@@ -318,7 +460,7 @@ func (s *SafeboxProcessor) process(ctx context.Context) {
 		return
 	}
 	if len(tasks) == 0 {
-		s.logger.Debug("SafeboxProcessor process - No safebox tasks found")
+		s.logger.Infof("SafeboxProcessor process - No safebox tasks found")
 		return
 	}
 	task := tasks[0]
@@ -338,12 +480,18 @@ func (s *SafeboxProcessor) process(ctx context.Context) {
 
 	// broadcast unsigned tx to voters with "session_id", "expired_ts"
 	s.logger.Infof("SafeboxProcessor process - Broadcasting safebox task to voters")
-	p2p.PublishMessage(ctx, p2p.Message[any]{
+	err = p2p.PublishMessage(ctx, p2p.Message[any]{
 		MessageType: p2p.MessageTypeSafeboxTask,
 		RequestId:   fmt.Sprintf("SAFEBOX:%d:%s", task.TaskId, s.tssSession.SessionId),
 		DataType:    "MsgSafeboxTask",
 		Data:        s.tssSession,
 	})
+	if err != nil {
+		s.logger.Errorf("SafeboxProcessor process - Failed to broadcast safebox task: %v", err)
+		// broadcast failed, reset TSS status
+		s.resetTssAndSession(ctx)
+		return
+	}
 	s.logger.Infof("SafeboxProcessor process - Broadcasted safebox task: RequestId=SAFEBOX:%d:%s",
 		task.TaskId, s.tssSession.SessionId)
 
@@ -352,7 +500,28 @@ func (s *SafeboxProcessor) process(ctx context.Context) {
 	_, err = s.tssSigner.StartSign(ctx, messageToSign, s.tssSession.SessionId)
 	if err != nil {
 		s.logger.Errorf("SafeboxProcessor process - Failed to start TSS sign: %v", err)
+		// reset TSS status, because TSS signing session failed to start
+		s.resetTssAndSession(ctx)
+		s.logger.Infof("SafeboxProcessor process - Reset TSS status due to failed StartSign call")
 		return
 	}
 	s.logger.Infof("SafeboxProcessor process - Successfully started TSS signing session: SessionId=%s", s.tssSession.SessionId)
+}
+
+// check TSS address balance
+func (s *SafeboxProcessor) checkTssBalance(ctx context.Context) {
+	goatEthClient := s.layer2Listener.GetGoatEthClient()
+	balance, err := goatEthClient.BalanceAt(ctx, common.HexToAddress(s.tssAddress), nil)
+	if err != nil {
+		s.logger.Fatalf("SafeboxProcessor checkTssBalance - TSS ADDRESS BALANCE CHECK ERROR: %v", err)
+		return
+	}
+
+	ethBalance := new(big.Float).Quo(new(big.Float).SetInt(balance), new(big.Float).SetInt(big.NewInt(1e18)))
+	s.logger.Debugf("SafeboxProcessor checkTssBalance - TSS ADDRESS BALANCE: %s ETH", ethBalance.Text('f', 18))
+
+	if balance.Cmp(big.NewInt(0)) == 0 {
+		s.logger.Fatalf("SafeboxProcessor checkTssBalance - WARNING: TSS ADDRESS HAS ZERO BALANCE!")
+		s.logger.Fatalf("SafeboxProcessor checkTssBalance - PLEASE SEND BALANCE TO: %s", s.tssAddress)
+	}
 }
