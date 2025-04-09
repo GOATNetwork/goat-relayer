@@ -375,7 +375,7 @@ func (lis *Layer2Listener) processNewDeposit(block uint64, attributes []abcitype
 		return err
 	}
 	// verify deposit task whether fund received
-	if err := lis.state.CheckAndUpdateTaskDepositStatus(txid, address.Hex(), txout, amount); err != nil {
+	if err := lis.state.UpdateSafeboxTaskReceived(txid, address.Hex(), txout, amount); err != nil {
 		log.Errorf("Abci NewDeposit, check and update safebox task deposit status error: %v", err)
 		return err
 	}

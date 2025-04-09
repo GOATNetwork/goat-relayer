@@ -186,50 +186,58 @@ func (s *State) CreateSafeboxTask(taskId uint64, partnerId string, timelockEndTi
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
-	_, err := s.queryCreatedSafeboxTaskByEvmAddr(nil, depositAddress)
-	if err != nil && err != gorm.ErrRecordNotFound {
-		return err
-	}
-	if err == nil {
-		return fmt.Errorf("task deposit already exists")
-	}
-	taskDeposit := db.SafeboxTask{
-		TaskId:          taskId,
-		PartnerId:       partnerId,
-		DepositAddress:  depositAddress,
-		TimelockEndTime: timelockEndTime,
-		Deadline:        deadline,
-		Amount:          amount,
-		BtcAddress:      btcAddress,
-		Pubkey:          btcPubKey,
-		Status:          db.TASK_STATUS_CREATE,
-	}
-
-	return s.dbm.GetWalletDB().Create(&taskDeposit).Error
+	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
+		_, err := s.queryProcessingSafeboxTaskByEvmAddr(tx, depositAddress)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		if err == nil {
+			return fmt.Errorf("has processing safebox task, task id: %d", taskId)
+		}
+		taskDeposit := db.SafeboxTask{
+			TaskId:          taskId,
+			PartnerId:       partnerId,
+			DepositAddress:  depositAddress,
+			TimelockEndTime: timelockEndTime,
+			Deadline:        deadline,
+			Amount:          amount,
+			BtcAddress:      btcAddress,
+			Pubkey:          btcPubKey,
+			Status:          db.TASK_STATUS_CREATE,
+		}
+		return tx.Create(&taskDeposit).Error
+	})
+	return err
 }
 
-// UpdateSafeboxTask update safebox task
-func (s *State) UpdateSafeboxTask(taskId uint64, fundingTxHash []byte, txOut uint64) error {
-	s.walletMu.Lock()
-	defer s.walletMu.Unlock()
-
-	taskDeposit, err := s.queryCreatedSafeboxTaskByTaskId(nil, taskId)
-	if err != nil && err != gorm.ErrRecordNotFound {
-		return err
-	}
-	taskDeposit.FundingTxid = hex.EncodeToString(fundingTxHash)
-	taskDeposit.FundingOutIndex = txOut
-	taskDeposit.Status = db.TASK_STATUS_RECEIVED_OK
-	taskDeposit.UpdatedAt = time.Now()
-	return s.dbm.GetWalletDB().Save(&taskDeposit).Error
-}
-
-func (s *State) CheckAndUpdateTaskDepositStatus(txid, evmAddr string, txout uint64, amount uint64) error {
+// UpdateSafeboxTaskReceivedOK update safebox task after received consensus event from contract
+func (s *State) UpdateSafeboxTaskReceivedOK(taskId uint64, fundingTxHash []byte, txOut uint64) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
 	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
-		taskDeposit, err := s.queryCreatedSafeboxTaskByEvmAddr(tx, evmAddr)
+		taskDeposit, err := s.queryReceivedSafeboxTaskByTaskId(tx, taskId)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		if err == gorm.ErrRecordNotFound {
+			return fmt.Errorf("task deposit not found")
+		}
+		taskDeposit.FundingTxid = hex.EncodeToString(fundingTxHash)
+		taskDeposit.FundingOutIndex = txOut
+		taskDeposit.Status = db.TASK_STATUS_RECEIVED_OK
+		taskDeposit.UpdatedAt = time.Now()
+		return tx.Save(&taskDeposit).Error
+	})
+	return err
+}
+
+func (s *State) UpdateSafeboxTaskReceived(txid, evmAddr string, txout uint64, amount uint64) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
+		taskDeposit, err := s.queryProcessingSafeboxTaskByEvmAddr(tx, evmAddr)
 		if err != nil && err != gorm.ErrRecordNotFound {
 			return err
 		}
@@ -373,24 +381,26 @@ func (s *State) queryDepositByTxHash(txHash string, outputIndex int) (*db.Deposi
 	return &deposit, nil
 }
 
-func (s *State) queryCreatedSafeboxTaskByTaskId(tx *gorm.DB, taskId uint64) (*db.SafeboxTask, error) {
+func (s *State) queryReceivedSafeboxTaskByTaskId(tx *gorm.DB, taskId uint64) (*db.SafeboxTask, error) {
 	if tx == nil {
 		tx = s.dbm.GetWalletDB()
 	}
 	var task db.SafeboxTask
-	err := tx.Where("task_id = ? and status = ?", taskId, db.TASK_STATUS_CREATE).First(&task).Error
+	status := []string{db.TASK_STATUS_CREATE, db.TASK_STATUS_RECEIVED}
+	err := tx.Where("task_id = ? and status IN (?)", taskId, status).First(&task).Error
 	if err != nil {
 		return nil, err
 	}
 	return &task, nil
 }
 
-func (s *State) queryCreatedSafeboxTaskByEvmAddr(tx *gorm.DB, evmAddr string) (*db.SafeboxTask, error) {
+func (s *State) queryProcessingSafeboxTaskByEvmAddr(tx *gorm.DB, evmAddr string) (*db.SafeboxTask, error) {
 	if tx == nil {
 		tx = s.dbm.GetWalletDB()
 	}
 	var task db.SafeboxTask
-	err := tx.Where("deposit_address = ? and status = ?", evmAddr, db.TASK_STATUS_CREATE).First(&task).Error
+	status := []string{db.TASK_STATUS_CONFIRMED_OK, db.TASK_STATUS_COMPLETED, db.TASK_STATUS_CLOSED}
+	err := tx.Where("deposit_address = ? and status NOT IN (?)", evmAddr, status).First(&task).Error
 	if err != nil {
 		return nil, err
 	}

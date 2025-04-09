@@ -54,11 +54,13 @@ const (
 	DEPOSIT_STATUS_PENDING   = "pending"
 	DEPOSIT_STATUS_PROCESSED = "processed"
 
-	TASK_STATUS_CREATE      = "create"
-	TASK_STATUS_RECEIVED    = "received"
-	TASK_STATUS_RECEIVED_OK = "received_ok" // this status means contract task is received after BTC deposit and tss signed TX submit to goat success
-	TASK_STATUS_INIT        = "init"
-	TASK_STATUS_CONFIRMED   = "confirmed"
-	TASK_STATUS_COMPLETED   = "completed"
-	TASK_STATUS_CLOSED      = "closed"
+	TASK_STATUS_CREATE       = "create"
+	TASK_STATUS_RECEIVED     = "received"
+	TASK_STATUS_RECEIVED_OK  = "received_ok" // this status means fund received from BTC deposit and tss signed TX submit to goat success
+	TASK_STATUS_INIT         = "init"
+	TASK_STATUS_PENDING      = "pending"
+	TASK_STATUS_CONFIRMED    = "confirmed"
+	TASK_STATUS_CONFIRMED_OK = "confirmed_ok" // this status means timelock transaction is sent and tss signed TX submit to goat success, task takes effect
+	TASK_STATUS_COMPLETED    = "completed"    // timelock reached and burned token
+	TASK_STATUS_CLOSED       = "closed"
 )
