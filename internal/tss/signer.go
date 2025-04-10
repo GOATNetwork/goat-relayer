@@ -135,16 +135,5 @@ func (s *Signer) ApplySignResult(ctx context.Context, unsignedTx *types.Transact
 		return nil, fmt.Errorf("apply tss sign result failed: %w", err)
 	}
 
-	// Debug information: Check the signed transaction
-	signer := types.LatestSignerForChainID(s.chainID)
-	sender, err := types.Sender(signer, signedTx)
-	if err != nil {
-		s.logger.Errorf("TssSigner ApplySignResult - ERROR RECOVERING SENDER FROM SIGNED TX: %v", err)
-	} else {
-		s.logger.Debugf("TssSigner ApplySignResult - SIGNED TX RECOVERED SENDER: %s", sender.Hex())
-		s.logger.Debugf("TssSigner ApplySignResult - SIGNED TX HASH: %s", signedTx.Hash().Hex())
-		s.logger.Debugf("TssSigner ApplySignResult - SIGNED TX CHAIN ID: %v", signedTx.ChainId())
-	}
-
 	return signedTx, nil
 }
