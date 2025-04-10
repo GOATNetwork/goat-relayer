@@ -400,7 +400,7 @@ func SelectWithdrawals(withdrawals []*db.Withdraw, networkFee types.BtcNetworkFe
 
 func SelectSafeboxTasks(tasks []*db.SafeboxTask, networkFee types.BtcNetworkFee, maxVout, immediateCount int, net *chaincfg.Params) (selectedTaskWithdraws []*db.Withdraw, receiverTypes []string, withdrawAmount int64, actualPrice int64, err error) {
 	if networkFee.HalfHourFee > uint64(config.AppConfig.BTCMaxNetworkFee) {
-		return nil, nil, 0, 0, fmt.Errorf("network fee is too high, cannot consolidate")
+		return nil, nil, 0, 0, fmt.Errorf("network fee is too high, cannot generate safebox timelock tx")
 	}
 
 	// sort safebox tasks by deadline in ascending order

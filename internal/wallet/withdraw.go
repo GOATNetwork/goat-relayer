@@ -253,22 +253,22 @@ func (w *WalletServer) initWithdrawSig() {
 		// create SendOrder for selectedWithdraws
 		selectOptimalUTXOs, totalSelectedAmount, _, changeAmount, estimateFee, witnessSize, err := SelectOptimalUTXOs(utxos, receiverTypes, withdrawAmount, actualPrice, len(selectedTaskWithdraws))
 		if err != nil {
-			log.Errorf("WalletServer initWithdrawSig SelectOptimalUTXOs error: %v", err)
+			log.Errorf("WalletServer initWithdrawSig SelectOptimalUTXOs for safebox task error: %v", err)
 			return
 		}
-		log.Infof("WalletServer initWithdrawSig SelectOptimalUTXOs, totalSelectedAmount: %d, withdrawAmount: %d, changeAmount: %d, selectedUtxos: %d", totalSelectedAmount, withdrawAmount, changeAmount, len(selectOptimalUTXOs))
+		log.Infof("WalletServer initWithdrawSig SelectOptimalUTXOs for safebox task, totalSelectedAmount: %d, withdrawAmount: %d, changeAmount: %d, selectedUtxos: %d", totalSelectedAmount, withdrawAmount, changeAmount, len(selectOptimalUTXOs))
 
 		// create SendOrder for selectedUtxos consolidation
 		tx, actualFee, _, err := CreateRawTransaction(selectOptimalUTXOs, selectedTaskWithdraws, p2wpkhAddress.EncodeAddress(), changeAmount, estimateFee, int64(safeboxTxFee), witnessSize, network)
 		if err != nil {
-			log.Errorf("WalletServer initWithdrawSig CreateRawTransaction for consolidation error: %v", err)
+			log.Errorf("WalletServer initWithdrawSig CreateRawTransaction for safebox task error: %v", err)
 			return
 		}
-		log.Infof("WalletServer initWithdrawSig CreateRawTransaction for consolidation, tx: %s", tx.TxID())
+		log.Infof("WalletServer initWithdrawSig CreateRawTransaction for safebox task, tx: %s", tx.TxID())
 
 		msgSignSendOrder, err = w.createSendOrder(tx, db.ORDER_TYPE_SAFEBOX, selectOptimalUTXOs, selectedTaskWithdraws, totalSelectedAmount, withdrawAmount, changeAmount, actualFee, uint64(actualPrice), uint64(witnessSize), epochVoter, network)
 		if err != nil {
-			log.Errorf("WalletServer initWithdrawSig createSendOrder for consolidation error: %v", err)
+			log.Errorf("WalletServer initWithdrawSig createSendOrder for safebox task error: %v", err)
 			return
 		}
 	} else {
@@ -296,10 +296,10 @@ func (w *WalletServer) initWithdrawSig() {
 		// create SendOrder for selectedWithdraws
 		selectOptimalUTXOs, totalSelectedAmount, _, changeAmount, estimateFee, witnessSize, err := SelectOptimalUTXOs(utxos, receiverTypes, withdrawAmount, actualPrice, len(selectedWithdraws))
 		if err != nil {
-			log.Errorf("WalletServer initWithdrawSig SelectOptimalUTXOs error: %v", err)
+			log.Errorf("WalletServer initWithdrawSig SelectOptimalUTXOs for withdraw error: %v", err)
 			return
 		}
-		log.Infof("WalletServer initWithdrawSig SelectOptimalUTXOs, totalSelectedAmount: %d, withdrawAmount: %d, changeAmount: %d, selectedUtxos: %d", totalSelectedAmount, withdrawAmount, changeAmount, len(selectOptimalUTXOs))
+		log.Infof("WalletServer initWithdrawSig SelectOptimalUTXOs for withdraw, totalSelectedAmount: %d, withdrawAmount: %d, changeAmount: %d, selectedUtxos: %d", totalSelectedAmount, withdrawAmount, changeAmount, len(selectOptimalUTXOs))
 
 		tx, actualFee, dustWithdrawId, err := CreateRawTransaction(selectOptimalUTXOs, selectedWithdraws, p2wpkhAddress.EncodeAddress(), changeAmount, estimateFee, witnessSize, actualPrice, network)
 		if err != nil {
