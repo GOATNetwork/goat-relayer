@@ -428,7 +428,21 @@ func (lis *Layer2Listener) filterEvmEvents(ctx context.Context, hash string) err
 				log.Errorf("failed to handle funds received event: %v", err)
 				return err
 			}
+		case lis.contractTaskManagerAbi.Events["TaskCancelled"].ID:
+			taskCancelledEvent := abis.TaskManagerContractTaskCancelled{}
+			err := lis.contractTaskManagerAbi.UnpackIntoInterface(&taskCancelledEvent, "TaskCancelled", vlog.Data)
+			if err != nil {
+				log.Errorf("failed to unpack task cancelled event: %v", err)
+				return err
+			}
+			err = lis.handleTaskCancelled(taskCancelledEvent.TaskId)
+			if err != nil {
+				log.Errorf("failed to handle task cancelled event: %v", err)
+				return err
+			}
+			log.Infof("Successfully handled TaskCancelled event")
 		}
+
 	}
 
 	return nil
