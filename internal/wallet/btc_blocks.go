@@ -277,6 +277,14 @@ func (w *WalletServer) processBlock(btcBlock types.BtcBlockExt, doneCh chan stru
 				// this can be ignore, because recovery model order will not exitst
 				log.Debugf("Update send order confirmed %v err %v", tx.TxID(), err)
 			}
+
+			// update utxo status spent by vin
+			if len(vins) > 0 {
+				err = w.state.UpdateUtxoStatusSpentByVins(vins, btcBlock.BlockNumber)
+				if err != nil {
+					log.Errorf("Update utxo status spent by vins failed, err: %v", err)
+				}
+			}
 		}
 
 		log.Debugf("Process confirmed block %d done", btcBlock.BlockNumber)

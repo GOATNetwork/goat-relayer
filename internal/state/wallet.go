@@ -51,6 +51,27 @@ func (s *State) UpdateUtxoStatusSpent(txid string, out int, btcBlock uint64) err
 	return s.updateUtxoStatusSpent(nil, txid, out, btcBlock)
 }
 
+func (s *State) UpdateUtxoStatusSpentByVins(vins []*db.Vin, btcBlock uint64) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
+		for _, vin := range vins {
+			err := s.updateUtxoStatusSpent(tx, vin.Txid, vin.OutIndex, btcBlock)
+			// ignore not found record but warning
+			if err != nil && err != gorm.ErrRecordNotFound {
+				return err
+			}
+			if err == gorm.ErrRecordNotFound {
+				log.Warnf("UpdateUtxoStatusSpentByVins not found record, txid: %s, out: %d", vin.Txid, vin.OutIndex)
+			}
+		}
+		return nil
+	})
+
+	return err
+}
+
 func (s *State) AddUtxo(utxo *db.Utxo, pk []byte, blockHash string, blockHeight uint64, noWitnessTx []byte, merkleRoot []byte, proofBytes []byte, txIndex int, isDeposit bool) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
@@ -223,7 +244,7 @@ func (s *State) AddOrUpdateVin(vin *db.Vin) error {
 	}
 
 	// 3. save vin
-	return s.saveVin(vin)
+	return s.saveVin(nil, vin)
 }
 
 func (s *State) AddOrUpdateVout(vout *db.Vout) error {
@@ -278,7 +299,7 @@ func (s *State) AddOrUpdateVout(vout *db.Vout) error {
 	}
 
 	// 2. save vout
-	return s.saveVout(vout)
+	return s.saveVout(nil, vout)
 }
 
 func (s *State) GetUtxoByOrderId(orderId string) (vinUtxos []*db.Utxo, err error) {
@@ -386,8 +407,11 @@ func (s *State) saveUtxo(tx *gorm.DB, utxo *db.Utxo) error {
 	return nil
 }
 
-func (s *State) saveVin(vin *db.Vin) error {
-	result := s.dbm.GetWalletDB().Save(vin)
+func (s *State) saveVin(tx *gorm.DB, vin *db.Vin) error {
+	if tx == nil {
+		tx = s.dbm.GetWalletDB()
+	}
+	result := tx.Save(vin)
 	if result.Error != nil {
 		log.Errorf("State saveVin error: %v", result.Error)
 		return result.Error
@@ -395,8 +419,11 @@ func (s *State) saveVin(vin *db.Vin) error {
 	return nil
 }
 
-func (s *State) saveVout(vout *db.Vout) error {
-	result := s.dbm.GetWalletDB().Save(vout)
+func (s *State) saveVout(tx *gorm.DB, vout *db.Vout) error {
+	if tx == nil {
+		tx = s.dbm.GetWalletDB()
+	}
+	result := tx.Save(vout)
 	if result.Error != nil {
 		log.Errorf("State saveVout error: %v", result.Error)
 		return result.Error

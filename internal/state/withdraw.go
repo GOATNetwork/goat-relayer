@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -20,10 +21,11 @@ type WithdrawStateStore interface {
 	UpdateWithdrawReplace(id, txPrice uint64) error
 	UpdateWithdrawCanceling(id uint64) error
 	UpdateSendOrderInitlized(txid string, externalTxId string) error
-	UpdateSendOrderPending(txid string, externalTxId string) error
+	UpdateSendOrderPending(txid string, externalTxId string, withdrawIds []uint64, sendOrder *db.SendOrder, utxos []*db.Utxo, vins []*db.Vin, vouts []*db.Vout) error
 	UpdateSendOrderConfirmed(txid string, blockHeight uint64) error
 	GetWithdrawsCanStart() ([]*db.Withdraw, error)
 	GetWithdrawsCanceling() ([]*db.Withdraw, error)
+	GetWithdrawsByOrderId(orderId string) ([]*db.Withdraw, error)
 	GetSendOrderInitlized() ([]*db.SendOrder, error)
 	GetSendOrderPending(limit int) ([]*db.SendOrder, error)
 	GetLatestWithdrawSendOrderConfirmed() (*db.SendOrder, error)
@@ -67,7 +69,7 @@ func (s *State) CreateWithdrawal(sender string, receiver string, block, id, txPr
 		CreatedAt: time.Now(),
 	}
 
-	return s.saveWithdraw(withdraw)
+	return s.saveWithdraw(nil, withdraw)
 }
 
 // CreateSendOrder, create a send order when start withdrawal or consolidation
@@ -95,27 +97,16 @@ func (s *State) CreateSendOrder(order *db.SendOrder, selectedUtxos []*db.Utxo, s
 			if err = tx.Where("txid = ? and out_index = ?", utxo.Txid, utxo.OutIndex).Order("id desc").First(&utxoInDb).Error; err != nil {
 				return err
 			}
-			if isProposer {
-				if utxoInDb.Status == db.UTXO_STATUS_UNCONFIRM || utxoInDb.Status == db.UTXO_STATUS_PENDING || utxoInDb.Status == db.UTXO_STATUS_SPENT {
-					return fmt.Errorf("utxo status can not be make withdrawal or consolidation, utxo id: %d, status: %s", utxoInDb.ID, utxoInDb.Status)
-				}
-				err = tx.Model(&db.Utxo{}).Where("id = ?", utxoInDb.ID).Updates(&db.Utxo{Status: db.UTXO_STATUS_PENDING, UpdatedAt: time.Now()}).Error
-				if err != nil {
-					log.Errorf("State CreateSendOrder update utxo records error: %v", err)
-					return err
-				}
-			} else {
-				// voter perhaps receipt multiple orders with the same withdraw
-				if utxoInDb.Status == db.UTXO_STATUS_UNCONFIRM || utxoInDb.Status == db.UTXO_STATUS_SPENT {
-					return fmt.Errorf("utxo status can not be make withdrawal or consolidation, utxo id: %d, status: %s", utxoInDb.ID, utxoInDb.Status)
-				}
-				if utxoInDb.Status != db.UTXO_STATUS_PENDING {
-					err = tx.Model(&db.Utxo{}).Where("id = ?", utxoInDb.ID).Updates(&db.Utxo{Status: db.UTXO_STATUS_PENDING, UpdatedAt: time.Now()}).Error
-					if err != nil {
-						log.Errorf("State CreateSendOrder update utxo records error: %v", err)
-						return err
-					}
-				}
+			// utxo status can not be make withdrawal or consolidation
+			// don't need to check proposer or voter
+			// both role should clean processing withdraw
+			if utxoInDb.Status == db.UTXO_STATUS_UNCONFIRM || utxoInDb.Status == db.UTXO_STATUS_PENDING || utxoInDb.Status == db.UTXO_STATUS_SPENT {
+				return fmt.Errorf("utxo status can not be make withdrawal or consolidation, utxo id: %d, status: %s", utxoInDb.ID, utxoInDb.Status)
+			}
+			err = tx.Model(&db.Utxo{}).Where("id = ?", utxoInDb.ID).Updates(&db.Utxo{Status: db.UTXO_STATUS_PENDING, UpdatedAt: time.Now()}).Error
+			if err != nil {
+				log.Errorf("State CreateSendOrder update utxo records error: %v", err)
+				return err
 			}
 		}
 
@@ -198,7 +189,7 @@ func (s *State) RecoverSendOrder(order *db.SendOrder, vins []*db.Vin, vouts []*d
 			withdrawInDb.OrderId = order.OrderId
 			withdrawInDb.Txid = order.Txid
 			withdrawInDb.UpdatedAt = time.Now()
-			err = s.saveWithdraw(withdrawInDb)
+			err = s.saveWithdraw(tx, withdrawInDb)
 			if err != nil {
 				return err
 			}
@@ -265,7 +256,7 @@ func (s *State) UpdateWithdrawReplace(id, txPrice uint64) error {
 
 	// RBF will with higher txPrice, so no need to notify stop aggregating
 
-	return s.saveWithdraw(withdraw)
+	return s.saveWithdraw(nil, withdraw)
 }
 
 // UpdateWithdrawCanceling, update withdraw status to canceling
@@ -288,7 +279,7 @@ func (s *State) UpdateWithdrawCanceling(id uint64) error {
 
 	// NOTE check stop aggregating order if there is aggregating status withdraw, set to closed
 
-	return s.saveWithdraw(withdraw)
+	return s.saveWithdraw(nil, withdraw)
 }
 
 // UpdateWithdrawCanceled, update withdraw status to closed
@@ -309,7 +300,7 @@ func (s *State) UpdateWithdrawCanceled(id uint64) error {
 	withdraw.Status = db.WITHDRAW_STATUS_CLOSED
 	withdraw.Reason = "canceled"
 	withdraw.UpdatedAt = time.Now()
-	return s.saveWithdraw(withdraw)
+	return s.saveWithdraw(nil, withdraw)
 }
 
 // UpdateSendOrderInitlized
@@ -347,7 +338,7 @@ func (s *State) UpdateSendOrderInitlized(txid string, externalTxId string) error
 
 // UpdateSendOrderPending
 // when a withdrawal or consolidation request is confirmed, save to confirmed
-func (s *State) UpdateSendOrderPending(txid string, externalTxId string) error {
+func (s *State) UpdateSendOrderPending(txid string, externalTxId string, withdrawIds []uint64, sendOrder *db.SendOrder, utxos []*db.Utxo, vins []*db.Vin, vouts []*db.Vout) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
@@ -356,8 +347,66 @@ func (s *State) UpdateSendOrderPending(txid string, externalTxId string) error {
 		if err != nil && err != gorm.ErrRecordNotFound {
 			return err
 		}
-		if order == nil {
-			return nil
+		if order == nil || err == gorm.ErrRecordNotFound {
+			// recover order, vins, vouts
+			if sendOrder == nil || len(utxos) == 0 || len(vins) == 0 || len(vouts) == 0 {
+				return errors.New("send order, utxos, vins, vouts is nil")
+			}
+			sendOrder.ID = 0
+			order = sendOrder
+			err = s.saveOrder(tx, order)
+			if err != nil {
+				return err
+			}
+			for _, utxo := range utxos {
+				utxoInDb, err := s.getUtxo(tx, utxo.Txid, utxo.OutIndex)
+				if err != nil {
+					return err
+				}
+				if utxoInDb.Status == db.UTXO_STATUS_PENDING || utxoInDb.Status == db.UTXO_STATUS_SPENT || utxoInDb.Status == db.UTXO_STATUS_UNCONFIRM {
+					return errors.New("utxo status is not valid")
+				}
+				utxoInDb.Status = db.UTXO_STATUS_PENDING
+				utxoInDb.UpdatedAt = time.Now()
+				err = s.saveUtxo(tx, utxoInDb)
+				if err != nil {
+					return err
+				}
+
+			}
+			for _, vin := range vins {
+				vin.ID = 0
+				vin.OrderId = sendOrder.OrderId
+				err = s.saveVin(tx, vin)
+				if err != nil {
+					return err
+				}
+			}
+			for _, withdrawId := range withdrawIds {
+				withdrawInDb, err := s.getWithdrawByRequestId(tx, withdrawId)
+				if err != nil && err != gorm.ErrRecordNotFound {
+					return err
+				}
+				if withdrawInDb.Status == db.WITHDRAW_STATUS_AGGREGATING || withdrawInDb.Status == db.WITHDRAW_STATUS_CREATE {
+					withdrawInDb.OrderId = sendOrder.OrderId
+					withdrawInDb.Txid = txid
+					withdrawInDb.Status = db.WITHDRAW_STATUS_INIT
+					err = s.saveWithdraw(tx, withdrawInDb)
+					if err != nil {
+						return err
+					}
+				} else {
+					return errors.New("withdraw status is not valid")
+				}
+			}
+			for _, vout := range vouts {
+				vout.ID = 0
+				vout.OrderId = sendOrder.OrderId
+				err = s.saveVout(tx, vout)
+				if err != nil {
+					return err
+				}
+			}
 		}
 		if order.Status == db.ORDER_STATUS_CONFIRMED || order.Status == db.ORDER_STATUS_PROCESSED || order.Status == db.ORDER_STATUS_CLOSED {
 			return nil
@@ -665,6 +714,19 @@ func (s *State) GetWithdrawsCanceling() ([]*db.Withdraw, error) {
 	return withdraws, nil
 }
 
+func (s *State) GetWithdrawsByOrderId(orderId string) ([]*db.Withdraw, error) {
+	s.walletMu.RLock()
+	defer s.walletMu.RUnlock()
+
+	var withdraws []*db.Withdraw
+	result := s.dbm.GetWalletDB().Where("order_id = ?", orderId).Order("id asc").Find(&withdraws)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return withdraws, nil
+}
+
 func (s *State) GetSendOrderInitlized() ([]*db.SendOrder, error) {
 	s.walletMu.RLock()
 	defer s.walletMu.RUnlock()
@@ -885,8 +947,11 @@ func (s *State) getWithdrawByStatuses(tx *gorm.DB, orderBy string, statuses ...s
 	return withdraws, nil
 }
 
-func (s *State) saveWithdraw(withdraw *db.Withdraw) error {
-	result := s.dbm.GetWalletDB().Save(withdraw)
+func (s *State) saveWithdraw(tx *gorm.DB, withdraw *db.Withdraw) error {
+	if tx == nil {
+		tx = s.dbm.GetWalletDB()
+	}
+	result := tx.Save(withdraw)
 	if result.Error != nil {
 		log.Errorf("State saveWithdraw error: %v", result.Error)
 		return result.Error
