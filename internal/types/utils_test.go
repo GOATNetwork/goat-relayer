@@ -105,7 +105,7 @@ func TestGenerateTimeLockP2WSHAddress(t *testing.T) {
 	lockTime := time.Now().Add(time.Hour * 24 * 30)
 	net := &chaincfg.TestNet3Params
 
-	p2wshAddress, err := GenerateTimeLockP2WSHAddress(pubKey, lockTime, net)
+	p2wshAddress, _, err := GenerateTimeLockP2WSHAddress(pubKey, lockTime, net)
 	if err != nil {
 		t.Fatalf("Failed to generate P2WSH address: %v", err)
 	}

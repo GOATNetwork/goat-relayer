@@ -224,9 +224,33 @@ func (s *State) CreateSafeboxTask(taskId uint64, partnerId string, timelockEndTi
 			WitnessScript:   witnessScript,
 			TimelockAddress: timelockAddress,
 			BtcAddress:      btcAddress,
-						Status:          db.TASK_STATUS_CREATE,
+			Status:          db.TASK_STATUS_CREATE,
 		}
 		return tx.Create(&taskDeposit).Error
+	})
+	return err
+}
+
+func (s *State) UpdateSafeboxTaskInit(timelockAddress string, timelockTxid string, timelockOutIndex uint64) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
+		taskDeposit, err := s.queryProcessingSafeboxTaskByTimelockAddress(tx, timelockAddress)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		if err == gorm.ErrRecordNotFound {
+			return fmt.Errorf("task deposit not found")
+		}
+		if taskDeposit.Status != db.TASK_STATUS_RECEIVED_OK && taskDeposit.Status != db.TASK_STATUS_RECEIVED && taskDeposit.Status != db.TASK_STATUS_CREATE {
+			return fmt.Errorf("task deposit status is not received or create")
+		}
+		taskDeposit.TimelockTxid = timelockTxid
+		taskDeposit.TimelockOutIndex = timelockOutIndex
+		taskDeposit.Status = db.TASK_STATUS_INIT
+		taskDeposit.UpdatedAt = time.Now()
+		return tx.Save(&taskDeposit).Error
 	})
 	return err
 }
@@ -244,7 +268,7 @@ func (s *State) UpdateSafeboxTaskReceivedOK(taskId uint64, fundingTxHash []byte,
 		if err == gorm.ErrRecordNotFound {
 			return fmt.Errorf("task deposit not found")
 		}
-if taskDeposit.Status != db.TASK_STATUS_RECEIVED && taskDeposit.Status != db.TASK_STATUS_CREATE {
+		if taskDeposit.Status != db.TASK_STATUS_RECEIVED && taskDeposit.Status != db.TASK_STATUS_CREATE {
 			return fmt.Errorf("task deposit status is not received or create")
 		}
 		taskDeposit.FundingTxid = hex.EncodeToString(fundingTxHash)
@@ -403,6 +427,19 @@ func (s *State) queryDepositByTxHash(txHash string, outputIndex int) (*db.Deposi
 		return nil, err
 	}
 	return &deposit, nil
+}
+
+func (s *State) queryProcessingSafeboxTaskByTimelockAddress(tx *gorm.DB, timelockAddress string) (*db.SafeboxTask, error) {
+	if tx == nil {
+		tx = s.dbm.GetWalletDB()
+	}
+	var task db.SafeboxTask
+	status := []string{db.TASK_STATUS_CONFIRMED_OK, db.TASK_STATUS_COMPLETED, db.TASK_STATUS_CLOSED}
+	err := tx.Where("timelock_address = ? and status NOT IN (?)", timelockAddress, status).First(&task).Error
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
 }
 
 func (s *State) queryProcessingSafeboxTaskByTaskId(tx *gorm.DB, taskId uint64) (*db.SafeboxTask, error) {
