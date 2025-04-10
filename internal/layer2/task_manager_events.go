@@ -8,8 +8,23 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/goatnetwork/goat-relayer/internal/config"
+	"github.com/goatnetwork/goat-relayer/internal/types"
 	log "github.com/sirupsen/logrus"
 )
+
+func (lis *Layer2Listener) handleTaskCancelled(taskId *big.Int) error {
+	log.Infof("Layer2Listener handleTaskCancelled - Event for taskId: %v", taskId)
+
+	err := lis.state.UpdateSafeboxTaskCancelled(taskId.Uint64())
+	if err != nil {
+		log.Errorf("Layer2Listener handleTaskCancelled - Failed to update safebox task: %v", err)
+		return err
+	}
+
+	log.Infof("Layer2Listener handleTaskCancelled - Successfully updated safebox task for taskId: %v", taskId)
+	return nil
+}
 
 func (lis *Layer2Listener) handleFundsReceived(taskId *big.Int, fundingTxHash []byte, txOut uint64) error {
 	// handle funds received event
@@ -62,7 +77,7 @@ func (lis *Layer2Listener) handleTaskCreated(ctx context.Context, taskId *big.In
 	copy(btcAddress, task.BtcAddress[0][:])
 	copy(btcAddress[len(task.BtcAddress[0]):], task.BtcAddress[1][:])
 	log.Infof("Layer2Listener handleTaskCreated - Constructed BTC address from parts: %s", hex.EncodeToString(btcAddress))
-btcRefundAddress := hex.EncodeToString(btcAddress)
+	btcRefundAddress := hex.EncodeToString(btcAddress)
 
 	pubkey := make([]byte, 33)
 	copy(pubkey, task.BtcPubKey[0][:])
@@ -85,7 +100,7 @@ btcRefundAddress := hex.EncodeToString(btcAddress)
 		btcRefundAddress,
 		timelockAddress,
 		pubkey,
-witnessScript,
+		witnessScript,
 	)
 	if err != nil {
 		log.Errorf("Layer2Listener handleTaskCreated - Failed to create safebox task: %v", err)
