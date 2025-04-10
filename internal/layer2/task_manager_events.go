@@ -62,11 +62,18 @@ func (lis *Layer2Listener) handleTaskCreated(ctx context.Context, taskId *big.In
 	copy(btcAddress, task.BtcAddress[0][:])
 	copy(btcAddress[len(task.BtcAddress[0]):], task.BtcAddress[1][:])
 	log.Infof("Layer2Listener handleTaskCreated - Constructed BTC address from parts: %s", hex.EncodeToString(btcAddress))
+btcRefundAddress := hex.EncodeToString(btcAddress)
 
 	pubkey := make([]byte, 33)
 	copy(pubkey, task.BtcPubKey[0][:])
 	pubkey[32] = task.BtcPubKey[1][0]
 	log.Infof("Layer2Listener handleTaskCreated - Constructed BTC pubkey from parts: %s", hex.EncodeToString(pubkey))
+
+	timelockP2WSHAddress, witnessScript, err := types.GenerateTimeLockP2WSHAddress(pubkey, time.Unix(int64(task.TimelockEndTime), 0), types.GetBTCNetwork(config.AppConfig.BTCNetworkType))
+	if err != nil {
+		log.Fatalf("Gen P2WPKH address from pubkey %s and timelock %d err %v", pubkey, task.TimelockEndTime, err)
+	}
+	timelockAddress := timelockP2WSHAddress.EncodeAddress()
 
 	err = lis.state.CreateSafeboxTask(
 		taskId.Uint64(),
@@ -75,8 +82,10 @@ func (lis *Layer2Listener) handleTaskCreated(ctx context.Context, taskId *big.In
 		uint64(task.Deadline),
 		amount.Uint64(),
 		task.DepositAddress.Hex(),
-		hex.EncodeToString(btcAddress),
+		btcRefundAddress,
+		timelockAddress,
 		pubkey,
+witnessScript,
 	)
 	if err != nil {
 		log.Errorf("Layer2Listener handleTaskCreated - Failed to create safebox task: %v", err)

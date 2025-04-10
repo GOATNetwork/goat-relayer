@@ -182,7 +182,7 @@ func (s *State) UpdateProcessedDeposit(txHash string, txout int, evmAddr string)
 }
 
 // CreateSafeboxTask create safebox task
-func (s *State) CreateSafeboxTask(taskId uint64, partnerId string, timelockEndTime, deadline, amount uint64, depositAddress, btcAddress string, btcPubKey []byte) error {
+func (s *State) CreateSafeboxTask(taskId uint64, partnerId string, timelockEndTime, deadline, amount uint64, depositAddress, btcAddress, timelockAddress string, btcPubKey, witnessScript []byte) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
@@ -201,9 +201,11 @@ func (s *State) CreateSafeboxTask(taskId uint64, partnerId string, timelockEndTi
 			TimelockEndTime: timelockEndTime,
 			Deadline:        deadline,
 			Amount:          amount,
-			BtcAddress:      btcAddress,
 			Pubkey:          btcPubKey,
-			Status:          db.TASK_STATUS_CREATE,
+			WitnessScript:   witnessScript,
+			TimelockAddress: timelockAddress,
+			BtcAddress:      btcAddress,
+						Status:          db.TASK_STATUS_CREATE,
 		}
 		return tx.Create(&taskDeposit).Error
 	})

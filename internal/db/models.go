@@ -122,12 +122,13 @@ type SafeboxTask struct {
 	Deadline         uint64    `gorm:"not null" json:"deadline"`
 	Amount           uint64    `gorm:"not null" json:"amount"`
 	Pubkey           []byte    `gorm:"not null" json:"pubkey"`
+	WitnessScript    []byte    `json:"witness_script"`
+	TimelockAddress  string    `gorm:"not null" json:"timelock_address"`
 	BtcAddress       string    `gorm:"not null" json:"btc_address"`
 	FundingTxid      string    `gorm:"not null;index:unique_funding_txid_idx,unique" json:"funding_txid"`
 	FundingOutIndex  uint64    `gorm:"not null;index:unique_funding_txid_idx,unique" json:"funding_out_index"`
 	TimelockTxid     string    `gorm:"not null;index:unique_timelock_txid_idx,unique" json:"timelock_txid"`
 	TimelockOutIndex uint64    `gorm:"not null;index:unique_timelock_txid_idx,unique" json:"timelock_out_index"`
-	WitnessScript    []byte    `json:"witness_script"`
 	Status           string    `gorm:"not null" json:"status"`
 	UpdatedAt        time.Time `gorm:"not null" json:"updated_at"`
 }

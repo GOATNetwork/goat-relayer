@@ -172,19 +172,19 @@ func GenerateV0P2WSHAddress(pubKey []byte, evmAddress string, net *chaincfg.Para
 	return p2wsh, nil
 }
 
-func GenerateTimeLockP2WSHAddress(pubKey []byte, lockTime time.Time, net *chaincfg.Params) (*btcutil.AddressWitnessScriptHash, error) {
-	subScript, err := BuildTimeLockScriptForP2WSH(pubKey, lockTime, net)
+func GenerateTimeLockP2WSHAddress(pubKey []byte, lockTime time.Time, net *chaincfg.Params) (*btcutil.AddressWitnessScriptHash, []byte, error) {
+	witnessScript, err := BuildTimeLockScriptForP2WSH(pubKey, lockTime, net)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	witnessProg := sha256.Sum256(subScript)
+	witnessProg := sha256.Sum256(witnessScript)
 	p2wsh, err := btcutil.NewAddressWitnessScriptHash(witnessProg[:], net)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create v0 p2wsh address: %v", err)
+		return nil, witnessScript, fmt.Errorf("failed to create timelock p2wsh address: %v", err)
 	}
 
-	return p2wsh, nil
+	return p2wsh, witnessScript, nil
 }
 
 func GenerateSPVProof(txHash string, txHashes []string) ([]byte, []byte, int, error) {
