@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	tssCrypto "github.com/goatnetwork/tss/pkg/crypto"
+	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -207,22 +208,55 @@ func (s *SafeboxProcessor) buildUnsignedTx(ctx context.Context, task *db.Safebox
 	}
 	s.logger.Debugf("SafeboxProcessor buildUnsignedTx - Current nonce: %d", nonce)
 
-	// NOTE: UTXO amount decimal is 8, contract task amount decimal is 18
-	amount := new(big.Int).Mul(big.NewInt(int64(task.Amount)), big.NewInt(1e10))
+	var input []byte
+	switch task.Status {
+	case db.TASK_STATUS_RECEIVED:
+		// NOTE: UTXO amount decimal is 8, contract task amount decimal is 18
+		amount := new(big.Int).Mul(big.NewInt(int64(task.Amount)), big.NewInt(1e10))
 
-	// Fullfill input data
-	// Convert slice to fixed length array
-	txHashBytes, err := types.DecodeBtcHash(task.FundingTxid)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode funding transaction hash: %v", err)
+		// Fullfill input data
+		// Convert slice to fixed length array
+		var fundingTxHash [32]byte
+		txHashBytes, err := types.DecodeBtcHash(task.FundingTxid)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decode funding transaction hash: %v", err)
+		}
+		copy(fundingTxHash[:], txHashBytes)
+		input, err = safeBoxAbi.Pack("receiveFunds", big.NewInt(int64(task.TaskId)), amount, fundingTxHash, uint32(task.FundingOutIndex))
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to pack receiveFunds input: %v", err)
+		}
+		s.logger.Debugf("SafeboxProcessor buildUnsignedTx - Packed input data length: %d bytes", len(input))
+	case db.TASK_STATUS_INIT:
+		// Fullfill input data
+		// Convert slice to fixed length array
+		var timelockTxHash [32]byte
+		var witnessScript [7][32]byte
+		txHashBytes, err := types.DecodeBtcHash(task.TimelockTxid)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decode timelock transaction hash: %v", err)
+		}
+		copy(timelockTxHash[:], txHashBytes)
+		copy(witnessScript[0][:], task.WitnessScript[:32])
+		copy(witnessScript[1][:], task.WitnessScript[32:64])
+		copy(witnessScript[2][:], task.WitnessScript[64:96])
+		copy(witnessScript[3][:], task.WitnessScript[96:128])
+		copy(witnessScript[4][:], task.WitnessScript[128:160])
+		copy(witnessScript[5][:], task.WitnessScript[160:192])
+		copy(witnessScript[6][:], task.WitnessScript[192:224])
+		input, err = safeBoxAbi.Pack("initTimelockTx", big.NewInt(int64(task.TaskId)), timelockTxHash, uint32(task.TimelockOutIndex), uint32(task.TimelockEndTime), witnessScript)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to pack initTimelockTx input: %v", err)
+		}
+		s.logger.Debugf("SafeboxProcessor buildUnsignedTx - Packed input data length: %d bytes", len(input))
+	case db.TASK_STATUS_CONFIRMED:
+		input, err = safeBoxAbi.Pack("processTimelockTx", big.NewInt(int64(task.TaskId)), big.NewInt(int64(task.Amount)), [32]byte{}, uint32(task.FundingOutIndex))
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to pack initTimelockTx input: %v", err)
+		}
+	default:
+		return nil, nil, fmt.Errorf("invalid task status: %s", task.Status)
 	}
-	var fundingTxHash [32]byte
-	copy(fundingTxHash[:], txHashBytes)
-	input, err := safeBoxAbi.Pack("receiveFunds", big.NewInt(int64(task.TaskId)), amount, fundingTxHash, uint32(task.FundingOutIndex))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to pack receiveFunds input: %v", err)
-	}
-	s.logger.Debugf("SafeboxProcessor buildUnsignedTx - Packed input data length: %d bytes", len(input))
 
 	// Estimate gas limit
 	gasLimit, err := goatEthClient.EstimateGas(ctx, ethereum.CallMsg{
@@ -442,7 +476,7 @@ func (s *SafeboxProcessor) process(ctx context.Context) {
 
 	// query task from db (first one ID asc, until confirmed), build unsigned tx
 	s.logger.Infof("SafeboxProcessor process - Querying tasks from database")
-	tasks, err := s.state.GetSafeboxTaskByStatus(1, db.TASK_STATUS_RECEIVED)
+	tasks, err := s.state.GetSafeboxTaskByStatus(1, db.TASK_STATUS_RECEIVED, db.TASK_STATUS_INIT, db.TASK_STATUS_CONFIRMED)
 	if err != nil {
 		s.logger.Errorf("SafeboxProcessor process - Failed to get safebox tasks: %v", err)
 		return
@@ -452,8 +486,16 @@ func (s *SafeboxProcessor) process(ctx context.Context) {
 		return
 	}
 	task := tasks[0]
-	s.logger.Infof("SafeboxProcessor process - Processing task: TaskId=%d, Amount=%d, FundingTxid=%s, FundingOutIndex=%d",
-		task.TaskId, task.Amount, task.FundingTxid, task.FundingOutIndex)
+	s.logger.WithFields(logrus.Fields{
+		"task_id":            task.TaskId,
+		"deposit_address":    task.DepositAddress,
+		"amount":             task.Amount,
+		"status":             task.Status,
+		"funding_txid":       task.FundingTxid,
+		"funding_out_index":  task.FundingOutIndex,
+		"timelock_txid":      task.TimelockTxid,
+		"timelock_out_index": task.TimelockOutIndex,
+	}).Info("SafeboxProcessor process - Processing task")
 
 	unsignTx, messageToSign, err := s.buildUnsignedTx(ctx, task)
 	if err != nil {

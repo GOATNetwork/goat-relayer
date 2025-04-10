@@ -325,7 +325,7 @@ func (w *WalletServer) initWithdrawSig() {
 	}
 
 	// w.sigStatus should update to false after layer2 InitalWithdraw callback
-	if msgSignSendOrder != nil {
+	if msgSignSendOrder != nil && msgSignSendOrder.MsgSign.RequestId != "" {
 		w.sigStatus = true
 
 		// send msg to bus
@@ -435,16 +435,22 @@ func (w *WalletServer) createSendOrder(tx *wire.MsgTx, orderType string, selecte
 	for i, utxo := range selectedUtxos {
 		utxoTypes[i] = utxo.ReceiverType
 	}
-	msgSignSendOrder := &types.MsgSignSendOrder{
-		MsgSign: types.MsgSign{
+
+	var msgSign types.MsgSign
+	if orderType == db.ORDER_TYPE_SAFEBOX {
+		msgSign = types.MsgSign{RequestId: ""}
+	} else {
+		msgSign = types.MsgSign{
 			RequestId:    requestId,
 			Sequence:     epochVoter.Sequence,
 			Epoch:        epochVoter.Epoch,
 			IsProposer:   true,
 			VoterAddress: epochVoter.Proposer,
 			SigData:      nil,
-			CreateTime:   time.Now().Unix(),
-		},
+		}
+	}
+	msgSignSendOrder := &types.MsgSignSendOrder{
+		MsgSign:   msgSign,
 		SendOrder: orderBytes,
 		Utxos:     utxoBytes,
 		Vins:      vinBytes,
@@ -459,6 +465,13 @@ func (w *WalletServer) createSendOrder(tx *wire.MsgTx, orderType string, selecte
 	err = w.state.CreateSendOrder(order, selectedUtxos, selectedWithdraws, vins, vouts, true)
 	if err != nil {
 		return nil, err
+	}
+
+	if orderType == db.ORDER_TYPE_SAFEBOX {
+		err = w.state.UpdateSafeboxTaskInit(selectedWithdraws[0].To, tx.TxID(), 0)
+		if err != nil {
+			log.Errorf("WalletServer createSendOrder UpdateSafeboxTaskInit error: %v", err)
+		}
 	}
 
 	return msgSignSendOrder, nil
