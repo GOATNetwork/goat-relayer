@@ -7,7 +7,6 @@ import (
 	"time"
 
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
-	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -21,6 +20,10 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	log "github.com/sirupsen/logrus"
+)
+
+const (
+	GoatGasLimit = 300000
 )
 
 // Proposal defines a generic structure for handling proposal submissions
@@ -120,7 +123,7 @@ func (p *Proposal[T]) submitToConsensus(ctx context.Context, msg T) (*coretypes.
 
 	// set fee
 	fees := sdk.NewCoins(sdk.NewInt64Coin(denom, 100))
-	txBuilder.SetGasLimit(uint64(flags.DefaultGasLimit))
+	txBuilder.SetGasLimit(GoatGasLimit)
 	txBuilder.SetFeeAmount(fees)
 
 	if err = txBuilder.SetSignatures(signing.SignatureV2{

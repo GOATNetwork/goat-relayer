@@ -3,6 +3,7 @@ package wallet
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
@@ -283,14 +285,75 @@ func (b *BaseOrderBroadcaster) Start(ctx context.Context) {
 			b.Stop()
 			return
 		case msg := <-b.txBroadcastCh:
-			sendOrder, ok := msg.(types.MsgSendOrderBroadcasted)
+			msgOrder, ok := msg.(types.MsgSendOrderBroadcasted)
 			if !ok {
 				log.Errorf("Invalid send order data type")
 				continue
 			}
-			err := b.state.UpdateSendOrderPending(sendOrder.TxId, sendOrder.ExternalTxId)
+			// update send order status to pending
+			var order db.SendOrder
+			if err := json.Unmarshal(msgOrder.SendOrder, &order); err != nil {
+				log.Errorf("SigReceive SendOrder txid %s external id %s unmarshal send order err: %v", msgOrder.TxId, msgOrder.ExternalTxId, err)
+				continue
+			}
+			var utxos []*db.Utxo
+			if err := json.Unmarshal(msgOrder.Utxos, &utxos); err != nil {
+				log.Errorf("SigReceive SendOrder txid %s external id %s unmarshal utxos err: %v", msgOrder.TxId, msgOrder.ExternalTxId, err)
+				continue
+			}
+			tx, err := types.DeserializeTransaction(order.NoWitnessTx)
 			if err != nil {
-				log.Errorf("Failed to update send order status: %v", err)
+				log.Errorf("SigReceive SendOrder txid %s external id %s deserialize tx err: %v", msgOrder.TxId, msgOrder.ExternalTxId, err)
+				continue
+			}
+			utxoAmount := int64(order.TxFee)
+			network := types.GetBTCNetwork(config.AppConfig.BTCNetworkType)
+			var vins []*db.Vin
+			for _, txIn := range tx.TxIn {
+				vin := &db.Vin{
+					OrderId:      order.OrderId,
+					BtcHeight:    uint64(txIn.PreviousOutPoint.Index),
+					Txid:         txIn.PreviousOutPoint.Hash.String(),
+					OutIndex:     int(txIn.PreviousOutPoint.Index),
+					SigScript:    nil,
+					SubScript:    nil,
+					Sender:       "",
+					ReceiverType: db.WALLET_TYPE_UNKNOWN, // recover mode uses unknown
+					Source:       db.ORDER_TYPE_WITHDRAWAL,
+					Status:       db.ORDER_STATUS_INIT,
+					UpdatedAt:    time.Now(),
+				}
+				vins = append(vins, vin)
+			}
+			var vouts []*db.Vout
+			for i, txOut := range tx.TxOut {
+				_, addresses, _, err := txscript.ExtractPkScriptAddrs(txOut.PkScript, network)
+				if err != nil {
+					continue
+				}
+				withdrawId := ""
+				if len(msgOrder.WithdrawIds) > i {
+					withdrawId = fmt.Sprintf("%d", msgOrder.WithdrawIds[i])
+				}
+				vout := &db.Vout{
+					OrderId:    order.OrderId,
+					BtcHeight:  0,
+					Txid:       tx.TxID(),
+					OutIndex:   i,
+					WithdrawId: withdrawId,
+					Amount:     int64(txOut.Value),
+					Receiver:   addresses[0].EncodeAddress(),
+					Sender:     "",
+					Source:     db.ORDER_TYPE_WITHDRAWAL,
+					Status:     db.ORDER_STATUS_INIT,
+					UpdatedAt:  time.Now(),
+				}
+				utxoAmount += txOut.Value
+				vouts = append(vouts, vout)
+			}
+			err = b.state.UpdateSendOrderPending(msgOrder.TxId, msgOrder.ExternalTxId, msgOrder.WithdrawIds, &order, utxos, vins, vouts)
+			if err != nil {
+				log.Errorf("SigReceive SendOrder txid %s external id %s update send order status err: %v", msgOrder.TxId, msgOrder.ExternalTxId, err)
 				continue
 			}
 		case <-ticker.C:
@@ -378,12 +441,33 @@ func (b *BaseOrderBroadcaster) broadcastOrders() {
 		}
 
 		// update sendOrder status to pending
-		err = b.state.UpdateSendOrderPending(sendOrder.Txid, externalTxId)
+		err = b.state.UpdateSendOrderPending(sendOrder.Txid, externalTxId, nil, nil, nil, nil, nil)
 		if err != nil {
 			log.Errorf("OrderBroadcaster broadcastOrders update sendOrder status error: %v, txid: %s", err, sendOrder.Txid)
 			continue
 		}
 
+		orderBytes, err := json.Marshal(sendOrder)
+		if err != nil {
+			log.Errorf("OrderBroadcaster broadcastOrders marshal sendOrder error: %v, txid: %s", err, sendOrder.Txid)
+			continue
+		}
+		utxoBytes, err := json.Marshal(utxos)
+		if err != nil {
+			log.Errorf("OrderBroadcaster broadcastOrders marshal utxos error: %v, txid: %s", err, sendOrder.Txid)
+			continue
+		}
+		var withdrawIds []uint64
+		if sendOrder.OrderType == db.ORDER_TYPE_WITHDRAWAL {
+			withdraws, err := b.state.GetWithdrawsByOrderId(sendOrder.OrderId)
+			if err != nil {
+				log.Errorf("OrderBroadcaster broadcastOrders get withdraws error: %v, txid: %s", err, sendOrder.Txid)
+				continue
+			}
+			for _, withdraw := range withdraws {
+				withdrawIds = append(withdrawIds, withdraw.RequestId)
+			}
+		}
 		p2p.PublishMessage(context.Background(), p2p.Message[any]{
 			MessageType: p2p.MessageTypeSendOrderBroadcasted,
 			RequestId:   fmt.Sprintf("TXBROADCAST:%s:%s", config.AppConfig.RelayerAddress, sendOrder.Txid),
@@ -391,6 +475,9 @@ func (b *BaseOrderBroadcaster) broadcastOrders() {
 			Data: types.MsgSendOrderBroadcasted{
 				TxId:         sendOrder.Txid,
 				ExternalTxId: externalTxId,
+				SendOrder:    orderBytes,
+				Utxos:        utxoBytes,
+				WithdrawIds:  withdrawIds,
 			},
 		})
 

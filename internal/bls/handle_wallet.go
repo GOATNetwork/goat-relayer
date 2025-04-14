@@ -91,7 +91,7 @@ func (s *Signer) handleSigStartSendOrder(ctx context.Context, e types.MsgSignSen
 	msgWithdrawal, msgConsolidation, err := s.aggSigSendOrder(e.RequestId)
 	if err != nil {
 		log.Warnf("SigStart proposer process MsgSignSendOrder aggregate sig, request id: %s, err: %v", e.RequestId, err)
-		return nil
+		return err
 	}
 
 	if order.OrderType == db.ORDER_TYPE_WITHDRAWAL && msgWithdrawal != nil {
