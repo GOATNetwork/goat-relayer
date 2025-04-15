@@ -108,7 +108,6 @@ type DepositResult struct {
 	Address            string `gorm:"not null" json:"address"`
 	Amount             uint64 `gorm:"not null" json:"amount"`
 	BlockHash          string `gorm:"not null" json:"block_hash"`
-	Timestamp          uint64 `gorm:"not null" json:"timestamp"`
 	NeedFetchSubScript bool   `gorm:"not null;default:false;index:idx_need_fetch_sub_script" json:"need_fetch_sub_script"` // if true, need fetch sub script from BTC client, or fetch not exist utxo then save
 }
 
