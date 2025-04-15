@@ -1,7 +1,6 @@
 package state
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -231,6 +230,55 @@ func (s *State) CreateSafeboxTask(taskId uint64, partnerId string, timelockEndTi
 	return err
 }
 
+func (s *State) UpdateSafeboxTaskInitOK(taskId uint64, timelockTxid string, timelockOutIndex uint64) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
+		taskDeposit, err := s.queryProcessingSafeboxTaskByTaskId(tx, taskId)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		if err == gorm.ErrRecordNotFound {
+			return fmt.Errorf("task deposit not found")
+		}
+		if taskDeposit.Status != db.TASK_STATUS_INIT && taskDeposit.Status != db.TASK_STATUS_RECEIVED_OK && taskDeposit.Status != db.TASK_STATUS_RECEIVED && taskDeposit.Status != db.TASK_STATUS_CREATE {
+			return fmt.Errorf("task deposit status is not received or create")
+		}
+		taskDeposit.TimelockTxid = timelockTxid
+		taskDeposit.TimelockOutIndex = timelockOutIndex
+		taskDeposit.Status = db.TASK_STATUS_INIT_OK
+		taskDeposit.UpdatedAt = time.Now()
+		err = tx.Save(&taskDeposit).Error
+		if err != nil {
+			return err
+		}
+		// update sendorder status to init
+		order, err := s.getOrderByTxid(tx, timelockTxid)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		if order == nil {
+			return nil
+		}
+		if order.Status == db.ORDER_STATUS_CONFIRMED || order.Status == db.ORDER_STATUS_PROCESSED || order.Status == db.ORDER_STATUS_CLOSED {
+			return nil
+		}
+		order.Status = db.ORDER_STATUS_INIT
+		order.UpdatedAt = time.Now()
+		err = s.saveOrder(tx, order)
+		if err != nil {
+			return err
+		}
+		err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_INIT, true)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return err
+}
+
 func (s *State) UpdateSafeboxTaskInit(timelockAddress string, timelockTxid string, timelockOutIndex uint64) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
@@ -256,7 +304,7 @@ func (s *State) UpdateSafeboxTaskInit(timelockAddress string, timelockTxid strin
 }
 
 // UpdateSafeboxTaskReceivedOK update safebox task after received consensus event from contract
-func (s *State) UpdateSafeboxTaskReceivedOK(taskId uint64, fundingTxHash []byte, txOut uint64) error {
+func (s *State) UpdateSafeboxTaskReceivedOK(taskId uint64, fundingTxHash string, txOut uint64) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
@@ -271,7 +319,7 @@ func (s *State) UpdateSafeboxTaskReceivedOK(taskId uint64, fundingTxHash []byte,
 		if taskDeposit.Status != db.TASK_STATUS_RECEIVED && taskDeposit.Status != db.TASK_STATUS_CREATE {
 			return fmt.Errorf("task deposit status is not received or create")
 		}
-		taskDeposit.FundingTxid = hex.EncodeToString(fundingTxHash)
+		taskDeposit.FundingTxid = fundingTxHash
 		taskDeposit.FundingOutIndex = txOut
 		taskDeposit.Status = db.TASK_STATUS_RECEIVED_OK
 		taskDeposit.UpdatedAt = time.Now()

@@ -37,6 +37,12 @@ func DecodeBtcHash(hash string) ([]byte, error) {
 	return txid, nil
 }
 
+func EncodeBtcHash(hash []byte) (string, error) {
+	txid := slices.Clone(hash)
+	slices.Reverse(txid)
+	return hex.EncodeToString(txid), nil
+}
+
 func GetBTCNetwork(networkType string) *chaincfg.Params {
 	switch networkType {
 	case "", "mainnet":

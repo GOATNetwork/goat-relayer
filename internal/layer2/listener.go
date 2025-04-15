@@ -441,6 +441,21 @@ func (lis *Layer2Listener) filterEvmEvents(ctx context.Context, hash string) err
 				return err
 			}
 			log.Infof("Successfully handled TaskCancelled event")
+		case lis.contractTaskManagerAbi.Events["TimelockInitialized"].ID:
+			timelockInitializedEvent := abis.TaskManagerContractTimelockInitialized{}
+			err := lis.contractTaskManagerAbi.UnpackIntoInterface(&timelockInitializedEvent, "TimelockInitialized", vlog.Data)
+			if err != nil {
+				log.Errorf("failed to unpack timelock initialized event: %v", err)
+				return err
+			}
+			err = lis.handleTimelockInitialized(ctx, timelockInitializedEvent.TaskId, timelockInitializedEvent.TimelockTxHash[:], uint64(timelockInitializedEvent.TxOut))
+			if err != nil {
+				log.Errorf("failed to handle timelock initialized event: %v", err)
+				return err
+			}
+			log.Infof("Successfully handled TimelockInitialized event")
+		default:
+			log.Infof("Unknown event: %v", vlog.Topics)
 		}
 
 	}

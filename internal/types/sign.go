@@ -102,6 +102,8 @@ type TssSession struct {
 	Status           string `json:"status"`
 	Amount           uint64 `json:"amount"`
 	DepositAddress   string `json:"deposit_address"`
+	TimelockEndTime  uint64 `json:"timelock_end_time"`
+	Pubkey           []byte `json:"pubkey"`
 	FundingTxid      string `json:"funding_txid"`
 	FundingOutIndex  uint64 `json:"funding_out_index"`
 	TimelockTxid     string `json:"timelock_txid"`

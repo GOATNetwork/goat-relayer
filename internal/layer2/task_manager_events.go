@@ -13,6 +13,25 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+func (lis *Layer2Listener) handleTimelockInitialized(ctx context.Context, taskId *big.Int, timelockTxid []byte, timelockOutIndex uint64) error {
+	log.Infof("Layer2Listener handleTimelockInitialized - Event for taskId: %v", taskId)
+
+	timelockTxidStr, err := types.EncodeBtcHash(timelockTxid)
+	if err != nil {
+		log.Errorf("Layer2Listener handleTimelockInitialized - Failed to encode timelock transaction hash: %v", err)
+		return err
+	}
+
+	err = lis.state.UpdateSafeboxTaskInitOK(taskId.Uint64(), timelockTxidStr, timelockOutIndex)
+	if err != nil {
+		log.Errorf("Layer2Listener handleTimelockInitialized - Failed to update safebox task: %v", err)
+		return fmt.Errorf("failed to update safebox task: %v", err)
+	}
+
+	log.Infof("Layer2Listener handleTimelockInitialized - Successfully updated safebox task for taskId: %v", taskId)
+	return nil
+}
+
 func (lis *Layer2Listener) handleTaskCancelled(taskId *big.Int) error {
 	log.Infof("Layer2Listener handleTaskCancelled - Event for taskId: %v", taskId)
 
@@ -34,7 +53,12 @@ func (lis *Layer2Listener) handleFundsReceived(taskId *big.Int, fundingTxHash []
 		"txOut":  txOut,
 	}).Info("Layer2Listener handleFundsReceived - Retrieved funding transaction")
 
-	err := lis.state.UpdateSafeboxTaskReceivedOK(taskId.Uint64(), fundingTxHash, txOut)
+	fundingTxHashStr, err := types.EncodeBtcHash(fundingTxHash)
+	if err != nil {
+		log.Errorf("Layer2Listener handleFundsReceived - Failed to encode funding transaction hash: %v", err)
+		return err
+	}
+	err = lis.state.UpdateSafeboxTaskReceivedOK(taskId.Uint64(), fundingTxHashStr, txOut)
 	if err != nil {
 		log.Errorf("Layer2Listener handleFundsReceived - Failed to update safebox task: %v", err)
 		return err

@@ -1,9 +1,11 @@
 package safebox
 
 import (
+	"bytes"
 	"context"
 	"time"
 
+	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/types"
 )
@@ -63,16 +65,39 @@ func (s *SafeboxProcessor) handleTssSign(ctx context.Context, msg types.TssSessi
 				msg.SessionId, task.Status, err)
 			return
 		}
-		s.logger.Infof("SafeboxProcessor handleTssSign - Successfully handled TSS sign, SessionId: %s", msg.SessionId)
+		s.logger.Infof("SafeboxProcessor handleTssSign - Successfully sign task TASK_STATUS_RECEIVED, SessionId: %s", msg.SessionId)
 
 	case db.TASK_STATUS_INIT:
 		s.logger.Infof("SafeboxProcessor handleTssSign - Processing TASK_STATUS_INIT - SessionId: %s", msg.SessionId)
+		task, err = s.state.GetSafeboxTaskByTaskId(msg.TaskId)
+		if err != nil {
+			s.logger.Errorf("SafeboxProcessor handleTssSign - Failed to get task, SessionId: %s, TaskId: %d, Error: %v",
+				msg.SessionId, msg.TaskId, err)
+			return
+		}
+		timelockAddress, witnessScript, err := types.GenerateTimeLockP2WSHAddress(msg.Pubkey, time.Unix(int64(msg.TimelockEndTime), 0), types.GetBTCNetwork(config.AppConfig.BTCNetworkType))
+		if err != nil {
+			s.logger.Errorf("SafeboxProcessor handleTssSign - Failed to generate timelock address, SessionId: %s, Error: %v",
+				msg.SessionId, err)
+			return
+		}
+		if task.TimelockAddress != timelockAddress.EncodeAddress() || !bytes.Equal(task.WitnessScript, witnessScript) {
+			s.logger.Errorf("SafeboxProcessor handleTssSign - Timelock details mismatch, SessionId: %s, LocalTxid: %s, RemoteTxid: %s, LocalOutIndex: %d, RemoteOutIndex: %d",
+				msg.SessionId, task.TimelockAddress, timelockAddress, task.TimelockOutIndex, msg.TimelockOutIndex)
+			return
+		}
 		if task.TimelockTxid != msg.TimelockTxid || task.TimelockOutIndex != msg.TimelockOutIndex {
 			s.logger.Errorf("SafeboxProcessor handleTssSign - Timelock details mismatch, SessionId: %s, LocalTxid: %s, RemoteTxid: %s, LocalOutIndex: %d, RemoteOutIndex: %d",
 				msg.SessionId, task.TimelockTxid, msg.TimelockTxid, task.TimelockOutIndex, msg.TimelockOutIndex)
 			return
 		}
-
+		_, err = s.tssSigner.StartSign(ctx, msg.MessageToSign, msg.SessionId)
+		if err != nil {
+			s.logger.Errorf("SafeboxProcessor handleTssSign - Start sign failed, SessionId: %s, TaskStatus: %s, Error: %v",
+				msg.SessionId, task.Status, err)
+			return
+		}
+		s.logger.Infof("SafeboxProcessor handleTssSign - Successfully sign task TASK_STATUS_INIT, SessionId: %s", msg.SessionId)
 	case db.TASK_STATUS_CONFIRMED:
 		s.logger.Infof("SafeboxProcessor handleTssSign - Processing TASK_STATUS_CONFIRMED - SessionId: %s", msg.SessionId)
 		// TODO: check timelock tx is confirmed

@@ -163,16 +163,20 @@ func (s *SafeboxProcessor) setTssSession(task *db.SafeboxTask, messageToSign []b
 
 	s.tssStatus = true
 	s.tssSession = &types.TssSession{
-		TaskId:          task.TaskId,
-		SessionId:       uuid.New().String(),
-		SignExpiredTs:   time.Now().Unix() + 5*60,
-		MessageToSign:   messageToSign,
-		UnsignedTx:      unsignTx,
-		Status:          db.TASK_STATUS_RECEIVED,
-		Amount:          task.Amount,
-		DepositAddress:  task.DepositAddress,
-		FundingTxid:     task.FundingTxid,
-		FundingOutIndex: task.FundingOutIndex,
+		TaskId:           task.TaskId,
+		SessionId:        uuid.New().String(),
+		SignExpiredTs:    time.Now().Unix() + 5*60,
+		MessageToSign:    messageToSign,
+		UnsignedTx:       unsignTx,
+		Status:           task.Status,
+		Amount:           task.Amount,
+		TimelockEndTime:  task.TimelockEndTime,
+		Pubkey:           task.Pubkey,
+		DepositAddress:   task.DepositAddress,
+		FundingTxid:      task.FundingTxid,
+		FundingOutIndex:  task.FundingOutIndex,
+		TimelockTxid:     task.TimelockTxid,
+		TimelockOutIndex: task.TimelockOutIndex,
 	}
 
 	s.logger.Infof("Set TSS session: SessionId=%s, TaskId=%d, ExpiresAt=%d",
@@ -237,14 +241,25 @@ func (s *SafeboxProcessor) buildUnsignedTx(ctx context.Context, task *db.Safebox
 			return nil, nil, fmt.Errorf("failed to decode timelock transaction hash: %v", err)
 		}
 		copy(timelockTxHash[:], txHashBytes)
-		copy(witnessScript[0][:], task.WitnessScript[:32])
-		copy(witnessScript[1][:], task.WitnessScript[32:64])
-		copy(witnessScript[2][:], task.WitnessScript[64:96])
-		copy(witnessScript[3][:], task.WitnessScript[96:128])
-		copy(witnessScript[4][:], task.WitnessScript[128:160])
-		copy(witnessScript[5][:], task.WitnessScript[160:192])
-		copy(witnessScript[6][:], task.WitnessScript[192:224])
-		input, err = safeBoxAbi.Pack("initTimelockTx", big.NewInt(int64(task.TaskId)), timelockTxHash, uint32(task.TimelockOutIndex), uint32(task.TimelockEndTime), witnessScript)
+
+		// check witnessScript length
+		totalBytes := len(task.WitnessScript)
+		if totalBytes > 224 {
+			return nil, nil, fmt.Errorf("witness script is too long, expected at most 224 bytes, got %d", totalBytes)
+		}
+
+		// safe copy witnessScript
+		numArrays := (totalBytes + 31) / 32 // 向上取整
+		for i := 0; i < numArrays; i++ {
+			start := i * 32
+			end := start + 32
+			if end > totalBytes {
+				end = totalBytes
+			}
+			copy(witnessScript[i][:], task.WitnessScript[start:end])
+		}
+
+		input, err = safeBoxAbi.Pack("initTimelockTx", big.NewInt(int64(task.TaskId)), timelockTxHash, uint32(task.TimelockOutIndex), witnessScript)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to pack initTimelockTx input: %v", err)
 		}
