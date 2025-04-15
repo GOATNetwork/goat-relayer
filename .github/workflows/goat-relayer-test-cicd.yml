@@ -1,0 +1,69 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches:
+      - "develop"
+    paths:
+      - "**"
+
+env:
+  CLUSTER_NAME: goat-mainnet
+  ECR_REPOSITORY: goat-network
+  IMAGE_NAME: goat-relayer
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy Module
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module: [ 'goat-relayer' ]
+    environment: testnet
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4 
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
+          cache: 'true'
+
+      - name: Checkout code with full history
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Get images version
+        id: version
+        run: |
+          LAST_PUSH=$(git rev-list --count HEAD)
+          TIMES=$(TZ='Asia/Shanghai' date +'%Y%m%d')
+          VERSION=$TIMES-$LAST_PUSH
+          TAG=v$VERSION
+          echo "VERSION=$TAG" >> $GITHUB_ENV
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          MODULE_NAME: ${{ matrix.module }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY/$IMAGE_NAME:${{ env.VERSION }} -f ./Dockerfile .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY/$IMAGE_NAME:${{ env.VERSION }}
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY/$IMAGE_NAME:${{ env.VERSION }}" >> $GITHUB_OUTPUT
+          echo "image_name=$IMAGE_NAME" >>  $GITHUB_OUTPUT
+          echo "image_tag=${{ env.VERSION }}" >>  $GITHUB_OUTPUT
