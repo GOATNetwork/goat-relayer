@@ -121,7 +121,7 @@ type SafeboxTask struct {
 	TimelockEndTime  uint64    `gorm:"not null" json:"timelock_end_time"`
 	Deadline         uint64    `gorm:"not null" json:"deadline"`
 	Amount           uint64    `gorm:"not null" json:"amount"`
-	Pubkey           []byte    `gorm:"not null" json:"pubkey"`
+	Pubkey           []byte    `json:"pubkey"`
 	WitnessScript    []byte    `json:"witness_script"`
 	TimelockAddress  string    `gorm:"not null;index:timelock_address_idx" json:"timelock_address"`
 	BtcAddress       string    `gorm:"not null" json:"btc_address"`
