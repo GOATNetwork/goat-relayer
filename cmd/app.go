@@ -49,20 +49,18 @@ func NewApplication() *Application {
 	utxoService := rpc.NewUtxoServer(state, layer2Listener)
 	walletService := wallet.NewWalletServer(libP2PService, state, signer)
 	voterProcessor := voter.NewVoterProcessor(libP2PService, state, signer)
-	safeboxProcessor := safebox.NewSafeboxProcessor(state, libP2PService, layer2Listener, signer, dbm)
 
 	return &Application{
-		DatabaseManager:  dbm,
-		State:            state,
-		Signer:           signer,
-		Layer2Listener:   layer2Listener,
-		LibP2PService:    libP2PService,
-		HTTPServer:       httpServer,
-		BTCListener:      btcListener,
-		UTXOService:      utxoService,
-		WalletService:    walletService,
-		VoterProcessor:   voterProcessor,
-		SafeboxProcessor: safeboxProcessor,
+		DatabaseManager: dbm,
+		State:           state,
+		Signer:          signer,
+		Layer2Listener:  layer2Listener,
+		LibP2PService:   libP2PService,
+		HTTPServer:      httpServer,
+		BTCListener:     btcListener,
+		UTXOService:     utxoService,
+		WalletService:   walletService,
+		VoterProcessor:  voterProcessor,
 	}
 }
 
@@ -122,12 +120,6 @@ func (app *Application) Run() {
 	go func() {
 		defer wg.Done()
 		app.VoterProcessor.Start(ctx)
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		app.SafeboxProcessor.Start(ctx)
 	}()
 
 	<-stop

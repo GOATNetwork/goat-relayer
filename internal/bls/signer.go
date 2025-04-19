@@ -12,6 +12,7 @@ import (
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/layer2"
 	"github.com/goatnetwork/goat-relayer/internal/p2p"
+	"github.com/goatnetwork/goat-relayer/internal/safebox"
 	"github.com/goatnetwork/goat-relayer/internal/state"
 	goatcryp "github.com/goatnetwork/goat/pkg/crypto"
 )
@@ -25,6 +26,8 @@ type Signer struct {
 	state          *state.State
 	libp2p         *p2p.LibP2PService
 	layer2Listener *layer2.Layer2Listener
+
+	safeboxProcessor *safebox.SafeboxProcessor
 
 	sigStartCh   chan interface{}
 	sigReceiveCh chan interface{}
@@ -45,6 +48,7 @@ func NewSigner(libp2p *p2p.LibP2PService, layer2Listener *layer2.Layer2Listener,
 	pk := new(goatcryp.PublicKey).From(sk).Compress()
 	pkHex := hex.EncodeToString(pk)
 	log.Infof("Signer init, bls pk: %s, voter address: %s", pkHex, config.AppConfig.RelayerAddress)
+	safeboxProcessor := safebox.NewSafeboxProcessor(state, libp2p, layer2Listener)
 
 	// epoch := state.GetEpochVoter()
 
@@ -58,6 +62,8 @@ func NewSigner(libp2p *p2p.LibP2PService, layer2Listener *layer2.Layer2Listener,
 		libp2p:         libp2p,
 		layer2Listener: layer2Listener,
 
+		safeboxProcessor: safeboxProcessor,
+
 		sigStartCh:   make(chan interface{}, 256),
 		sigReceiveCh: make(chan interface{}, 1024),
 
@@ -69,6 +75,8 @@ func NewSigner(libp2p *p2p.LibP2PService, layer2Listener *layer2.Layer2Listener,
 func (s *Signer) Start(ctx context.Context) {
 	s.state.EventBus.Subscribe(state.SigStart, s.sigStartCh)
 	s.state.EventBus.Subscribe(state.SigReceive, s.sigReceiveCh)
+
+	go s.safeboxProcessor.Start(ctx)
 
 	go func() {
 		for {

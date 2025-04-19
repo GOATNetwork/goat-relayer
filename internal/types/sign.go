@@ -2,9 +2,29 @@ package types
 
 import (
 	"context"
+	"strings"
+	"time"
 
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
+
+const (
+	SIGN_EXPIRED_TIME = 5 * 60
+
+	SIGN_TYPE_SENDORDER_BLS = "SENDORDER:BLS"
+	SIGN_TYPE_SENDORDER_TSS = "SENDORDER:TSS"
+)
+
+// MsgSignInterface defines the interface for all MsgSign fields
+type MsgSignInterface interface {
+	CheckExpired() bool
+	GetRequestId() string
+	GetSigData() []byte
+	GetSignType() string
+	GetUnsignedTx() *ethtypes.Transaction
+	GetSignedTx() *ethtypes.Transaction
+	SetSignedTx(tx *ethtypes.Transaction)
+}
 
 type MsgSign struct {
 	RequestId    string `json:"request_id"`
@@ -13,8 +33,60 @@ type MsgSign struct {
 	VoterAddress string `json:"voter_address"`
 	IsProposer   bool   `json:"is_proposer"`
 	SigData      []byte `json:"sig_data"`
+
+	// TssSession related fields
+	UnsignedTx *ethtypes.Transaction `json:"unsigned_tx"`
+	SignedTx   *ethtypes.Transaction `json:"signed_tx"`
+
 	// SigPk        []byte `json:"sig_pk"`
 	CreateTime int64 `json:"create_time"`
+}
+
+func (m *MsgSign) CheckExpired() bool {
+	return time.Now().Unix() > m.CreateTime+SIGN_EXPIRED_TIME
+}
+
+// Implement MsgSignInterface for MsgSign
+func (m *MsgSign) GetRequestId() string {
+	if m.RequestId == "" {
+		return ""
+	}
+	return m.RequestId
+}
+
+func (m *MsgSign) GetSigData() []byte {
+	if m.SigData == nil {
+		return nil
+	}
+	return m.SigData
+}
+
+func (m *MsgSign) GetSignType() string {
+	if strings.HasPrefix(m.RequestId, SIGN_TYPE_SENDORDER_TSS) {
+		return SIGN_TYPE_SENDORDER_TSS
+	}
+	return SIGN_TYPE_SENDORDER_BLS
+}
+
+func (m *MsgSign) GetUnsignedTx() *ethtypes.Transaction {
+	if m.UnsignedTx == nil {
+		return nil
+	}
+	return m.UnsignedTx
+}
+
+func (m *MsgSign) GetSignedTx() *ethtypes.Transaction {
+	if m.SignedTx == nil {
+		return nil
+	}
+	return m.SignedTx
+}
+
+func (m *MsgSign) SetSignedTx(tx *ethtypes.Transaction) {
+	if tx == nil {
+		return
+	}
+	m.SignedTx = tx
 }
 
 type MsgSignNewBlock struct {
@@ -94,7 +166,13 @@ type MsgSignNewVoter struct {
 	VoterBlsKeyProof []byte `json:"voter_bls_key_proof"`
 }
 
-// TssSession defines the tss session for contract call
+type MsgSignSafeboxTask struct {
+	MsgSign
+
+	SafeboxTask []byte `json:"safebox_task"`
+}
+
+// Deprecated: TssSession defines the tss session for contract call
 type TssSession struct {
 	TaskId uint64 `json:"task_id"` // task id from db
 

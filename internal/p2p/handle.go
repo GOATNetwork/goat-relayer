@@ -164,7 +164,7 @@ func convertMsgData(msg Message[json.RawMessage]) any {
 	case "MsgSignNewVoter":
 		return unmarshal[types.MsgSignNewVoter](msg.Data)
 	case "MsgSafeboxTask":
-		return unmarshal[types.TssSession](msg.Data)
+		return unmarshal[types.MsgSignSafeboxTask](msg.Data)
 	}
 	return unmarshal[any](msg.Data)
 }

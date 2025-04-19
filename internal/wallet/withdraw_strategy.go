@@ -398,7 +398,7 @@ func SelectWithdrawals(withdrawals []*db.Withdraw, networkFee types.BtcNetworkFe
 //	withdrawals - all withdrawals can start
 //	networkFee - network fee
 
-func SelectSafeboxTasks(tasks []*db.SafeboxTask, networkFee types.BtcNetworkFee, maxVout, immediateCount int, net *chaincfg.Params) (selectedTaskWithdraws []*db.SafeboxTask, receiverTypes []string, withdrawAmount int64, actualPrice int64, err error) {
+func SelectSafeboxTasks(tasks []*db.SafeboxTask, networkFee types.BtcNetworkFee, maxVout, immediateCount int, net *chaincfg.Params) ([]*db.SafeboxTask, []string, int64, int64, error) {
 	if networkFee.HalfHourFee > uint64(config.AppConfig.BTCMaxNetworkFee) {
 		return nil, nil, 0, 0, fmt.Errorf("network fee is too high, cannot generate safebox timelock tx")
 	}
@@ -409,11 +409,13 @@ func SelectSafeboxTasks(tasks []*db.SafeboxTask, networkFee types.BtcNetworkFee,
 	})
 
 	selectedTasks := tasks[:immediateCount]
-	receiverTypes = make([]string, len(selectedTasks))
+	receiverTypes := make([]string, len(selectedTasks))
+	withdrawAmount := int64(0)
 	for i, task := range selectedTasks {
 		receiverTypes[i], _ = types.GetAddressType(task.TimelockAddress, net)
+		withdrawAmount += int64(task.Amount)
 	}
-	return selectedTasks, receiverTypes, int64(withdrawAmount), int64(actualPrice), nil
+	return selectedTasks, receiverTypes, withdrawAmount, int64(networkFee.HalfHourFee), nil
 }
 
 // CreateRawTransaction create raw transaction

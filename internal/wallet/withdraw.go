@@ -379,7 +379,12 @@ func (w *WalletServer) createSendOrder(tx *wire.MsgTx, orderType string, selecte
 		UpdatedAt:   time.Now(),
 	}
 
-	requestId := fmt.Sprintf("SENDORDER:%s:%s", config.AppConfig.RelayerAddress, order.OrderId)
+	var requestId string
+	if orderType == db.ORDER_TYPE_SAFEBOX {
+		requestId = fmt.Sprintf("SENDORDER:TSS:%s:%s", config.AppConfig.RelayerAddress, order.OrderId)
+	} else {
+		requestId = fmt.Sprintf("SENDORDER:BLS:%s:%s", config.AppConfig.RelayerAddress, order.OrderId)
+	}
 
 	var withdrawIds []uint64
 	var withdrawBytes []byte
@@ -390,6 +395,18 @@ func (w *WalletServer) createSendOrder(tx *wire.MsgTx, orderType string, selecte
 		}
 		for _, withdraw := range selectedWithdraws {
 			withdrawIds = append(withdrawIds, withdraw.RequestId)
+		}
+	}
+
+	var taskIds []uint64
+	var safeboxBytes []byte
+	if len(safeboxTasks) > 0 {
+		safeboxBytes, err = json.Marshal(safeboxTasks)
+		if err != nil {
+			return nil, err
+		}
+		for _, task := range safeboxTasks {
+			taskIds = append(taskIds, task.TaskId)
 		}
 	}
 
@@ -469,27 +486,23 @@ func (w *WalletServer) createSendOrder(tx *wire.MsgTx, orderType string, selecte
 			VoterAddress: epochVoter.Proposer,
 			SigData:      nil,
 		},
-		SendOrder: orderBytes,
-		Utxos:     utxoBytes,
-		Vins:      vinBytes,
-		Vouts:     voutBytes,
-		Withdraws: withdrawBytes,
-
+		SendOrder:   orderBytes,
+		Utxos:       utxoBytes,
+		Vins:        vinBytes,
+		Vouts:       voutBytes,
+		Withdraws:   withdrawBytes,
 		WithdrawIds: withdrawIds,
+
+		SafeboxTasks: safeboxBytes,
+		TaskIds:      taskIds,
+
 		WitnessSize: witnessSize,
 	}
 
 	// save
-	err = w.state.CreateSendOrder(order, selectedUtxos, selectedWithdraws, nil, vins, vouts, true)
+	err = w.state.CreateSendOrder(order, selectedUtxos, selectedWithdraws, safeboxTasks, vins, vouts, true)
 	if err != nil {
 		return nil, err
-	}
-
-	if orderType == db.ORDER_TYPE_SAFEBOX {
-		err = w.state.UpdateSafeboxTaskInit(selectedWithdraws[0].To, tx.TxID(), 0)
-		if err != nil {
-			log.Errorf("WalletServer createSendOrder UpdateSafeboxTaskInit error: %v", err)
-		}
 	}
 
 	return msgSignSendOrder, nil

@@ -87,8 +87,8 @@ func (w *WalletServer) Start(ctx context.Context, blockDoneCh chan struct{}) {
 
 func (w *WalletServer) Stop() {
 	w.once.Do(func() {
+		w.cleanWithdrawProcess()
 		close(w.blockCh)
-
 		close(w.withdrawSigFailChan)
 		close(w.withdrawSigFinishChan)
 		close(w.withdrawSigTimeoutChan)

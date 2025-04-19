@@ -3,12 +3,14 @@
 package bls
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/layer2"
@@ -18,6 +20,7 @@ import (
 	goatcryp "github.com/goatnetwork/goat/pkg/crypto"
 	bitcointypes "github.com/goatnetwork/goat/x/bitcoin/types"
 	relayertypes "github.com/goatnetwork/goat/x/relayer/types"
+	tssTypes "github.com/goatnetwork/tss/pkg/types"
 	"github.com/kelindar/bitmap"
 	log "github.com/sirupsen/logrus"
 )
@@ -42,8 +45,42 @@ func (s *Signer) handleSigStartSendOrder(ctx context.Context, e types.MsgSignSen
 	var order db.SendOrder
 	err := json.Unmarshal(e.SendOrder, &order)
 	if err != nil {
-		log.Debug("Cannot unmarshal send order from msg")
+		log.Errorf("Signer handleSigStartSendOrder - Cannot unmarshal send order from msg, request id: %s, err: %v", e.RequestId, err)
 		return err
+	}
+	// build sign
+	var sigData []byte
+	var unsignTx *ethtypes.Transaction
+	if e.GetSignType() == types.SIGN_TYPE_SENDORDER_TSS {
+		var tasks []*db.SafeboxTask
+		err := json.Unmarshal(e.SafeboxTasks, &tasks)
+		if err != nil {
+			log.Errorf("Signer handleSigStartSendOrder - Cannot unmarshal safebox task from msg, request id: %s, err: %v", e.RequestId, err)
+			return err
+		}
+		if len(tasks) != 1 {
+			log.Errorf("Signer handleSigStartSendOrder - Ignore, safebox task count is not 1, request id: %s", e.RequestId)
+			return err
+		}
+		task := tasks[0]
+
+		unsignTx, sigData, err = s.safeboxProcessor.BuildUnsignedTx(ctx, task)
+		if err != nil {
+			log.Errorf("Signer handleSigStartSendOrder - Failed to build unsigned tx, request id: %s, err: %v", e.RequestId, err)
+			return err
+		}
+		s.safeboxProcessor.SetTssSession(e.RequestId, task, sigData, unsignTx)
+		_, err = s.safeboxProcessor.GetTssSigner().StartSign(ctx, sigData, e.RequestId)
+		if err != nil {
+			log.Errorf("Signer handleSigStartSendOrder - Failed to start TSS sign: %v", err)
+			// reset TSS status, because TSS signing session failed to start
+			s.safeboxProcessor.ResetTssAndSession(ctx)
+			log.Infof("Signer handleSigStartSendOrder - Reset TSS status due to failed StartSign call")
+			return err
+		}
+		log.Infof("Signer handleSigStartSendOrder - Start TSS sign ok, request id: %s", e.RequestId)
+	} else {
+		sigData = s.makeSigSendOrder(order.OrderType, e.WithdrawIds, e.WitnessSize, order.NoWitnessTx, order.TxFee)
 	}
 
 	// build sign
@@ -54,17 +91,18 @@ func (s *Signer) handleSigStartSendOrder(ctx context.Context, e types.MsgSignSen
 			Epoch:        e.Epoch,
 			IsProposer:   true,
 			VoterAddress: s.address, // proposer address
-			SigData:      s.makeSigSendOrder(order.OrderType, e.WithdrawIds, e.WitnessSize, order.NoWitnessTx, order.TxFee),
-			CreateTime:   time.Now().Unix(),
+			SigData:      sigData,
+			CreateTime:   e.CreateTime,
 		},
-		SendOrder: e.SendOrder,
-		Utxos:     e.Utxos,
-		Vins:      e.Vins,
-		Vouts:     e.Vouts,
-		Withdraws: e.Withdraws,
-
-		WithdrawIds: e.WithdrawIds,
-		WitnessSize: e.WitnessSize,
+		SendOrder:    e.SendOrder,
+		Utxos:        e.Utxos,
+		Vins:         e.Vins,
+		Vouts:        e.Vouts,
+		Withdraws:    e.Withdraws,
+		WithdrawIds:  e.WithdrawIds,
+		SafeboxTasks: e.SafeboxTasks,
+		TaskIds:      e.TaskIds,
+		WitnessSize:  e.WitnessSize,
 	}
 
 	// p2p broadcast
@@ -87,37 +125,37 @@ func (s *Signer) handleSigStartSendOrder(ctx context.Context, e types.MsgSignSen
 	s.sigMu.Unlock()
 	log.Infof("SigStart broadcast MsgSignSendOrder ok, request id: %s", e.RequestId)
 
-	// If voters count is 1, should submit soon
-	msgWithdrawal, msgConsolidation, err := s.aggSigSendOrder(e.RequestId)
-	if err != nil {
-		log.Warnf("SigStart proposer process MsgSignSendOrder aggregate sig, request id: %s, err: %v", e.RequestId, err)
-		return err
-	}
+	// // If voters count is 1, should submit soon
+	// msgWithdrawal, msgConsolidation, err := s.aggSigSendOrder(e.RequestId)
+	// if err != nil {
+	// 	log.Warnf("SigStart proposer process MsgSignSendOrder aggregate sig, request id: %s, err: %v", e.RequestId, err)
+	// 	return err
+	// }
 
-	if order.OrderType == db.ORDER_TYPE_WITHDRAWAL && msgWithdrawal != nil {
-		newProposal := layer2.NewProposal[*bitcointypes.MsgProcessWithdrawalV2](s.layer2Listener)
-		err = newProposal.RetrySubmit(ctx, e.RequestId, msgWithdrawal, config.AppConfig.L2SubmitRetry)
-		if err != nil {
-			log.Errorf("SigStart proposer submit MsgSignSendOrder to RPC error, request id: %s, err: %v", e.RequestId, err)
-			s.removeSigMap(e.RequestId, false)
-			return err
-		}
-		log.Infof("SigStart proposer submit MsgSignSendOrder to RPC ok, request id: %s", e.RequestId)
-	} else if msgConsolidation != nil {
-		newProposal := layer2.NewProposal[*bitcointypes.MsgNewConsolidation](s.layer2Listener)
-		err = newProposal.RetrySubmit(ctx, e.RequestId, msgConsolidation, config.AppConfig.L2SubmitRetry)
-		if err != nil {
-			log.Errorf("SigStart proposer submit MsgSignSendOrder to RPC error, request id: %s, err: %v", e.RequestId, err)
-			s.removeSigMap(e.RequestId, false)
-			return err
-		}
-		log.Infof("SigStart proposer submit MsgSignSendOrder to RPC ok, request id: %s", e.RequestId)
-	}
+	// if order.OrderType == db.ORDER_TYPE_WITHDRAWAL && msgWithdrawal != nil {
+	// 	newProposal := layer2.NewProposal[*bitcointypes.MsgProcessWithdrawalV2](s.layer2Listener)
+	// 	err = newProposal.RetrySubmit(ctx, e.RequestId, msgWithdrawal, config.AppConfig.L2SubmitRetry)
+	// 	if err != nil {
+	// 		log.Errorf("SigStart proposer submit MsgSignSendOrder to RPC error, request id: %s, err: %v", e.RequestId, err)
+	// 		s.removeSigMap(e.RequestId, false)
+	// 		return err
+	// 	}
+	// 	log.Infof("SigStart proposer submit MsgSignSendOrder to RPC ok, request id: %s", e.RequestId)
+	// } else if msgConsolidation != nil {
+	// 	newProposal := layer2.NewProposal[*bitcointypes.MsgNewConsolidation](s.layer2Listener)
+	// 	err = newProposal.RetrySubmit(ctx, e.RequestId, msgConsolidation, config.AppConfig.L2SubmitRetry)
+	// 	if err != nil {
+	// 		log.Errorf("SigStart proposer submit MsgSignSendOrder to RPC error, request id: %s, err: %v", e.RequestId, err)
+	// 		s.removeSigMap(e.RequestId, false)
+	// 		return err
+	// 	}
+	// 	log.Infof("SigStart proposer submit MsgSignSendOrder to RPC ok, request id: %s", e.RequestId)
+	// }
 
-	s.removeSigMap(e.RequestId, false)
+	// s.removeSigMap(e.RequestId, false)
 
 	// feedback SigFinish
-	s.state.EventBus.Publish(state.SigFinish, e)
+	// s.state.EventBus.Publish(state.SigFinish, e)
 	return nil
 }
 
@@ -132,47 +170,15 @@ func (s *Signer) handleSigReceiveSendOrder(ctx context.Context, e types.MsgSignS
 
 	epochVoter := s.state.GetEpochVoter()
 	if isProposer {
-		// collect voter sig
-		if e.IsProposer {
-			return nil
-		}
-
-		s.sigMu.Lock()
-		voteMap, ok := s.sigMap[e.RequestId]
-		if !ok {
-			s.sigMu.Unlock()
-			return fmt.Errorf("sig receive send order proposer process no sig found, request id: %s", e.RequestId)
-		}
-		_, ok = voteMap[e.VoterAddress]
-		if ok {
-			s.sigMu.Unlock()
-			log.Debugf("SigReceive send order proposer process voter multi receive, request id: %s, voter address: %s", e.RequestId, e.VoterAddress)
-			return nil
-		}
-		voteMap[e.VoterAddress] = e
-		s.sigMu.Unlock()
-
-		// UNCHECK aggregate
-		msgWithdrawal, msgConsolidation, err := s.aggSigSendOrder(e.RequestId)
-		if err != nil {
-			log.Warnf("SigReceive send order proposer process aggregate sig, request id: %s, err: %v", e.RequestId, err)
-			return nil
-		}
-
-		// withdrawal && consolidation both submit to layer2, this
-		if msgWithdrawal != nil {
-			newProposal := layer2.NewProposal[*bitcointypes.MsgProcessWithdrawalV2](s.layer2Listener)
-			err = newProposal.RetrySubmit(ctx, e.RequestId, msgWithdrawal, config.AppConfig.L2SubmitRetry)
+		if e.GetSignType() == types.SIGN_TYPE_SENDORDER_TSS {
+			err := s.submitSendOrderToContract(ctx, e, isProposer)
 			if err != nil {
-				log.Errorf("SigReceive send withdrawal proposer submit NewBlock to RPC error, request id: %s, err: %v", e.RequestId, err)
 				s.removeSigMap(e.RequestId, false)
 				return err
 			}
-		} else if msgConsolidation != nil {
-			newProposal := layer2.NewProposal[*bitcointypes.MsgNewConsolidation](s.layer2Listener)
-			err = newProposal.RetrySubmit(ctx, e.RequestId, msgConsolidation, config.AppConfig.L2SubmitRetry)
+		} else {
+			err := s.submitSendOrderToLayer2(ctx, e, isProposer)
 			if err != nil {
-				log.Errorf("SigReceive send consolidation proposer submit NewBlock to RPC error, request id: %s, err: %v", e.RequestId, err)
 				s.removeSigMap(e.RequestId, false)
 				return err
 			}
@@ -272,6 +278,45 @@ func (s *Signer) handleSigReceiveSendOrder(ctx context.Context, e types.MsgSignS
 		}
 
 		// build sign
+		var sigData []byte
+		if e.GetSignType() == types.SIGN_TYPE_SENDORDER_TSS {
+			sigData = e.SigData
+			if len(safeboxTasks) != 1 {
+				log.Errorf("Signer handleSigReceiveSendOrder - Ignore, safebox task count is not 1, request id: %s", e.RequestId)
+				return err
+			}
+			task := safeboxTasks[0]
+			taskInDb, err := s.state.GetSafeboxTaskByTaskId(task.TaskId)
+			if err != nil {
+				log.Errorf("Signer handleSigReceiveSendOrder - Failed to get safebox task, request id: %s, err: %v", e.RequestId, err)
+				return err
+			}
+			timelockAddress, witnessScript, err := types.GenerateTimeLockP2WSHAddress(taskInDb.Pubkey, time.Unix(int64(taskInDb.TimelockEndTime), 0), types.GetBTCNetwork(config.AppConfig.BTCNetworkType))
+			if err != nil {
+				log.Errorf("Signer handleSigReceiveSendOrder - Failed to generate timelock address, request id: %s, err: %v", e.RequestId, err)
+				return err
+			}
+			if task.TimelockAddress != timelockAddress.EncodeAddress() || !bytes.Equal(task.WitnessScript, witnessScript) {
+				log.Errorf("Signer handleSigReceiveSendOrder - Timelock details mismatch, SessionId: %s, LocalAddress: %s, RemoteAddress: %s, LocalOutIndex: %d, RemoteOutIndex: %d",
+					e.RequestId, timelockAddress, task.TimelockAddress, taskInDb.TimelockOutIndex, task.TimelockOutIndex)
+				return err
+			}
+			if task.TimelockTxid != taskInDb.TimelockTxid || task.TimelockOutIndex != taskInDb.TimelockOutIndex {
+				log.Errorf("Signer handleSigReceiveSendOrder - Timelock details mismatch, SessionId: %s, LocalTxid: %s, RemoteTxid: %s, LocalOutIndex: %d, RemoteOutIndex: %d",
+					e.RequestId, taskInDb.TimelockTxid, task.TimelockTxid, taskInDb.TimelockOutIndex, task.TimelockOutIndex)
+				return err
+			}
+			s.safeboxProcessor.SetTssSession(e.RequestId, taskInDb, sigData, e.UnsignedTx)
+			_, err = s.safeboxProcessor.GetTssSigner().StartSign(ctx, sigData, e.RequestId)
+			if err != nil {
+				log.Errorf("Signer handleSigReceiveSendOrder - Failed to start TSS sign: %v", err)
+				return err
+			}
+			log.Infof("Signer handleSigReceiveSendOrder - Start TSS sign ok, request id: %s", e.RequestId)
+		} else {
+			sigData = s.makeSigSendOrder(order.OrderType, e.WithdrawIds, e.WitnessSize, order.NoWitnessTx, order.TxFee)
+		}
+
 		newSign := &types.MsgSignSendOrder{
 			MsgSign: types.MsgSign{
 				RequestId:    e.RequestId,
@@ -279,16 +324,18 @@ func (s *Signer) handleSigReceiveSendOrder(ctx context.Context, e types.MsgSignS
 				Epoch:        e.Epoch,
 				IsProposer:   false,
 				VoterAddress: s.address, // voter address
-				SigData:      s.makeSigSendOrder(order.OrderType, e.WithdrawIds, e.WitnessSize, order.NoWitnessTx, order.TxFee),
-				CreateTime:   time.Now().Unix(),
+				SigData:      sigData,
+				CreateTime:   e.CreateTime,
 			},
-			SendOrder: e.SendOrder,
-			Utxos:     e.Utxos,
-			Vins:      e.Vins,
-			Vouts:     e.Vouts,
-			Withdraws: e.Withdraws,
-
-			WithdrawIds: e.WithdrawIds,
+			SendOrder:    e.SendOrder,
+			Utxos:        e.Utxos,
+			Vins:         e.Vins,
+			Vouts:        e.Vouts,
+			Withdraws:    e.Withdraws,
+			WithdrawIds:  e.WithdrawIds,
+			SafeboxTasks: e.SafeboxTasks,
+			TaskIds:      e.TaskIds,
+			WitnessSize:  e.WitnessSize,
 		}
 
 		// p2p broadcast
@@ -436,4 +483,125 @@ func (s *Signer) aggSigSendOrder(requestId string) (*bitcointypes.MsgProcessWith
 		}
 		return nil, &msgConsolidation, nil
 	}
+}
+
+func (s *Signer) submitSendOrderToLayer2(ctx context.Context, e types.MsgSignSendOrder, isProposer bool) error {
+	// collect voter sig
+	if e.IsProposer {
+		return nil
+	}
+
+	s.sigMu.Lock()
+	voteMap, ok := s.sigMap[e.RequestId]
+	if !ok {
+		s.sigMu.Unlock()
+		return fmt.Errorf("sig receive send order proposer process no sig found, request id: %s", e.RequestId)
+	}
+	_, ok = voteMap[e.VoterAddress]
+	if ok {
+		s.sigMu.Unlock()
+		log.Debugf("SigReceive send order proposer process voter multi receive, request id: %s, voter address: %s", e.RequestId, e.VoterAddress)
+		return nil
+	}
+	voteMap[e.VoterAddress] = e
+	s.sigMu.Unlock()
+
+	// UNCHECK aggregate
+	msgWithdrawal, msgConsolidation, err := s.aggSigSendOrder(e.RequestId)
+	if err != nil {
+		log.Warnf("SigReceive send order proposer process aggregate sig, request id: %s, err: %v", e.RequestId, err)
+		return nil
+	}
+
+	// withdrawal && consolidation both submit to layer2, this
+	if msgWithdrawal != nil {
+		newProposal := layer2.NewProposal[*bitcointypes.MsgProcessWithdrawalV2](s.layer2Listener)
+		err = newProposal.RetrySubmit(ctx, e.RequestId, msgWithdrawal, config.AppConfig.L2SubmitRetry)
+		if err != nil {
+			log.Errorf("SigReceive send withdrawal proposer submit NewBlock to RPC error, request id: %s, err: %v", e.RequestId, err)
+			return err
+		}
+	} else if msgConsolidation != nil {
+		newProposal := layer2.NewProposal[*bitcointypes.MsgNewConsolidation](s.layer2Listener)
+		err = newProposal.RetrySubmit(ctx, e.RequestId, msgConsolidation, config.AppConfig.L2SubmitRetry)
+		if err != nil {
+			log.Errorf("SigReceive send consolidation proposer submit NewBlock to RPC error, request id: %s, err: %v", e.RequestId, err)
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Signer) submitSendOrderToContract(ctx context.Context, e types.MsgSignSendOrder, isProposer bool) error {
+	// in sign window, query tss sign status
+	tssSession := s.safeboxProcessor.GetTssSession()
+	if tssSession == nil {
+		log.Errorf("TSS session is nil")
+		return fmt.Errorf("tss session is nil")
+	}
+
+	err := s.safeboxProcessor.CheckTssStatus(ctx)
+	if err != nil {
+		log.Infof("SafeboxProcessor process - TSS sign status not ready, RequestId: %s, err: %v", tssSession.GetRequestId(), err)
+		return err
+	}
+
+	log.Infof("SafeboxProcessor process - Querying TSS sign status, RequestId: %s", tssSession.GetRequestId())
+
+	// retry query tss sign status
+	var resp *tssTypes.EvmSignQueryResponse
+	for i := 0; i <= config.AppConfig.L2SubmitRetry; i++ {
+		// add 2 seconds delay
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second * 2):
+		}
+
+		resp, err = s.safeboxProcessor.GetTssSigner().QuerySignResult(ctx, tssSession.GetRequestId())
+		if err != nil {
+			log.Warnf("SafeboxProcessor process - Failed to query TSS sign status, attempt %d: %v, RequestId: %s", i+1, err, tssSession.GetRequestId())
+			continue
+		}
+
+		if resp == nil {
+			log.Warnf("SafeboxProcessor process - Query response is nil, attempt %d, RequestId: %s", i+1, tssSession.GetRequestId())
+			continue
+		}
+
+		if resp.Signature == nil {
+			log.Warnf("SafeboxProcessor process - No signature received yet, attempt %d, RequestId: %s", i+1, tssSession.GetRequestId())
+			continue
+		}
+
+		// Only proceed with applying signature if we have a valid one
+		unsignedTx := tssSession.GetUnsignedTx()
+		if unsignedTx == nil {
+			log.Errorf("SafeboxProcessor process - Unsigned transaction is nil, RequestId: %s", tssSession.GetRequestId())
+			return fmt.Errorf("unsigned transaction is nil")
+		}
+
+		signedTx, err := s.safeboxProcessor.GetTssSigner().ApplySignResult(ctx, unsignedTx, resp.Signature)
+		if err != nil {
+			log.Errorf("SafeboxProcessor process - Failed to apply TSS sign result: %v, RequestId: %s", err, tssSession.GetRequestId())
+			return err
+		}
+
+		// Set the signed transaction in the session
+		tssSession.SetSignedTx(signedTx)
+
+		// Submit signed tx to contract
+		err = s.safeboxProcessor.SendRawTx(ctx, signedTx)
+		if err != nil {
+			log.Errorf("SafeboxProcessor process - Failed to send signed transaction: %v, RequestId: %s", err, tssSession.GetRequestId())
+			return err
+		}
+	}
+
+	if resp == nil || resp.Signature == nil {
+		log.Errorf("SafeboxProcessor process - Failed to get valid signature after %d retries, RequestId: %s", config.AppConfig.L2SubmitRetry, tssSession.GetRequestId())
+		return fmt.Errorf("failed to get valid signature after %d retries", config.AppConfig.L2SubmitRetry)
+	}
+
+	return nil
 }

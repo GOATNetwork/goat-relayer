@@ -118,7 +118,7 @@ func (s *State) CreateSendOrder(order *db.SendOrder, selectedUtxos []*db.Utxo, s
 					return err
 				}
 				if isProposer {
-					if taskInDb.Status != db.TASK_STATUS_CONFIRMED_OK {
+					if taskInDb.Status != db.TASK_STATUS_RECEIVED_OK {
 						return fmt.Errorf("safebox task status can not be make timelock tx, task id: %d, status: %s", taskInDb.TaskId, taskInDb.Status)
 					}
 					err = tx.Model(&db.SafeboxTask{}).Where("id = ?", taskInDb.ID).Updates(&db.SafeboxTask{
@@ -133,10 +133,10 @@ func (s *State) CreateSendOrder(order *db.SendOrder, selectedUtxos []*db.Utxo, s
 					}
 				} else {
 					// voter perhaps receipt multiple orders with the same withdraw
-					if taskInDb.Status != db.TASK_STATUS_CONFIRMED_OK && taskInDb.Status != db.TASK_STATUS_INIT {
+					if taskInDb.Status != db.TASK_STATUS_RECEIVED_OK && taskInDb.Status != db.TASK_STATUS_INIT {
 						return fmt.Errorf("safebox task status can not be make timelock tx, task id: %d, status: %s", taskInDb.TaskId, taskInDb.Status)
 					}
-					if taskInDb.Status == db.TASK_STATUS_CONFIRMED_OK || taskInDb.Status == db.TASK_STATUS_INIT {
+					if taskInDb.Status == db.TASK_STATUS_RECEIVED_OK || taskInDb.Status == db.TASK_STATUS_INIT {
 						err = tx.Model(&db.SafeboxTask{}).Where("id = ?", taskInDb.ID).Updates(&db.SafeboxTask{
 							Status:       db.TASK_STATUS_INIT,
 							OrderId:      order.OrderId,
@@ -705,6 +705,12 @@ func (s *State) CleanProcessingWithdrawByOrderId(orderId string) error {
 		if err != nil {
 			return err
 		}
+
+		// restore safebox task from received to init
+		err = s.updateSafeboxTaskStatusByOrderId(tx, db.TASK_STATUS_RECEIVED_OK, order.OrderId, db.TASK_STATUS_INIT)
+		if err != nil {
+			return err
+		}
 		return nil
 	})
 	return err
@@ -762,6 +768,12 @@ func (s *State) CleanProcessingWithdraw() error {
 
 				// restore withdraw from aggregating to create
 				err = s.updateWithdrawStatusByOrderId(tx, db.WITHDRAW_STATUS_CREATE, order.OrderId, db.WITHDRAW_STATUS_AGGREGATING)
+				if err != nil {
+					return err
+				}
+
+				// restore safebox task from received to init
+				err = s.updateSafeboxTaskStatusByOrderId(tx, db.TASK_STATUS_RECEIVED_OK, order.OrderId, db.TASK_STATUS_INIT)
 				if err != nil {
 					return err
 				}
@@ -1103,6 +1115,23 @@ func (s *State) updateWithdrawStatusByStatuses(tx *gorm.DB, newStatus string, ra
 	err := tx.Model(&db.Withdraw{}).Where("status in (?)", rawStatuses).Updates(&db.Withdraw{Status: newStatus, UpdatedAt: time.Now()}).Error
 	if err != nil {
 		log.Errorf("State updateWithdrawStatusByStatuses Withdraw by raw status: %v, new status: %s, error: %v", rawStatuses, newStatus, err)
+		return err
+	}
+	return nil
+}
+
+func (s *State) updateSafeboxTaskStatusByOrderId(tx *gorm.DB, status string, orderId string, rawStatuses ...string) error {
+	if tx == nil {
+		tx = s.dbm.GetWalletDB()
+	}
+	var err error
+	if len(rawStatuses) == 0 {
+		err = tx.Model(&db.SafeboxTask{}).Where("order_id = ?", orderId).Updates(&db.SafeboxTask{Status: status, UpdatedAt: time.Now()}).Error
+	} else {
+		err = tx.Model(&db.SafeboxTask{}).Where("order_id = ? and status in (?)", orderId, rawStatuses).Updates(&db.SafeboxTask{Status: status, UpdatedAt: time.Now()}).Error
+	}
+	if err != nil {
+		log.Errorf("State updateSafeboxTaskStatusByOrderId SafeboxTask by order id: %s, status: %s, error: %v", orderId, status, err)
 		return err
 	}
 	return nil

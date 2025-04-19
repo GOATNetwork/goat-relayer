@@ -110,7 +110,8 @@ func (lis *Layer2Listener) handleTaskCreated(ctx context.Context, taskId *big.In
 
 	timelockP2WSHAddress, witnessScript, err := types.GenerateTimeLockP2WSHAddress(pubkey, time.Unix(int64(task.TimelockEndTime), 0), types.GetBTCNetwork(config.AppConfig.BTCNetworkType))
 	if err != nil {
-		log.Fatalf("Gen P2WPKH address from pubkey %s and timelock %d err %v", pubkey, task.TimelockEndTime, err)
+		log.Errorf("Layer2Listener handleTaskCreated - Ignore invalid safebox task for generating timelock-P2WSH address from pubkey %s and timelock %d error: %v", pubkey, task.TimelockEndTime, err)
+		return nil
 	}
 	timelockAddress := timelockP2WSHAddress.EncodeAddress()
 
