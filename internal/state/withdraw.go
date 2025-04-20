@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,17 +14,18 @@ type WithdrawStateStore interface {
 	CleanProcessingWithdraw() error
 	CloseWithdraw(id uint, reason string) error
 	CreateWithdrawal(sender string, receiver string, block, id, txPrice, amount uint64) error
-	CreateSendOrder(order *db.SendOrder, selectedUtxos []*db.Utxo, selectedWithdraws []*db.Withdraw, vins []*db.Vin, vouts []*db.Vout, isProposer bool) error
+	CreateSendOrder(order *db.SendOrder, selectedUtxos []*db.Utxo, selectedWithdraws []*db.Withdraw, safeboxTasks []*db.SafeboxTask, vins []*db.Vin, vouts []*db.Vout, isProposer bool) error
 	RecoverSendOrder(order *db.SendOrder, vins []*db.Vin, vouts []*db.Vout, withdrawIds []uint64) error
 	UpdateWithdrawInitialized(txid string, pid uint64) error
 	UpdateWithdrawFinalized(txid string, pid uint64) error
 	UpdateWithdrawReplace(id, txPrice uint64) error
 	UpdateWithdrawCanceling(id uint64) error
 	UpdateSendOrderInitlized(txid string, externalTxId string) error
-	UpdateSendOrderPending(txid string, externalTxId string) error
+	UpdateSendOrderPending(txid string, externalTxId string, withdrawIds []uint64, sendOrder *db.SendOrder, utxos []*db.Utxo, vins []*db.Vin, vouts []*db.Vout) error
 	UpdateSendOrderConfirmed(txid string, blockHeight uint64) error
 	GetWithdrawsCanStart() ([]*db.Withdraw, error)
 	GetWithdrawsCanceling() ([]*db.Withdraw, error)
+	GetWithdrawsByOrderId(orderId string) ([]*db.Withdraw, error)
 	GetSendOrderInitlized() ([]*db.SendOrder, error)
 	GetSendOrderPending(limit int) ([]*db.SendOrder, error)
 	GetLatestWithdrawSendOrderConfirmed() (*db.SendOrder, error)
@@ -67,11 +69,11 @@ func (s *State) CreateWithdrawal(sender string, receiver string, block, id, txPr
 		CreatedAt: time.Now(),
 	}
 
-	return s.saveWithdraw(withdraw)
+	return s.saveWithdraw(nil, withdraw)
 }
 
 // CreateSendOrder, create a send order when start withdrawal or consolidation
-func (s *State) CreateSendOrder(order *db.SendOrder, selectedUtxos []*db.Utxo, selectedWithdraws []*db.Withdraw, vins []*db.Vin, vouts []*db.Vout, isProposer bool) error {
+func (s *State) CreateSendOrder(order *db.SendOrder, selectedUtxos []*db.Utxo, selectedWithdraws []*db.Withdraw, safeboxTasks []*db.SafeboxTask, vins []*db.Vin, vouts []*db.Vout, isProposer bool) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
@@ -95,25 +97,56 @@ func (s *State) CreateSendOrder(order *db.SendOrder, selectedUtxos []*db.Utxo, s
 			if err = tx.Where("txid = ? and out_index = ?", utxo.Txid, utxo.OutIndex).Order("id desc").First(&utxoInDb).Error; err != nil {
 				return err
 			}
-			if isProposer {
-				if utxoInDb.Status == db.UTXO_STATUS_UNCONFIRM || utxoInDb.Status == db.UTXO_STATUS_PENDING || utxoInDb.Status == db.UTXO_STATUS_SPENT {
-					return fmt.Errorf("utxo status can not be make withdrawal or consolidation, utxo id: %d, status: %s", utxoInDb.ID, utxoInDb.Status)
-				}
-				err = tx.Model(&db.Utxo{}).Where("id = ?", utxoInDb.ID).Updates(&db.Utxo{Status: db.UTXO_STATUS_PENDING, UpdatedAt: time.Now()}).Error
-				if err != nil {
-					log.Errorf("State CreateSendOrder update utxo records error: %v", err)
+			// utxo status can not be make withdrawal or consolidation
+			// don't need to check proposer or voter
+			// both role should clean processing withdraw
+			if utxoInDb.Status == db.UTXO_STATUS_UNCONFIRM || utxoInDb.Status == db.UTXO_STATUS_PENDING || utxoInDb.Status == db.UTXO_STATUS_SPENT {
+				return fmt.Errorf("utxo status can not be make withdrawal or consolidation, utxo id: %d, status: %s", utxoInDb.ID, utxoInDb.Status)
+			}
+			err = tx.Model(&db.Utxo{}).Where("id = ?", utxoInDb.ID).Updates(&db.Utxo{Status: db.UTXO_STATUS_PENDING, UpdatedAt: time.Now()}).Error
+			if err != nil {
+				log.Errorf("State CreateSendOrder update utxo records error: %v", err)
+				return err
+			}
+		}
+
+		// update safebox task status
+		if order.OrderType == db.ORDER_TYPE_SAFEBOX {
+			for _, task := range safeboxTasks {
+				var taskInDb db.SafeboxTask
+				if err = tx.Where("task_id = ?", task.TaskId).First(&taskInDb).Error; err != nil {
 					return err
 				}
-			} else {
-				// voter perhaps receipt multiple orders with the same withdraw
-				if utxoInDb.Status == db.UTXO_STATUS_UNCONFIRM || utxoInDb.Status == db.UTXO_STATUS_SPENT {
-					return fmt.Errorf("utxo status can not be make withdrawal or consolidation, utxo id: %d, status: %s", utxoInDb.ID, utxoInDb.Status)
-				}
-				if utxoInDb.Status != db.UTXO_STATUS_PENDING {
-					err = tx.Model(&db.Utxo{}).Where("id = ?", utxoInDb.ID).Updates(&db.Utxo{Status: db.UTXO_STATUS_PENDING, UpdatedAt: time.Now()}).Error
+				if isProposer {
+					if taskInDb.Status != db.TASK_STATUS_RECEIVED_OK {
+						return fmt.Errorf("safebox task status can not be make timelock tx, task id: %d, status: %s", taskInDb.TaskId, taskInDb.Status)
+					}
+					err = tx.Model(&db.SafeboxTask{}).Where("id = ?", taskInDb.ID).Updates(&db.SafeboxTask{
+						Status:       db.TASK_STATUS_INIT,
+						OrderId:      order.OrderId,
+						TimelockTxid: order.Txid,
+						UpdatedAt:    time.Now(),
+					}).Error
 					if err != nil {
-						log.Errorf("State CreateSendOrder update utxo records error: %v", err)
+						log.Errorf("State CreateSendOrder update safebox task records error: %v", err)
 						return err
+					}
+				} else {
+					// voter perhaps receipt multiple orders with the same withdraw
+					if taskInDb.Status != db.TASK_STATUS_RECEIVED_OK && taskInDb.Status != db.TASK_STATUS_INIT {
+						return fmt.Errorf("safebox task status can not be make timelock tx, task id: %d, status: %s", taskInDb.TaskId, taskInDb.Status)
+					}
+					if taskInDb.Status == db.TASK_STATUS_RECEIVED_OK || taskInDb.Status == db.TASK_STATUS_INIT {
+						err = tx.Model(&db.SafeboxTask{}).Where("id = ?", taskInDb.ID).Updates(&db.SafeboxTask{
+							Status:       db.TASK_STATUS_INIT,
+							OrderId:      order.OrderId,
+							TimelockTxid: order.Txid,
+							UpdatedAt:    time.Now(),
+						}).Error
+						if err != nil {
+							log.Errorf("State CreateSendOrder update safebox task records error: %v", err)
+							return err
+						}
 					}
 				}
 			}
@@ -198,7 +231,7 @@ func (s *State) RecoverSendOrder(order *db.SendOrder, vins []*db.Vin, vouts []*d
 			withdrawInDb.OrderId = order.OrderId
 			withdrawInDb.Txid = order.Txid
 			withdrawInDb.UpdatedAt = time.Now()
-			err = s.saveWithdraw(withdrawInDb)
+			err = s.saveWithdraw(tx, withdrawInDb)
 			if err != nil {
 				return err
 			}
@@ -265,7 +298,7 @@ func (s *State) UpdateWithdrawReplace(id, txPrice uint64) error {
 
 	// RBF will with higher txPrice, so no need to notify stop aggregating
 
-	return s.saveWithdraw(withdraw)
+	return s.saveWithdraw(nil, withdraw)
 }
 
 // UpdateWithdrawCanceling, update withdraw status to canceling
@@ -288,7 +321,7 @@ func (s *State) UpdateWithdrawCanceling(id uint64) error {
 
 	// NOTE check stop aggregating order if there is aggregating status withdraw, set to closed
 
-	return s.saveWithdraw(withdraw)
+	return s.saveWithdraw(nil, withdraw)
 }
 
 // UpdateWithdrawCanceled, update withdraw status to closed
@@ -309,7 +342,7 @@ func (s *State) UpdateWithdrawCanceled(id uint64) error {
 	withdraw.Status = db.WITHDRAW_STATUS_CLOSED
 	withdraw.Reason = "canceled"
 	withdraw.UpdatedAt = time.Now()
-	return s.saveWithdraw(withdraw)
+	return s.saveWithdraw(nil, withdraw)
 }
 
 // UpdateSendOrderInitlized
@@ -347,7 +380,7 @@ func (s *State) UpdateSendOrderInitlized(txid string, externalTxId string) error
 
 // UpdateSendOrderPending
 // when a withdrawal or consolidation request is confirmed, save to confirmed
-func (s *State) UpdateSendOrderPending(txid string, externalTxId string) error {
+func (s *State) UpdateSendOrderPending(txid string, externalTxId string, withdrawIds []uint64, sendOrder *db.SendOrder, utxos []*db.Utxo, vins []*db.Vin, vouts []*db.Vout) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
@@ -356,8 +389,66 @@ func (s *State) UpdateSendOrderPending(txid string, externalTxId string) error {
 		if err != nil && err != gorm.ErrRecordNotFound {
 			return err
 		}
-		if order == nil {
-			return nil
+		if order == nil || err == gorm.ErrRecordNotFound {
+			// recover order, vins, vouts
+			if sendOrder == nil || len(utxos) == 0 || len(vins) == 0 || len(vouts) == 0 {
+				return errors.New("send order, utxos, vins, vouts is nil")
+			}
+			sendOrder.ID = 0
+			order = sendOrder
+			err = s.saveOrder(tx, order)
+			if err != nil {
+				return err
+			}
+			for _, utxo := range utxos {
+				utxoInDb, err := s.getUtxo(tx, utxo.Txid, utxo.OutIndex)
+				if err != nil {
+					return err
+				}
+				if utxoInDb.Status == db.UTXO_STATUS_PENDING || utxoInDb.Status == db.UTXO_STATUS_SPENT || utxoInDb.Status == db.UTXO_STATUS_UNCONFIRM {
+					return errors.New("utxo status is not valid")
+				}
+				utxoInDb.Status = db.UTXO_STATUS_PENDING
+				utxoInDb.UpdatedAt = time.Now()
+				err = s.saveUtxo(tx, utxoInDb)
+				if err != nil {
+					return err
+				}
+
+			}
+			for _, vin := range vins {
+				vin.ID = 0
+				vin.OrderId = sendOrder.OrderId
+				err = s.saveVin(tx, vin)
+				if err != nil {
+					return err
+				}
+			}
+			for _, withdrawId := range withdrawIds {
+				withdrawInDb, err := s.getWithdrawByRequestId(tx, withdrawId)
+				if err != nil && err != gorm.ErrRecordNotFound {
+					return err
+				}
+				if withdrawInDb.Status == db.WITHDRAW_STATUS_AGGREGATING || withdrawInDb.Status == db.WITHDRAW_STATUS_CREATE {
+					withdrawInDb.OrderId = sendOrder.OrderId
+					withdrawInDb.Txid = txid
+					withdrawInDb.Status = db.WITHDRAW_STATUS_INIT
+					err = s.saveWithdraw(tx, withdrawInDb)
+					if err != nil {
+						return err
+					}
+				} else {
+					return errors.New("withdraw status is not valid")
+				}
+			}
+			for _, vout := range vouts {
+				vout.ID = 0
+				vout.OrderId = sendOrder.OrderId
+				err = s.saveVout(tx, vout)
+				if err != nil {
+					return err
+				}
+			}
 		}
 		if order.Status == db.ORDER_STATUS_CONFIRMED || order.Status == db.ORDER_STATUS_PROCESSED || order.Status == db.ORDER_STATUS_CLOSED {
 			return nil
@@ -561,6 +652,70 @@ func (s *State) UpdateWithdrawFinalized(txid string, pid uint64) error {
 	return err
 }
 
+func (s *State) CleanProcessingWithdrawByOrderId(orderId string) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
+		order, err := s.getOrderByOrderId(tx, orderId)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		if order == nil {
+			return nil
+		}
+		if order.Status != db.ORDER_STATUS_AGGREGATING {
+			return nil
+		}
+		order.Status = db.ORDER_STATUS_CLOSED
+		order.UpdatedAt = time.Now()
+
+		err = s.saveOrder(tx, order)
+		if err != nil {
+			return err
+		}
+
+		// update UTXO from pending to processed by vins
+		vins, err := s.getVinsByOrderId(tx, order.OrderId)
+		if err != nil {
+			return err
+		}
+		for _, vin := range vins {
+			var utxoInDb db.Utxo
+			if err = tx.Where("txid = ? and out_index = ?", vin.Txid, vin.OutIndex).First(&utxoInDb).Error; err != nil {
+				continue
+			}
+			if utxoInDb.Status != db.UTXO_STATUS_PENDING {
+				continue
+			}
+			err = tx.Model(&db.Utxo{}).Where("id = ?", utxoInDb.ID).Updates(&db.Utxo{Status: db.UTXO_STATUS_PROCESSED, UpdatedAt: time.Now()}).Error
+			if err != nil {
+				log.Errorf("State CleanProcessingWithdraw update utxo txid %s - out %d error: %v", utxoInDb.Txid, utxoInDb.OutIndex, err)
+				return err
+			}
+		}
+
+		err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_CLOSED, true)
+		if err != nil {
+			return err
+		}
+
+		// restore withdraw from aggregating to create
+		err = s.updateWithdrawStatusByOrderId(tx, db.WITHDRAW_STATUS_CREATE, order.OrderId, db.WITHDRAW_STATUS_AGGREGATING)
+		if err != nil {
+			return err
+		}
+
+		// restore safebox task from received to init
+		err = s.updateSafeboxTaskStatusByOrderId(tx, db.TASK_STATUS_RECEIVED_OK, order.OrderId, db.TASK_STATUS_INIT)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return err
+}
+
 // CleanProcessingWithdraw, clean all status "aggregating" orders and related withdraws
 func (s *State) CleanProcessingWithdraw() error {
 	s.walletMu.Lock()
@@ -616,6 +771,12 @@ func (s *State) CleanProcessingWithdraw() error {
 				if err != nil {
 					return err
 				}
+
+				// restore safebox task from received to init
+				err = s.updateSafeboxTaskStatusByOrderId(tx, db.TASK_STATUS_RECEIVED_OK, order.OrderId, db.TASK_STATUS_INIT)
+				if err != nil {
+					return err
+				}
 				return nil
 			}
 		}
@@ -662,6 +823,19 @@ func (s *State) GetWithdrawsCanceling() ([]*db.Withdraw, error) {
 		}
 		return nil, nil
 	}
+	return withdraws, nil
+}
+
+func (s *State) GetWithdrawsByOrderId(orderId string) ([]*db.Withdraw, error) {
+	s.walletMu.RLock()
+	defer s.walletMu.RUnlock()
+
+	var withdraws []*db.Withdraw
+	result := s.dbm.GetWalletDB().Where("order_id = ?", orderId).Order("id asc").Find(&withdraws)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
 	return withdraws, nil
 }
 
@@ -885,8 +1059,11 @@ func (s *State) getWithdrawByStatuses(tx *gorm.DB, orderBy string, statuses ...s
 	return withdraws, nil
 }
 
-func (s *State) saveWithdraw(withdraw *db.Withdraw) error {
-	result := s.dbm.GetWalletDB().Save(withdraw)
+func (s *State) saveWithdraw(tx *gorm.DB, withdraw *db.Withdraw) error {
+	if tx == nil {
+		tx = s.dbm.GetWalletDB()
+	}
+	result := tx.Save(withdraw)
 	if result.Error != nil {
 		log.Errorf("State saveWithdraw error: %v", result.Error)
 		return result.Error
@@ -938,6 +1115,23 @@ func (s *State) updateWithdrawStatusByStatuses(tx *gorm.DB, newStatus string, ra
 	err := tx.Model(&db.Withdraw{}).Where("status in (?)", rawStatuses).Updates(&db.Withdraw{Status: newStatus, UpdatedAt: time.Now()}).Error
 	if err != nil {
 		log.Errorf("State updateWithdrawStatusByStatuses Withdraw by raw status: %v, new status: %s, error: %v", rawStatuses, newStatus, err)
+		return err
+	}
+	return nil
+}
+
+func (s *State) updateSafeboxTaskStatusByOrderId(tx *gorm.DB, status string, orderId string, rawStatuses ...string) error {
+	if tx == nil {
+		tx = s.dbm.GetWalletDB()
+	}
+	var err error
+	if len(rawStatuses) == 0 {
+		err = tx.Model(&db.SafeboxTask{}).Where("order_id = ?", orderId).Updates(&db.SafeboxTask{Status: status, UpdatedAt: time.Now()}).Error
+	} else {
+		err = tx.Model(&db.SafeboxTask{}).Where("order_id = ? and status in (?)", orderId, rawStatuses).Updates(&db.SafeboxTask{Status: status, UpdatedAt: time.Now()}).Error
+	}
+	if err != nil {
+		log.Errorf("State updateSafeboxTaskStatusByOrderId SafeboxTask by order id: %s, status: %s, error: %v", orderId, status, err)
 		return err
 	}
 	return nil

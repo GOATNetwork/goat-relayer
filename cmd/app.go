@@ -15,6 +15,7 @@ import (
 	"github.com/goatnetwork/goat-relayer/internal/layer2"
 	"github.com/goatnetwork/goat-relayer/internal/p2p"
 	"github.com/goatnetwork/goat-relayer/internal/rpc"
+	"github.com/goatnetwork/goat-relayer/internal/safebox"
 	"github.com/goatnetwork/goat-relayer/internal/state"
 	"github.com/goatnetwork/goat-relayer/internal/voter"
 	"github.com/goatnetwork/goat-relayer/internal/wallet"
@@ -22,16 +23,17 @@ import (
 )
 
 type Application struct {
-	DatabaseManager *db.DatabaseManager
-	State           *state.State
-	Signer          *bls.Signer
-	Layer2Listener  *layer2.Layer2Listener
-	HTTPServer      *http.HTTPServer
-	LibP2PService   *p2p.LibP2PService
-	BTCListener     *btc.BTCListener
-	UTXOService     *rpc.UtxoServer
-	WalletService   *wallet.WalletServer
-	VoterProcessor  *voter.VoterProcessor
+	DatabaseManager  *db.DatabaseManager
+	State            *state.State
+	Signer           *bls.Signer
+	Layer2Listener   *layer2.Layer2Listener
+	HTTPServer       *http.HTTPServer
+	LibP2PService    *p2p.LibP2PService
+	BTCListener      *btc.BTCListener
+	UTXOService      *rpc.UtxoServer
+	WalletService    *wallet.WalletServer
+	VoterProcessor   *voter.VoterProcessor
+	SafeboxProcessor *safebox.SafeboxProcessor
 }
 
 func NewApplication() *Application {

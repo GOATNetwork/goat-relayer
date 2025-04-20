@@ -391,6 +391,33 @@ func SelectWithdrawals(withdrawals []*db.Withdraw, networkFee types.BtcNetworkFe
 	return nil, nil, 0, 0, fmt.Errorf("no withdrawals found that meet the conditions")
 }
 
+// SelectSafeboxTxs select optimal safebox txs for safebox tx
+//
+// Parameters:
+//
+//	withdrawals - all withdrawals can start
+//	networkFee - network fee
+
+func SelectSafeboxTasks(tasks []*db.SafeboxTask, networkFee types.BtcNetworkFee, maxVout, immediateCount int, net *chaincfg.Params) ([]*db.SafeboxTask, []string, int64, int64, error) {
+	if networkFee.HalfHourFee > uint64(config.AppConfig.BTCMaxNetworkFee) {
+		return nil, nil, 0, 0, fmt.Errorf("network fee is too high, cannot generate safebox timelock tx")
+	}
+
+	// sort safebox tasks by deadline in ascending order
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].Deadline < tasks[j].Deadline
+	})
+
+	selectedTasks := tasks[:immediateCount]
+	receiverTypes := make([]string, len(selectedTasks))
+	withdrawAmount := int64(0)
+	for i, task := range selectedTasks {
+		receiverTypes[i], _ = types.GetAddressType(task.TimelockAddress, net)
+		withdrawAmount += int64(task.Amount)
+	}
+	return selectedTasks, receiverTypes, withdrawAmount, int64(networkFee.HalfHourFee), nil
+}
+
 // CreateRawTransaction create raw transaction
 //
 // Parameters:
@@ -409,6 +436,7 @@ func SelectWithdrawals(withdrawals []*db.Withdraw, networkFee types.BtcNetworkFe
 func CreateRawTransaction(
 	utxos []*db.Utxo,
 	withdrawals []*db.Withdraw,
+	tasks []*db.SafeboxTask,
 	changeAddress string,
 	changeAmount int64,
 	estimatedFee float64,
@@ -461,6 +489,18 @@ func CreateRawTransaction(
 		// re-set TxFee field
 		withdrawal.TxFee = withdrawal.Amount - uint64(val)
 		tx.AddTxOut(wire.NewTxOut(val, pkScript))
+	}
+
+	for _, task := range tasks {
+		addr, err := btcutil.DecodeAddress(task.TimelockAddress, net)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		pkScript, err := txscript.PayToAddrScript(addr)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		tx.AddTxOut(wire.NewTxOut(int64(task.Amount), pkScript))
 	}
 
 	val := int64(changeAmount) - changeFee

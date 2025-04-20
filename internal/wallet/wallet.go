@@ -24,6 +24,7 @@ type WalletServer struct {
 	// after sig, it can start a new sig 2 blocks later
 	sigMu                        sync.Mutex
 	sigStatus                    bool
+	lastProposerAddress          string
 	sigFinishHeight              uint64
 	finalizeWithdrawStatus       bool
 	finalizeWithdrawFinishHeight uint64
@@ -59,6 +60,8 @@ func NewWalletServer(libp2p *p2p.LibP2PService, st *state.State, signer *bls.Sig
 		orderBroadcaster: NewOrderBroadcaster(btcClient, st),
 		blockCh:          make(chan interface{}, state.BTC_BLOCK_CHAN_LENGTH),
 
+		lastProposerAddress: "",
+
 		withdrawSigFailChan:    make(chan interface{}, 10),
 		withdrawSigFinishChan:  make(chan interface{}, 10),
 		withdrawSigTimeoutChan: make(chan interface{}, 10),
@@ -84,8 +87,8 @@ func (w *WalletServer) Start(ctx context.Context, blockDoneCh chan struct{}) {
 
 func (w *WalletServer) Stop() {
 	w.once.Do(func() {
+		w.cleanWithdrawProcess()
 		close(w.blockCh)
-
 		close(w.withdrawSigFailChan)
 		close(w.withdrawSigFinishChan)
 		close(w.withdrawSigTimeoutChan)

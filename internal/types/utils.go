@@ -37,6 +37,12 @@ func DecodeBtcHash(hash string) ([]byte, error) {
 	return txid, nil
 }
 
+func EncodeBtcHash(hash []byte) (string, error) {
+	txid := slices.Clone(hash)
+	slices.Reverse(txid)
+	return hex.EncodeToString(txid), nil
+}
+
 func GetBTCNetwork(networkType string) *chaincfg.Params {
 	switch networkType {
 	case "", "mainnet":
@@ -170,6 +176,21 @@ func GenerateV0P2WSHAddress(pubKey []byte, evmAddress string, net *chaincfg.Para
 	}
 
 	return p2wsh, nil
+}
+
+func GenerateTimeLockP2WSHAddress(pubKey []byte, lockTime time.Time, net *chaincfg.Params) (*btcutil.AddressWitnessScriptHash, []byte, error) {
+	witnessScript, err := BuildTimeLockScriptForP2WSH(pubKey, lockTime, net)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	witnessProg := sha256.Sum256(witnessScript)
+	p2wsh, err := btcutil.NewAddressWitnessScriptHash(witnessProg[:], net)
+	if err != nil {
+		return nil, witnessScript, fmt.Errorf("failed to create timelock p2wsh address: %v", err)
+	}
+
+	return p2wsh, witnessScript, nil
 }
 
 func GenerateSPVProof(txHash string, txHashes []string) ([]byte, []byte, int, error) {
@@ -317,6 +338,23 @@ func BuildSubScriptForP2WSH(evmAddress string, pubKey []byte) ([]byte, error) {
 
 	subScript, err := txscript.NewScriptBuilder().
 		AddData(addr).
+		AddOp(txscript.OP_DROP).
+		AddData(posPubkey.SerializeCompressed()).
+		AddOp(txscript.OP_CHECKSIG).Script()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build subscript: %v", err)
+	}
+	return subScript, nil
+}
+
+func BuildTimeLockScriptForP2WSH(pubKey []byte, lockTime time.Time, net *chaincfg.Params) ([]byte, error) {
+	posPubkey, err := btcec.ParsePubKey(pubKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse public key: %v", err)
+	}
+	subScript, err := txscript.NewScriptBuilder().
+		AddInt64(lockTime.Unix()).
+		AddOp(txscript.OP_CHECKLOCKTIMEVERIFY).
 		AddOp(txscript.OP_DROP).
 		AddData(posPubkey.SerializeCompressed()).
 		AddOp(txscript.OP_CHECKSIG).Script()

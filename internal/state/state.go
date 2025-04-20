@@ -39,6 +39,7 @@ var (
 	_ WalletStateStore        = (*State)(nil)
 	_ WithdrawStateStore      = (*State)(nil)
 	_ ConsolidationStateStore = (*State)(nil)
+	_ SafeboxTaskStateStore   = (*State)(nil)
 )
 
 // InitializeState initializes the state by reading from the DB

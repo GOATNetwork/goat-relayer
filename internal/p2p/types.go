@@ -23,4 +23,5 @@ const (
 	MessageTypeWithdrawFinalize
 	MessageTypeSendOrderBroadcasted
 	MessageTypeNewVoter
+	MessageTypeSafeboxTask
 )

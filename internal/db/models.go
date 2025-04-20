@@ -3,8 +3,8 @@ package db
 import (
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/goatnetwork/goat-relayer/internal/models"
+	log "github.com/sirupsen/logrus"
 )
 
 // L2SyncStatus model
@@ -109,6 +109,28 @@ type DepositResult struct {
 	Amount             uint64 `gorm:"not null" json:"amount"`
 	BlockHash          string `gorm:"not null" json:"block_hash"`
 	NeedFetchSubScript bool   `gorm:"not null;default:false;index:idx_need_fetch_sub_script" json:"need_fetch_sub_script"` // if true, need fetch sub script from BTC client, or fetch not exist utxo then save
+}
+
+// SafeboxTask model, it save safebox task data from layer2 events
+type SafeboxTask struct {
+	ID               uint      `gorm:"primaryKey" json:"id"`
+	TaskId           uint64    `gorm:"not null;uniqueIndex:unique_task_id_idx,unique" json:"task_id"`
+	PartnerId        string    `gorm:"not null" json:"partner_id"`
+	DepositAddress   string    `gorm:"not null;index:deposit_address_idx" json:"deposit_address"`
+	TimelockEndTime  uint64    `gorm:"not null" json:"timelock_end_time"`
+	Deadline         uint64    `gorm:"not null" json:"deadline"`
+	Amount           uint64    `gorm:"not null" json:"amount"`
+	Pubkey           []byte    `json:"pubkey"`
+	WitnessScript    []byte    `json:"witness_script"`
+	TimelockAddress  string    `gorm:"not null;index:timelock_address_idx" json:"timelock_address"`
+	BtcAddress       string    `gorm:"not null" json:"btc_address"`
+	FundingTxid      string    `gorm:"not null;index:funding_txid_out_index" json:"funding_txid"`
+	FundingOutIndex  uint64    `gorm:"not null;index:funding_txid_out_index" json:"funding_out_index"`
+	TimelockTxid     string    `gorm:"not null;index:timelock_txid_out_index" json:"timelock_txid"`
+	TimelockOutIndex uint64    `gorm:"not null;index:timelock_txid_out_index" json:"timelock_out_index"`
+	Status           string    `gorm:"not null" json:"status"`
+	OrderId          string    `gorm:"index:safeboxtask_orderid_index" json:"order_id"` // update when signing, it always can be query from SendOrder by BTC txid
+	UpdatedAt        time.Time `gorm:"not null" json:"updated_at"`
 }
 
 // Withdraw model (for managing withdrawals)
@@ -237,7 +259,7 @@ func (dm *DatabaseManager) autoMigrate() {
 	if err := dm.btcLightDb.AutoMigrate(&BtcBlock{}); err != nil {
 		log.Fatalf("Failed to migrate database 3: %v", err)
 	}
-	if err := dm.walletDb.AutoMigrate(&models.Utxo{}, &Withdraw{}, &SendOrder{}, &Vin{}, &Vout{}, &DepositResult{}); err != nil {
+	if err := dm.walletDb.AutoMigrate(&models.Utxo{}, &Withdraw{}, &SendOrder{}, &Vin{}, &Vout{}, &DepositResult{}, &SafeboxTask{}); err != nil {
 		log.Fatalf("Failed to migrate database 4: %v", err)
 	}
 	if err := dm.btcCacheDb.AutoMigrate(&BtcSyncStatus{}, &BtcBlockData{}, &BtcTXOutput{}, &Deposit{}); err != nil {
