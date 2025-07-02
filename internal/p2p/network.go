@@ -13,6 +13,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/multiformats/go-multiaddr"
@@ -104,6 +105,14 @@ func NewNetwork(state *state.State) (*Network, error) {
 	// display pubkey
 	displayPublicKey(host)
 
+	// Register protocol handler
+	host.SetStreamHandler(protocol.ID(ProtocolID), func(stream network.Stream) {
+		defer stream.Close()
+		logger.Debugf("Received protocol stream from %s", stream.Conn().RemotePeer())
+		// For now, just acknowledge the protocol support
+		// In the future, this could handle direct peer-to-peer communication
+	})
+
 	ctx := context.Background()
 	ps, err := pubsub.NewGossipSub(ctx, host,
 		pubsub.WithMessageSignaturePolicy(pubsub.StrictSign),
@@ -137,6 +146,13 @@ func NewNetwork(state *state.State) (*Network, error) {
 	logger.Infof("P2P network initialized with PubSub. Node ID: %s", n.host.ID())
 	for _, addr := range n.host.Addrs() {
 		logger.Infof("Listening on: %s/p2p/%s", addr, n.host.ID())
+	}
+
+	// Log external address if configured
+	if externalAddr := os.Getenv("EXTERNAL_P2P_ADDR"); externalAddr != "" {
+		logger.Infof("External P2P address configured: %s/p2p/%s", externalAddr, n.host.ID())
+	} else {
+		logger.Warnf("EXTERNAL_P2P_ADDR not configured. Other nodes may not be able to connect to this bootnode.")
 	}
 
 	return n, nil
@@ -300,22 +316,34 @@ func (n *Network) GetPeers() []peer.ID {
 
 // verifyPeerProtocol verifies if a peer supports our protocol
 func (n *Network) verifyPeerProtocol(ctx context.Context, peerID peer.ID) bool {
-	protocols, err := n.host.Peerstore().GetProtocols(peerID)
-	if err != nil {
-		n.logger.Errorf("Failed to get protocols for peer %s: %v", peerID, err)
-		return false
-	}
-
-	for _, proto := range protocols {
-		if string(proto) == ProtocolID {
-			return true
+	// First check if the peer is in our topic (PubSub-based communication)
+	if n.topic != nil {
+		topicPeers := n.topic.ListPeers()
+		for _, topicPeer := range topicPeers {
+			if topicPeer == peerID {
+				n.logger.Debugf("Peer %s is in our topic, considering it compatible", peerID)
+				return true
+			}
 		}
 	}
 
-	// Try to connect and see if the peer supports our protocol
+	// Check if the peer has our protocol in their peerstore
+	protocols, err := n.host.Peerstore().GetProtocols(peerID)
+	if err != nil {
+		n.logger.Debugf("Failed to get protocols for peer %s: %v", peerID, err)
+	} else {
+		for _, proto := range protocols {
+			if string(proto) == ProtocolID {
+				n.logger.Debugf("Peer %s supports our protocol %s", peerID, ProtocolID)
+				return true
+			}
+		}
+	}
+
+	// Try to establish a stream connection to verify protocol support
 	stream, err := n.host.NewStream(ctx, peerID, protocol.ID(ProtocolID))
 	if err != nil {
-		n.logger.Errorf("Peer %s does not support protocol %s: %v", peerID, ProtocolID, err)
+		n.logger.Debugf("Peer %s does not support protocol %s: %v", peerID, ProtocolID, err)
 		return false
 	}
 	stream.Close()
@@ -343,10 +371,20 @@ func (n *Network) startHeartbeat() {
 			// If no peers connected, try to reconnect to bootstrap peers
 			if len(peers) == 0 {
 				n.logger.Warnf("No peers connected, attempting to reconnect to bootstrap peers...")
-				if len(strings.Split(config.AppConfig.Libp2pBootNodes, ",")) > 0 {
+				bootNodeAddrs := strings.Split(config.AppConfig.Libp2pBootNodes, ",")
+				validAddrs := []string{}
+				for _, addr := range bootNodeAddrs {
+					addr = strings.TrimSpace(addr)
+					if addr != "" {
+						validAddrs = append(validAddrs, addr)
+					}
+				}
+				if len(validAddrs) > 0 {
 					if err := n.connectToBootstrapPeers(n.ctx); err != nil {
 						n.logger.Errorf("Failed to reconnect to bootstrap peers: %v", err)
 					}
+				} else {
+					n.logger.Warnf("No valid bootstrap peer addresses configured for reconnection")
 				}
 			} else {
 				unixnano := time.Now().UnixNano()
@@ -364,8 +402,23 @@ func (n *Network) startHeartbeat() {
 // connectToBootstrapPeers connects to the provided bootstrap peers
 func (n *Network) connectToBootstrapPeers(ctx context.Context) error {
 	successfulConnections := 0
+	bootNodeAddrs := strings.Split(config.AppConfig.Libp2pBootNodes, ",")
 
-	for _, peerAddr := range strings.Split(config.AppConfig.Libp2pBootNodes, ",") {
+	// Check if we have any valid bootstrap addresses
+	validAddrs := []string{}
+	for _, addr := range bootNodeAddrs {
+		addr = strings.TrimSpace(addr)
+		if addr != "" {
+			validAddrs = append(validAddrs, addr)
+		}
+	}
+
+	if len(validAddrs) == 0 {
+		n.logger.Warnf("No valid bootstrap peer addresses configured. Set LIBP2P_BOOT_NODES environment variable to connect to other nodes.")
+		return fmt.Errorf("no valid bootstrap peer addresses configured")
+	}
+
+	for _, peerAddr := range validAddrs {
 		addr, err := multiaddr.NewMultiaddr(peerAddr)
 		if err != nil {
 			n.logger.Errorf("Failed to parse bootstrap peer address %s: %v", peerAddr, err)
@@ -380,6 +433,7 @@ func (n *Network) connectToBootstrapPeers(ctx context.Context) error {
 
 		// Skip self connection
 		if peerInfo.ID == n.host.ID() {
+			n.logger.Debugf("Skipping self connection to bootstrap peer: %s", peerInfo.ID)
 			continue
 		}
 
@@ -391,17 +445,17 @@ func (n *Network) connectToBootstrapPeers(ctx context.Context) error {
 			continue
 		}
 
-		// Verify the peer supports our protocol
+		// Try to verify the peer supports our protocol, but don't disconnect if it doesn't
+		// as PubSub communication might still work
 		verifyCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		if !n.verifyPeerProtocol(verifyCtx, peerInfo.ID) {
-			n.logger.Errorf("Bootstrap peer %s does not support our protocol %s, disconnecting", peerInfo.ID, ProtocolID)
-			n.host.Network().ClosePeer(peerInfo.ID)
-			cancel()
-			continue
+		if n.verifyPeerProtocol(verifyCtx, peerInfo.ID) {
+			n.logger.Infof("Successfully connected to bootstrap peer: %s with protocol support", peerInfo.ID)
+		} else {
+			n.logger.Warnf("Bootstrap peer %s does not support our protocol %s, but keeping connection for PubSub", peerInfo.ID, ProtocolID)
 		}
 		cancel()
 
-		n.logger.Infof("Successfully connected to bootstrap peer: %s with protocol support", peerInfo.ID)
+		n.logger.Infof("Successfully connected to bootstrap peer: %s", peerInfo.ID)
 		successfulConnections++
 	}
 
