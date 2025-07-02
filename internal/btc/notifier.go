@@ -59,10 +59,26 @@ func NewBTCNotifier(client *rpcclient.Client, poller *BTCPoller) *BTCNotifier {
 		log.Infof("New btc notify reindex blocks are %v", reindexBlocks)
 	}
 
-	syncStatus := db.BtcSyncStatus{
-		ConfirmedHeight: int64(config.AppConfig.BTCStartHeight - 1),
-		UnconfirmHeight: int64(config.AppConfig.BTCStartHeight - 1),
-		UpdatedAt:       time.Now(),
+	var syncStatus *db.BtcSyncStatus
+	resultQuery, err := poller.state.GetBtcSyncStatus()
+	if err != nil && err == gorm.ErrRecordNotFound {
+		syncStatus, err = poller.state.CreateBtcSyncStatus(int64(config.AppConfig.BTCStartHeight-1), int64(config.AppConfig.BTCStartHeight-1))
+		if err != nil {
+			log.Errorf("New btc notify failed to create sync status: %v", err)
+		}
+		log.Info("New btc notify sync status not found, create one")
+	} else if err == nil {
+		syncStatus = resultQuery
+		// check btc light db latest block
+		confirmedBlock, err := poller.state.GetLatestConfirmedBtcBlock()
+		if err != nil {
+			log.Warnf("New btc notify sync status GetLatestConfirmedBtcBlock error: %v", err)
+		}
+		if confirmedBlock != nil && confirmedBlock.Height < uint64(syncStatus.ConfirmedHeight) {
+			syncStatus.ConfirmedHeight = int64(confirmedBlock.Height)
+			syncStatus.UpdatedAt = time.Now()
+			log.Warnf("New btc notify sync status set confirmed height to %d", confirmedBlock.Height)
+		}
 	}
 
 	confirmedBlock, err := poller.state.GetLatestConfirmedBtcBlock()
@@ -83,7 +99,7 @@ func NewBTCNotifier(client *rpcclient.Client, poller *BTCPoller) *BTCNotifier {
 		currentHeight:  uint64(maxBlockHeight + 1),
 		reindexBlocks:  reindexBlocks,
 		catchingStatus: true,
-		syncStatus:     &syncStatus,
+		syncStatus:     syncStatus,
 		poller:         poller,
 		feeFetcher:     NewMemPoolFeeFetcher(client),
 	}
@@ -253,6 +269,11 @@ func (bn *BTCNotifier) saveSyncStatus(newSyncHeight, confirmedHeight int64) {
 
 	bn.syncStatus.ConfirmedHeight = newSyncHeight
 	bn.syncStatus.UpdatedAt = time.Now()
+
+	err := bn.poller.state.SaveBtcSyncStatus(bn.syncStatus)
+	if err != nil {
+		log.Errorf("Failed to save sync status: %v", err)
+	}
 
 	if newSyncHeight >= confirmedHeight {
 		bn.poller.state.UpdateBtcSyncing(false)
