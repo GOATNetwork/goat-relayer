@@ -228,7 +228,7 @@ func (n *Network) handlePubSubMessages() {
 		case MessageTypeSafeboxTask:
 			n.state.EventBus.Publish(state.SafeboxTask, convertMsgData(receivedMsg))
 		case MessageTypeHeartbeat:
-			n.logger.Infof("💓 Received heartbeat from %s: %s", msg.From, unmarshal[string](receivedMsg.Data))
+			n.logger.Infof("💓 Received heartbeat from %s: %s", msg.GetFrom().String(), unmarshal[string](receivedMsg.Data))
 		default:
 			log.Warnf("Unknown message type: %d", receivedMsg.MessageType)
 		}
