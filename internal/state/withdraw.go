@@ -429,6 +429,10 @@ func (s *State) UpdateSendOrderPending(txid string, externalTxId string, withdra
 				if err != nil && err != gorm.ErrRecordNotFound {
 					return err
 				}
+				if err != nil {
+					log.Errorf("State UpdateSendOrderPending get withdraw by request id error: %v", err)
+					return err
+				}
 				if withdrawInDb.Status == db.WITHDRAW_STATUS_AGGREGATING || withdrawInDb.Status == db.WITHDRAW_STATUS_CREATE {
 					withdrawInDb.OrderId = sendOrder.OrderId
 					withdrawInDb.Txid = txid
