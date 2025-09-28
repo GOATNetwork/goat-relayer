@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/goatnetwork/goat-relayer/internal/awsutil"
 	"github.com/goatnetwork/goat-relayer/internal/bls"
 	"github.com/goatnetwork/goat-relayer/internal/btc"
 	"github.com/goatnetwork/goat-relayer/internal/config"
@@ -39,17 +40,31 @@ type Application struct {
 
 func NewApplication() *Application {
 	config.InitConfig()
-	// create bitcoin client using btc module connection
-	connConfig := &rpcclient.ConnConfig{
-		Host:         config.AppConfig.BTCRPC,
-		User:         config.AppConfig.BTCRPC_USER,
-		Pass:         config.AppConfig.BTCRPC_PASS,
-		HTTPPostMode: true,
-		DisableTLS:   true,
+
+	connConfig, err := BuildBTCConnConfig(config.AppConfig)
+	if err != nil {
+		log.Fatalf("Failed to build BTC RPC configuration: %v", err)
 	}
 	btcClient, err := rpcclient.New(connConfig, nil)
 	if err != nil {
 		log.Fatalf("Failed to start bitcoin client: %v", err)
+	}
+
+	if config.AppConfig.BTCAWSSigV4 {
+		if err := awsutil.AttachSigV4Signer(
+			btcClient,
+			config.AppConfig.BTCAWSRegion,
+			config.AppConfig.BTCAWSService,
+			config.AppConfig.BTCRPC_USER,
+			config.AppConfig.BTCRPC_PASS,
+			os.Getenv("AWS_SESSION_TOKEN"),
+		); err != nil {
+			log.Fatalf("Failed to enable AWS SigV4 signing: %v", err)
+		}
+
+		if err := awsutil.PrimeBitcoindBackendVersion(btcClient); err != nil {
+			log.Fatalf("Failed to detect bitcoind version: %v", err)
+		}
 	}
 
 	dbm := db.NewDatabaseManager()

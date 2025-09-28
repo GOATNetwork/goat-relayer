@@ -32,6 +32,9 @@ func InitConfig() {
 	viper.SetDefault("BTC_MAX_NETWORK_FEE", 500)
 	viper.SetDefault("BTC_MAX_RANGE", 50)
 	viper.SetDefault("BTC_REINDEX_BLOCKS", "")
+	viper.SetDefault("BTC_AWS_SIGV4", false)
+	viper.SetDefault("BTC_AWS_REGION", "us-east-1")
+	viper.SetDefault("BTC_AWS_SERVICE", "managedblockchain")
 	viper.SetDefault("CONTRACT_TASK_MANAGER", "0x6827D591faDa19A1274Df0Ab2608901AaaEA14C9")
 	viper.SetDefault("L2_RPC", "http://localhost:8545")
 	viper.SetDefault("L2_JWT_SECRET", "")
@@ -84,6 +87,9 @@ func InitConfig() {
 		BTCRPC:                 viper.GetString("BTC_RPC"),
 		BTCRPC_USER:            viper.GetString("BTC_RPC_USER"),
 		BTCRPC_PASS:            viper.GetString("BTC_RPC_PASS"),
+		BTCAWSSigV4:            viper.GetBool("BTC_AWS_SIGV4"),
+		BTCAWSRegion:           viper.GetString("BTC_AWS_REGION"),
+		BTCAWSService:          viper.GetString("BTC_AWS_SERVICE"),
 		BTCStartHeight:         viper.GetInt("BTC_START_HEIGHT"),
 		BTCReindexBlocks:       viper.GetString("BTC_REINDEX_BLOCKS"),
 		BTCConfirmations:       viper.GetInt("BTC_CONFIRMATIONS"),
@@ -142,6 +148,9 @@ type Config struct {
 	BTCRPC                 string
 	BTCRPC_USER            string
 	BTCRPC_PASS            string
+	BTCAWSSigV4            bool
+	BTCAWSRegion           string
+	BTCAWSService          string
 	BTCStartHeight         int
 	BTCConfirmations       int
 	BTCNetworkType         string
