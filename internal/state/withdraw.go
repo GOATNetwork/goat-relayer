@@ -888,7 +888,7 @@ func (s *State) GetSendOrderByTxIdOrExternalId(id string) (*db.SendOrder, error)
 	return sendOrder, nil
 }
 
-// GetLatestSendOrderConfirmed get confirmed send order
+// GetLatestWithdrawSendOrderConfirmed get latest confirmed withdraw send order
 func (s *State) GetLatestWithdrawSendOrderConfirmed() (*db.SendOrder, error) {
 	s.walletMu.RLock()
 	defer s.walletMu.RUnlock()
