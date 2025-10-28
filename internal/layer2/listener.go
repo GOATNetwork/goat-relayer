@@ -432,7 +432,7 @@ func (lis *Layer2Listener) filterEvmEvents(ctx context.Context, hash string) err
 				log.Errorf("failed to unpack funds received event: %v", err)
 				return err
 			}
-			err = lis.handleFundsReceived(fundsReceivedEvent.TaskId, fundsReceivedEvent.FundingTxHash[:], uint64(fundsReceivedEvent.TxOut))
+			err = lis.handleFundsReceived(fundsReceivedEvent.TaskId, fundsReceivedEvent.FundingTxHash[:], uint64(fundsReceivedEvent.TxOut), uint64(fundsReceivedEvent.TimelockEndTime))
 			if err != nil {
 				log.Errorf("failed to handle funds received event: %v", err)
 				return err
