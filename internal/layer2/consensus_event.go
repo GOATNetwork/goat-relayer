@@ -387,7 +387,7 @@ func (lis *Layer2Listener) processNewDeposit(block uint64, attributes []abcitype
 		log.Errorf("Abci NewDeposit, parse txid error: %v", err)
 		return err
 	}
-	blockTime, err := lis.btcRPC.GetBlockTimeFromTx(txHash)
+	blockTime, err := lis.btcRPC.GetBlockTimeFromTx(*txHash)
 	if err != nil {
 		log.Errorf("Abci NewDeposit, get block time from tx error: %v", err)
 		return err
