@@ -116,6 +116,15 @@ func (s *BTCRPCService) GetRawTransactionVerbose(txHash *chainhash.Hash) (*btcjs
 	return s.client.GetRawTransactionVerbose(txHash)
 }
 
+// GetBlockTimeFromTx retrieves the block time from the latest block
+func (s *BTCRPCService) GetBlockTimeFromTx(txHash *chainhash.Hash) (blockTime int64, err error) {
+	tx, err := s.client.GetTransaction(txHash)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get blockchain info: %v", err)
+	}
+	return tx.BlockTime, nil
+}
+
 // GetBlockVerbose retrieves detailed information of a block
 func (s *BTCRPCService) GetBlockVerbose(blockHash *chainhash.Hash) (*btcjson.GetBlockVerboseResult, error) {
 	return s.client.GetBlockVerbose(blockHash)
