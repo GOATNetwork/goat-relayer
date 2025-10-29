@@ -430,7 +430,7 @@ func (s *State) UpdateSafeboxTaskReceivedOK(taskId uint64, fundingTxHash string,
 	return err
 }
 
-func (s *State) UpdateSafeboxTaskReceived(txid, evmAddr string, txout uint64, amount uint64) error {
+func (s *State) UpdateSafeboxTaskReceived(txid, evmAddr string, txout uint64, amount uint64, blockTime time.Time) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
@@ -454,7 +454,7 @@ func (s *State) UpdateSafeboxTaskReceived(txid, evmAddr string, txout uint64, am
 			return nil
 		}
 		// check if deadline is over
-		if time.Now().Unix() > int64(taskDeposit.Deadline) {
+		if blockTime.Unix() > int64(taskDeposit.Deadline) {
 			// close it
 			taskDeposit.Status = db.TASK_STATUS_CLOSED
 			taskDeposit.UpdatedAt = time.Now()
