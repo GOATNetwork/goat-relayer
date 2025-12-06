@@ -111,6 +111,15 @@ func (s *BTCRPCService) GetBlockHashForTx(txHash chainhash.Hash) (*chainhash.Has
 	return blockHash, nil
 }
 
+// GetBlockTimeFromTx retrieves the block time from transaction hash
+func (s *BTCRPCService) GetBlockTimeFromTx(txHash chainhash.Hash) (blockTime int64, err error) {
+	txRawResult, err := s.client.GetRawTransactionVerbose(&txHash)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get raw transaction: %v", err)
+	}
+	return txRawResult.Blocktime, nil
+}
+
 // GetRawTransactionVerbose retrieves detailed information of a transaction
 func (s *BTCRPCService) GetRawTransactionVerbose(txHash *chainhash.Hash) (*btcjson.TxRawResult, error) {
 	return s.client.GetRawTransactionVerbose(txHash)

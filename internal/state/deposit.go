@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/types"
 	log "github.com/sirupsen/logrus"
@@ -397,7 +398,7 @@ func (s *State) UpdateSafeboxTaskInit(timelockAddress string, timelockTxid strin
 }
 
 // UpdateSafeboxTaskReceivedOK update safebox task after received consensus event from contract
-func (s *State) UpdateSafeboxTaskReceivedOK(taskId uint64, fundingTxHash string, txOut uint64) error {
+func (s *State) UpdateSafeboxTaskReceivedOK(taskId uint64, fundingTxHash string, txOut, timelockEndTime uint64) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
@@ -412,8 +413,16 @@ func (s *State) UpdateSafeboxTaskReceivedOK(taskId uint64, fundingTxHash string,
 		if taskDeposit.Status != db.TASK_STATUS_RECEIVED && taskDeposit.Status != db.TASK_STATUS_CREATE {
 			return fmt.Errorf("task deposit status is not received or create")
 		}
+		timelockP2WSHAddress, witnessScript, err := types.GenerateTimeLockP2WSHAddress(taskDeposit.Pubkey, time.Unix(int64(timelockEndTime), 0), types.GetBTCNetwork(config.AppConfig.BTCNetworkType))
+		if err != nil {
+			return fmt.Errorf("task deposit generate timelock-P2WSH address from pubkey %s and timelock %d error: %v", taskDeposit.Pubkey, timelockEndTime, err)
+		}
+		timelockAddress := timelockP2WSHAddress.EncodeAddress()
 		taskDeposit.FundingTxid = fundingTxHash
 		taskDeposit.FundingOutIndex = txOut
+		taskDeposit.TimelockEndTime = timelockEndTime
+		taskDeposit.TimelockAddress = timelockAddress
+		taskDeposit.WitnessScript = witnessScript
 		taskDeposit.Status = db.TASK_STATUS_RECEIVED_OK
 		taskDeposit.UpdatedAt = time.Now()
 		return tx.Save(&taskDeposit).Error
@@ -421,7 +430,7 @@ func (s *State) UpdateSafeboxTaskReceivedOK(taskId uint64, fundingTxHash string,
 	return err
 }
 
-func (s *State) UpdateSafeboxTaskReceived(txid, evmAddr string, txout uint64, amount uint64) error {
+func (s *State) UpdateSafeboxTaskReceived(txid, evmAddr string, txout uint64, amount uint64, blockTime int64) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
@@ -445,7 +454,7 @@ func (s *State) UpdateSafeboxTaskReceived(txid, evmAddr string, txout uint64, am
 			return nil
 		}
 		// check if deadline is over
-		if time.Now().Unix() > int64(taskDeposit.Deadline) {
+		if blockTime > int64(taskDeposit.Deadline) {
 			// close it
 			taskDeposit.Status = db.TASK_STATUS_CLOSED
 			taskDeposit.UpdatedAt = time.Now()

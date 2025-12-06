@@ -571,7 +571,7 @@ func (s *SafeboxProcessor) process(ctx context.Context) {
 	for _, task := range tasks {
 		unsignTx, messageToSign, err := s.BuildUnsignedTx(ctx, task)
 		if err != nil {
-			s.logger.Errorf("Failed to build unsigned transaction: %v", err)
+			s.logger.Errorf("Failed to build unsigned transaction: %v, task %v", err, task)
 			return
 		}
 

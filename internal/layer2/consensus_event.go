@@ -381,8 +381,19 @@ func (lis *Layer2Listener) processNewDeposit(block uint64, attributes []abcitype
 		log.Errorf("Abci NewDeposit, add deposit result error: %v", err)
 		return err
 	}
+	// get btc block timestamp from header
+	txHash, err := chainhash.NewHashFromStr(txid)
+	if err != nil {
+		log.Errorf("Abci NewDeposit, parse txid error: %v", err)
+		return err
+	}
+	blockTime, err := lis.btcRPC.GetBlockTimeFromTx(*txHash)
+	if err != nil {
+		log.Errorf("Abci NewDeposit, get block time from tx error: %v", err)
+		return err
+	}
 	// verify deposit task whether fund received
-	if err := lis.state.UpdateSafeboxTaskReceived(txid, address.Hex(), txout, amount); err != nil {
+	if err := lis.state.UpdateSafeboxTaskReceived(txid, address.Hex(), txout, amount, blockTime); err != nil {
 		log.Errorf("Abci NewDeposit, check and update safebox task deposit status error: %v", err)
 		return err
 	}

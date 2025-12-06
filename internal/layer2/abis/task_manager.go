@@ -29,6 +29,12 @@ var (
 	_ = abi.ConvertType
 )
 
+// TaskManagerUpgradeablePartnerInfo is an auto generated low-level Go binding around an user-defined struct.
+type TaskManagerUpgradeablePartnerInfo struct {
+	BtcAddress [2][32]byte
+	BtcPubKey  [2][32]byte
+}
+
 // TaskManagerUpgradeableTask is an auto generated low-level Go binding around an user-defined struct.
 type TaskManagerUpgradeableTask struct {
 	PartnerId       *big.Int
@@ -42,13 +48,11 @@ type TaskManagerUpgradeableTask struct {
 	FundingTxHash   [32]byte
 	TimelockTxHash  [32]byte
 	WitnessScript   [7][32]byte
-	BtcAddress      [2][32]byte
-	BtcPubKey       [2][32]byte
 }
 
 // TaskManagerContractMetaData contains all meta data concerning the TaskManagerContract contract.
 var TaskManagerContractMetaData = &bind.MetaData{
-	ABI: "[{\"type\":\"constructor\",\"inputs\":[{\"name\":\"_bitcoin\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_bridge\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"receive\",\"stateMutability\":\"payable\"},{\"type\":\"function\",\"name\":\"ADMIN_ROLE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"AVAILABLE_TASK_STATE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"DEFAULT_ADMIN_ROLE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"MIN_DEPOSIT_AMOUNT\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"RELAYER_ROLE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"_doubleSha256Bytes\",\"inputs\":[{\"name\":\"_data\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"pure\"},{\"type\":\"function\",\"name\":\"_parseBtcBlockHeader\",\"inputs\":[{\"name\":\"_rawHeader\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[{\"name\":\"blockHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"merkleRoot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"pure\"},{\"type\":\"function\",\"name\":\"bitcoin\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"bridge\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"burn\",\"inputs\":[{\"name\":\"_taskId\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"payable\"},{\"type\":\"function\",\"name\":\"cancelTask\",\"inputs\":[{\"name\":\"_taskId\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"forceBurn\",\"inputs\":[{\"name\":\"_taskId\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"payable\"},{\"type\":\"function\",\"name\":\"getPartnerTasks\",\"inputs\":[{\"name\":\"_partnerId\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"uint256[]\",\"internalType\":\"uint256[]\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getRoleAdmin\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getTask\",\"inputs\":[{\"name\":\"_taskId\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structTaskManagerUpgradeable.Task\",\"components\":[{\"name\":\"partnerId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"depositAddress\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"state\",\"type\":\"uint8\",\"internalType\":\"enumTaskManagerUpgradeable.TaskState\"},{\"name\":\"timelockEndTime\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"deadline\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"amount\",\"type\":\"uint128\",\"internalType\":\"uint128\"},{\"name\":\"fundingTxOut\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"timelockTxOut\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"fundingTxHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"timelockTxHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"witnessScript\",\"type\":\"bytes32[7]\",\"internalType\":\"bytes32[7]\"},{\"name\":\"btcAddress\",\"type\":\"bytes32[2]\",\"internalType\":\"bytes32[2]\"},{\"name\":\"btcPubKey\",\"type\":\"bytes32[2]\",\"internalType\":\"bytes32[2]\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"grantRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"hasPendingTask\",\"inputs\":[{\"name\":\"depositAddress\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"hasRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"initTimelockTx\",\"inputs\":[{\"name\":\"_taskId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_txData\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"_txOut\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"_witnessScript\",\"type\":\"bytes32[7]\",\"internalType\":\"bytes32[7]\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"initialize\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"partnerTasks\",\"inputs\":[{\"name\":\"partnerId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"processTimelockTx\",\"inputs\":[{\"name\":\"_taskId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_rawHeader\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"_height\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_proof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"},{\"name\":\"_index\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"receiveFunds\",\"inputs\":[{\"name\":\"_taskId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_amount\",\"type\":\"uint128\",\"internalType\":\"uint128\"},{\"name\":\"_fundingTxHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"_txOut\",\"type\":\"uint32\",\"internalType\":\"uint32\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"renounceRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"callerConfirmation\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"revokeRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"setupTask\",\"inputs\":[{\"name\":\"_partnerId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_depositAddress\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_timelockEndTime\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"_deadline\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"_amount\",\"type\":\"uint128\",\"internalType\":\"uint128\"},{\"name\":\"_btcAddress\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"_btcPubKey\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"supportsInterface\",\"inputs\":[{\"name\":\"interfaceId\",\"type\":\"bytes4\",\"internalType\":\"bytes4\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tasks\",\"inputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"partnerId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"depositAddress\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"state\",\"type\":\"uint8\",\"internalType\":\"enumTaskManagerUpgradeable.TaskState\"},{\"name\":\"timelockEndTime\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"deadline\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"amount\",\"type\":\"uint128\",\"internalType\":\"uint128\"},{\"name\":\"fundingTxOut\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"timelockTxOut\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"fundingTxHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"timelockTxHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"verifyMerkleProof\",\"inputs\":[{\"name\":\"root\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"proof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"},{\"name\":\"leaf\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"index\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"pure\"},{\"type\":\"event\",\"name\":\"Burned\",\"inputs\":[{\"name\":\"taskId\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"FundsReceived\",\"inputs\":[{\"name\":\"taskId\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"fundingTxHash\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"bytes32\"},{\"name\":\"txOut\",\"type\":\"uint32\",\"indexed\":false,\"internalType\":\"uint32\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"Initialized\",\"inputs\":[{\"name\":\"version\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"uint64\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RoleAdminChanged\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"previousAdminRole\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"newAdminRole\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RoleGranted\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"sender\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RoleRevoked\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"sender\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"TaskCancelled\",\"inputs\":[{\"name\":\"taskId\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"TaskCreated\",\"inputs\":[{\"name\":\"taskId\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"TimelockInitialized\",\"inputs\":[{\"name\":\"taskId\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"timelockTxHash\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"bytes32\"},{\"name\":\"txOut\",\"type\":\"uint32\",\"indexed\":false,\"internalType\":\"uint32\"},{\"name\":\"witnessScript\",\"type\":\"bytes32[7]\",\"indexed\":false,\"internalType\":\"bytes32[7]\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"TimelockProcessed\",\"inputs\":[{\"name\":\"taskId\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"AccessControlBadConfirmation\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"AccessControlUnauthorizedAccount\",\"inputs\":[{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"neededRole\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"InvalidInitialization\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotInitializing\",\"inputs\":[]}]",
+	ABI: "[{\"type\":\"constructor\",\"inputs\":[{\"name\":\"_bitcoin\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_bridge\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_isMainnet\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"receive\",\"stateMutability\":\"payable\"},{\"type\":\"function\",\"name\":\"ADMIN_ROLE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"AVAILABLE_TASK_STATE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"DEFAULT_ADMIN_ROLE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"MIN_DEPOSIT_AMOUNT\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"OPERATOR_ROLE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"RELAYER_ROLE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"_doubleSha256Bytes\",\"inputs\":[{\"name\":\"_data\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"pure\"},{\"type\":\"function\",\"name\":\"bitcoin\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"bridge\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"burn\",\"inputs\":[{\"name\":\"_taskId\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"payable\"},{\"type\":\"function\",\"name\":\"cancelTask\",\"inputs\":[{\"name\":\"_taskId\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"forceBurn\",\"inputs\":[{\"name\":\"_taskId\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"payable\"},{\"type\":\"function\",\"name\":\"getPartnerId\",\"inputs\":[{\"name\":\"_btcPubKey\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getPartnerInfo\",\"inputs\":[{\"name\":\"_partnerId\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structTaskManagerUpgradeable.PartnerInfo\",\"components\":[{\"name\":\"btcAddress\",\"type\":\"bytes32[2]\",\"internalType\":\"bytes32[2]\"},{\"name\":\"btcPubKey\",\"type\":\"bytes32[2]\",\"internalType\":\"bytes32[2]\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getPartnerTasks\",\"inputs\":[{\"name\":\"_partnerId\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"uint256[]\",\"internalType\":\"uint256[]\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getRoleAdmin\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getTask\",\"inputs\":[{\"name\":\"_taskId\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structTaskManagerUpgradeable.Task\",\"components\":[{\"name\":\"partnerId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"depositAddress\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"state\",\"type\":\"uint8\",\"internalType\":\"enumTaskManagerUpgradeable.TaskState\"},{\"name\":\"timelockEndTime\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"deadline\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"amount\",\"type\":\"uint128\",\"internalType\":\"uint128\"},{\"name\":\"fundingTxOut\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"timelockTxOut\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"fundingTxHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"timelockTxHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"witnessScript\",\"type\":\"bytes32[7]\",\"internalType\":\"bytes32[7]\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"grantRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"hasPendingTask\",\"inputs\":[{\"name\":\"depositAddress\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"hasRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"initTimelockTx\",\"inputs\":[{\"name\":\"_taskId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_txData\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"_txOut\",\"type\":\"uint32\",\"internalType\":\"uint32\"},{\"name\":\"_witnessScript\",\"type\":\"bytes32[7]\",\"internalType\":\"bytes32[7]\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"initialize\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"isMainnet\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"processTimelockTx\",\"inputs\":[{\"name\":\"_taskId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_rawHeader\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"_height\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_proof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"},{\"name\":\"_index\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"receiveFunds\",\"inputs\":[{\"name\":\"_taskId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_amount\",\"type\":\"uint128\",\"internalType\":\"uint128\"},{\"name\":\"_fundingTxHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"_txOut\",\"type\":\"uint32\",\"internalType\":\"uint32\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"registerPartner\",\"inputs\":[{\"name\":\"_partnerId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_btcAddress\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"_btcPubKey\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"renounceRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"callerConfirmation\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"revokeRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"setTaskDeadline\",\"inputs\":[{\"name\":\"_taskDeadline\",\"type\":\"uint32\",\"internalType\":\"uint32\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"setTimelockDuration\",\"inputs\":[{\"name\":\"_timelockDuration\",\"type\":\"uint32\",\"internalType\":\"uint32\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"setupTask\",\"inputs\":[{\"name\":\"_partnerId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_depositAddress\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_amount\",\"type\":\"uint128\",\"internalType\":\"uint128\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"supportsInterface\",\"inputs\":[{\"name\":\"interfaceId\",\"type\":\"bytes4\",\"internalType\":\"bytes4\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"taskDeadline\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint32\",\"internalType\":\"uint32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"timelockDuration\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint32\",\"internalType\":\"uint32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"updateDepositAddress\",\"inputs\":[{\"name\":\"_depositAddress\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"verifyMerkleProof\",\"inputs\":[{\"name\":\"root\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"proof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"},{\"name\":\"leaf\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"index\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"pure\"},{\"type\":\"event\",\"name\":\"Burned\",\"inputs\":[{\"name\":\"taskId\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"FundsReceived\",\"inputs\":[{\"name\":\"taskId\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"fundingTxHash\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"bytes32\"},{\"name\":\"txOut\",\"type\":\"uint32\",\"indexed\":false,\"internalType\":\"uint32\"},{\"name\":\"timelockEndTime\",\"type\":\"uint32\",\"indexed\":false,\"internalType\":\"uint32\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"Initialized\",\"inputs\":[{\"name\":\"version\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"uint64\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RoleAdminChanged\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"previousAdminRole\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"newAdminRole\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RoleGranted\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"sender\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RoleRevoked\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"sender\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"TaskCancelled\",\"inputs\":[{\"name\":\"taskId\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"TaskCreated\",\"inputs\":[{\"name\":\"taskId\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"TimelockInitialized\",\"inputs\":[{\"name\":\"taskId\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"timelockTxHash\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"bytes32\"},{\"name\":\"txOut\",\"type\":\"uint32\",\"indexed\":false,\"internalType\":\"uint32\"},{\"name\":\"witnessScript\",\"type\":\"bytes32[7]\",\"indexed\":false,\"internalType\":\"bytes32[7]\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"TimelockProcessed\",\"inputs\":[{\"name\":\"taskId\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"AccessControlBadConfirmation\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"AccessControlUnauthorizedAccount\",\"inputs\":[{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"neededRole\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"InvalidInitialization\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotInitializing\",\"inputs\":[]}]",
 }
 
 // TaskManagerContractABI is the input ABI used to generate the binding from.
@@ -321,6 +325,37 @@ func (_TaskManagerContract *TaskManagerContractCallerSession) MINDEPOSITAMOUNT()
 	return _TaskManagerContract.Contract.MINDEPOSITAMOUNT(&_TaskManagerContract.CallOpts)
 }
 
+// OPERATORROLE is a free data retrieval call binding the contract method 0xf5b541a6.
+//
+// Solidity: function OPERATOR_ROLE() view returns(bytes32)
+func (_TaskManagerContract *TaskManagerContractCaller) OPERATORROLE(opts *bind.CallOpts) ([32]byte, error) {
+	var out []interface{}
+	err := _TaskManagerContract.contract.Call(opts, &out, "OPERATOR_ROLE")
+
+	if err != nil {
+		return *new([32]byte), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new([32]byte)).(*[32]byte)
+
+	return out0, err
+
+}
+
+// OPERATORROLE is a free data retrieval call binding the contract method 0xf5b541a6.
+//
+// Solidity: function OPERATOR_ROLE() view returns(bytes32)
+func (_TaskManagerContract *TaskManagerContractSession) OPERATORROLE() ([32]byte, error) {
+	return _TaskManagerContract.Contract.OPERATORROLE(&_TaskManagerContract.CallOpts)
+}
+
+// OPERATORROLE is a free data retrieval call binding the contract method 0xf5b541a6.
+//
+// Solidity: function OPERATOR_ROLE() view returns(bytes32)
+func (_TaskManagerContract *TaskManagerContractCallerSession) OPERATORROLE() ([32]byte, error) {
+	return _TaskManagerContract.Contract.OPERATORROLE(&_TaskManagerContract.CallOpts)
+}
+
 // RELAYERROLE is a free data retrieval call binding the contract method 0x926d7d7f.
 //
 // Solidity: function RELAYER_ROLE() view returns(bytes32)
@@ -383,51 +418,6 @@ func (_TaskManagerContract *TaskManagerContractCallerSession) DoubleSha256Bytes(
 	return _TaskManagerContract.Contract.DoubleSha256Bytes(&_TaskManagerContract.CallOpts, _data)
 }
 
-// ParseBtcBlockHeader is a free data retrieval call binding the contract method 0x0759979c.
-//
-// Solidity: function _parseBtcBlockHeader(bytes _rawHeader) pure returns(bytes32 blockHash, bytes32 merkleRoot)
-func (_TaskManagerContract *TaskManagerContractCaller) ParseBtcBlockHeader(opts *bind.CallOpts, _rawHeader []byte) (struct {
-	BlockHash  [32]byte
-	MerkleRoot [32]byte
-}, error) {
-	var out []interface{}
-	err := _TaskManagerContract.contract.Call(opts, &out, "_parseBtcBlockHeader", _rawHeader)
-
-	outstruct := new(struct {
-		BlockHash  [32]byte
-		MerkleRoot [32]byte
-	})
-	if err != nil {
-		return *outstruct, err
-	}
-
-	outstruct.BlockHash = *abi.ConvertType(out[0], new([32]byte)).(*[32]byte)
-	outstruct.MerkleRoot = *abi.ConvertType(out[1], new([32]byte)).(*[32]byte)
-
-	return *outstruct, err
-
-}
-
-// ParseBtcBlockHeader is a free data retrieval call binding the contract method 0x0759979c.
-//
-// Solidity: function _parseBtcBlockHeader(bytes _rawHeader) pure returns(bytes32 blockHash, bytes32 merkleRoot)
-func (_TaskManagerContract *TaskManagerContractSession) ParseBtcBlockHeader(_rawHeader []byte) (struct {
-	BlockHash  [32]byte
-	MerkleRoot [32]byte
-}, error) {
-	return _TaskManagerContract.Contract.ParseBtcBlockHeader(&_TaskManagerContract.CallOpts, _rawHeader)
-}
-
-// ParseBtcBlockHeader is a free data retrieval call binding the contract method 0x0759979c.
-//
-// Solidity: function _parseBtcBlockHeader(bytes _rawHeader) pure returns(bytes32 blockHash, bytes32 merkleRoot)
-func (_TaskManagerContract *TaskManagerContractCallerSession) ParseBtcBlockHeader(_rawHeader []byte) (struct {
-	BlockHash  [32]byte
-	MerkleRoot [32]byte
-}, error) {
-	return _TaskManagerContract.Contract.ParseBtcBlockHeader(&_TaskManagerContract.CallOpts, _rawHeader)
-}
-
 // Bitcoin is a free data retrieval call binding the contract method 0xced35070.
 //
 // Solidity: function bitcoin() view returns(address)
@@ -488,6 +478,68 @@ func (_TaskManagerContract *TaskManagerContractSession) Bridge() (common.Address
 // Solidity: function bridge() view returns(address)
 func (_TaskManagerContract *TaskManagerContractCallerSession) Bridge() (common.Address, error) {
 	return _TaskManagerContract.Contract.Bridge(&_TaskManagerContract.CallOpts)
+}
+
+// GetPartnerId is a free data retrieval call binding the contract method 0x8f0db92f.
+//
+// Solidity: function getPartnerId(bytes _btcPubKey) view returns(uint256)
+func (_TaskManagerContract *TaskManagerContractCaller) GetPartnerId(opts *bind.CallOpts, _btcPubKey []byte) (*big.Int, error) {
+	var out []interface{}
+	err := _TaskManagerContract.contract.Call(opts, &out, "getPartnerId", _btcPubKey)
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
+}
+
+// GetPartnerId is a free data retrieval call binding the contract method 0x8f0db92f.
+//
+// Solidity: function getPartnerId(bytes _btcPubKey) view returns(uint256)
+func (_TaskManagerContract *TaskManagerContractSession) GetPartnerId(_btcPubKey []byte) (*big.Int, error) {
+	return _TaskManagerContract.Contract.GetPartnerId(&_TaskManagerContract.CallOpts, _btcPubKey)
+}
+
+// GetPartnerId is a free data retrieval call binding the contract method 0x8f0db92f.
+//
+// Solidity: function getPartnerId(bytes _btcPubKey) view returns(uint256)
+func (_TaskManagerContract *TaskManagerContractCallerSession) GetPartnerId(_btcPubKey []byte) (*big.Int, error) {
+	return _TaskManagerContract.Contract.GetPartnerId(&_TaskManagerContract.CallOpts, _btcPubKey)
+}
+
+// GetPartnerInfo is a free data retrieval call binding the contract method 0x5538c964.
+//
+// Solidity: function getPartnerInfo(uint256 _partnerId) view returns((bytes32[2],bytes32[2]))
+func (_TaskManagerContract *TaskManagerContractCaller) GetPartnerInfo(opts *bind.CallOpts, _partnerId *big.Int) (TaskManagerUpgradeablePartnerInfo, error) {
+	var out []interface{}
+	err := _TaskManagerContract.contract.Call(opts, &out, "getPartnerInfo", _partnerId)
+
+	if err != nil {
+		return *new(TaskManagerUpgradeablePartnerInfo), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(TaskManagerUpgradeablePartnerInfo)).(*TaskManagerUpgradeablePartnerInfo)
+
+	return out0, err
+
+}
+
+// GetPartnerInfo is a free data retrieval call binding the contract method 0x5538c964.
+//
+// Solidity: function getPartnerInfo(uint256 _partnerId) view returns((bytes32[2],bytes32[2]))
+func (_TaskManagerContract *TaskManagerContractSession) GetPartnerInfo(_partnerId *big.Int) (TaskManagerUpgradeablePartnerInfo, error) {
+	return _TaskManagerContract.Contract.GetPartnerInfo(&_TaskManagerContract.CallOpts, _partnerId)
+}
+
+// GetPartnerInfo is a free data retrieval call binding the contract method 0x5538c964.
+//
+// Solidity: function getPartnerInfo(uint256 _partnerId) view returns((bytes32[2],bytes32[2]))
+func (_TaskManagerContract *TaskManagerContractCallerSession) GetPartnerInfo(_partnerId *big.Int) (TaskManagerUpgradeablePartnerInfo, error) {
+	return _TaskManagerContract.Contract.GetPartnerInfo(&_TaskManagerContract.CallOpts, _partnerId)
 }
 
 // GetPartnerTasks is a free data retrieval call binding the contract method 0x377a00c0.
@@ -554,7 +606,7 @@ func (_TaskManagerContract *TaskManagerContractCallerSession) GetRoleAdmin(role 
 
 // GetTask is a free data retrieval call binding the contract method 0x1d65e77e.
 //
-// Solidity: function getTask(uint256 _taskId) view returns((uint256,address,uint8,uint32,uint32,uint128,uint32,uint32,bytes32,bytes32,bytes32[7],bytes32[2],bytes32[2]))
+// Solidity: function getTask(uint256 _taskId) view returns((uint256,address,uint8,uint32,uint32,uint128,uint32,uint32,bytes32,bytes32,bytes32[7]))
 func (_TaskManagerContract *TaskManagerContractCaller) GetTask(opts *bind.CallOpts, _taskId *big.Int) (TaskManagerUpgradeableTask, error) {
 	var out []interface{}
 	err := _TaskManagerContract.contract.Call(opts, &out, "getTask", _taskId)
@@ -571,14 +623,14 @@ func (_TaskManagerContract *TaskManagerContractCaller) GetTask(opts *bind.CallOp
 
 // GetTask is a free data retrieval call binding the contract method 0x1d65e77e.
 //
-// Solidity: function getTask(uint256 _taskId) view returns((uint256,address,uint8,uint32,uint32,uint128,uint32,uint32,bytes32,bytes32,bytes32[7],bytes32[2],bytes32[2]))
+// Solidity: function getTask(uint256 _taskId) view returns((uint256,address,uint8,uint32,uint32,uint128,uint32,uint32,bytes32,bytes32,bytes32[7]))
 func (_TaskManagerContract *TaskManagerContractSession) GetTask(_taskId *big.Int) (TaskManagerUpgradeableTask, error) {
 	return _TaskManagerContract.Contract.GetTask(&_TaskManagerContract.CallOpts, _taskId)
 }
 
 // GetTask is a free data retrieval call binding the contract method 0x1d65e77e.
 //
-// Solidity: function getTask(uint256 _taskId) view returns((uint256,address,uint8,uint32,uint32,uint128,uint32,uint32,bytes32,bytes32,bytes32[7],bytes32[2],bytes32[2]))
+// Solidity: function getTask(uint256 _taskId) view returns((uint256,address,uint8,uint32,uint32,uint128,uint32,uint32,bytes32,bytes32,bytes32[7]))
 func (_TaskManagerContract *TaskManagerContractCallerSession) GetTask(_taskId *big.Int) (TaskManagerUpgradeableTask, error) {
 	return _TaskManagerContract.Contract.GetTask(&_TaskManagerContract.CallOpts, _taskId)
 }
@@ -645,35 +697,35 @@ func (_TaskManagerContract *TaskManagerContractCallerSession) HasRole(role [32]b
 	return _TaskManagerContract.Contract.HasRole(&_TaskManagerContract.CallOpts, role, account)
 }
 
-// PartnerTasks is a free data retrieval call binding the contract method 0xede89484.
+// IsMainnet is a free data retrieval call binding the contract method 0x42faac05.
 //
-// Solidity: function partnerTasks(uint256 partnerId, uint256 ) view returns(uint256)
-func (_TaskManagerContract *TaskManagerContractCaller) PartnerTasks(opts *bind.CallOpts, partnerId *big.Int, arg1 *big.Int) (*big.Int, error) {
+// Solidity: function isMainnet() view returns(bool)
+func (_TaskManagerContract *TaskManagerContractCaller) IsMainnet(opts *bind.CallOpts) (bool, error) {
 	var out []interface{}
-	err := _TaskManagerContract.contract.Call(opts, &out, "partnerTasks", partnerId, arg1)
+	err := _TaskManagerContract.contract.Call(opts, &out, "isMainnet")
 
 	if err != nil {
-		return *new(*big.Int), err
+		return *new(bool), err
 	}
 
-	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
 
 	return out0, err
 
 }
 
-// PartnerTasks is a free data retrieval call binding the contract method 0xede89484.
+// IsMainnet is a free data retrieval call binding the contract method 0x42faac05.
 //
-// Solidity: function partnerTasks(uint256 partnerId, uint256 ) view returns(uint256)
-func (_TaskManagerContract *TaskManagerContractSession) PartnerTasks(partnerId *big.Int, arg1 *big.Int) (*big.Int, error) {
-	return _TaskManagerContract.Contract.PartnerTasks(&_TaskManagerContract.CallOpts, partnerId, arg1)
+// Solidity: function isMainnet() view returns(bool)
+func (_TaskManagerContract *TaskManagerContractSession) IsMainnet() (bool, error) {
+	return _TaskManagerContract.Contract.IsMainnet(&_TaskManagerContract.CallOpts)
 }
 
-// PartnerTasks is a free data retrieval call binding the contract method 0xede89484.
+// IsMainnet is a free data retrieval call binding the contract method 0x42faac05.
 //
-// Solidity: function partnerTasks(uint256 partnerId, uint256 ) view returns(uint256)
-func (_TaskManagerContract *TaskManagerContractCallerSession) PartnerTasks(partnerId *big.Int, arg1 *big.Int) (*big.Int, error) {
-	return _TaskManagerContract.Contract.PartnerTasks(&_TaskManagerContract.CallOpts, partnerId, arg1)
+// Solidity: function isMainnet() view returns(bool)
+func (_TaskManagerContract *TaskManagerContractCallerSession) IsMainnet() (bool, error) {
+	return _TaskManagerContract.Contract.IsMainnet(&_TaskManagerContract.CallOpts)
 }
 
 // SupportsInterface is a free data retrieval call binding the contract method 0x01ffc9a7.
@@ -707,89 +759,66 @@ func (_TaskManagerContract *TaskManagerContractCallerSession) SupportsInterface(
 	return _TaskManagerContract.Contract.SupportsInterface(&_TaskManagerContract.CallOpts, interfaceId)
 }
 
-// Tasks is a free data retrieval call binding the contract method 0x8d977672.
+// TaskDeadline is a free data retrieval call binding the contract method 0x28ef4443.
 //
-// Solidity: function tasks(uint256 ) view returns(uint256 partnerId, address depositAddress, uint8 state, uint32 timelockEndTime, uint32 deadline, uint128 amount, uint32 fundingTxOut, uint32 timelockTxOut, bytes32 fundingTxHash, bytes32 timelockTxHash)
-func (_TaskManagerContract *TaskManagerContractCaller) Tasks(opts *bind.CallOpts, arg0 *big.Int) (struct {
-	PartnerId       *big.Int
-	DepositAddress  common.Address
-	State           uint8
-	TimelockEndTime uint32
-	Deadline        uint32
-	Amount          *big.Int
-	FundingTxOut    uint32
-	TimelockTxOut   uint32
-	FundingTxHash   [32]byte
-	TimelockTxHash  [32]byte
-}, error) {
+// Solidity: function taskDeadline() view returns(uint32)
+func (_TaskManagerContract *TaskManagerContractCaller) TaskDeadline(opts *bind.CallOpts) (uint32, error) {
 	var out []interface{}
-	err := _TaskManagerContract.contract.Call(opts, &out, "tasks", arg0)
+	err := _TaskManagerContract.contract.Call(opts, &out, "taskDeadline")
 
-	outstruct := new(struct {
-		PartnerId       *big.Int
-		DepositAddress  common.Address
-		State           uint8
-		TimelockEndTime uint32
-		Deadline        uint32
-		Amount          *big.Int
-		FundingTxOut    uint32
-		TimelockTxOut   uint32
-		FundingTxHash   [32]byte
-		TimelockTxHash  [32]byte
-	})
 	if err != nil {
-		return *outstruct, err
+		return *new(uint32), err
 	}
 
-	outstruct.PartnerId = *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
-	outstruct.DepositAddress = *abi.ConvertType(out[1], new(common.Address)).(*common.Address)
-	outstruct.State = *abi.ConvertType(out[2], new(uint8)).(*uint8)
-	outstruct.TimelockEndTime = *abi.ConvertType(out[3], new(uint32)).(*uint32)
-	outstruct.Deadline = *abi.ConvertType(out[4], new(uint32)).(*uint32)
-	outstruct.Amount = *abi.ConvertType(out[5], new(*big.Int)).(**big.Int)
-	outstruct.FundingTxOut = *abi.ConvertType(out[6], new(uint32)).(*uint32)
-	outstruct.TimelockTxOut = *abi.ConvertType(out[7], new(uint32)).(*uint32)
-	outstruct.FundingTxHash = *abi.ConvertType(out[8], new([32]byte)).(*[32]byte)
-	outstruct.TimelockTxHash = *abi.ConvertType(out[9], new([32]byte)).(*[32]byte)
+	out0 := *abi.ConvertType(out[0], new(uint32)).(*uint32)
 
-	return *outstruct, err
+	return out0, err
 
 }
 
-// Tasks is a free data retrieval call binding the contract method 0x8d977672.
+// TaskDeadline is a free data retrieval call binding the contract method 0x28ef4443.
 //
-// Solidity: function tasks(uint256 ) view returns(uint256 partnerId, address depositAddress, uint8 state, uint32 timelockEndTime, uint32 deadline, uint128 amount, uint32 fundingTxOut, uint32 timelockTxOut, bytes32 fundingTxHash, bytes32 timelockTxHash)
-func (_TaskManagerContract *TaskManagerContractSession) Tasks(arg0 *big.Int) (struct {
-	PartnerId       *big.Int
-	DepositAddress  common.Address
-	State           uint8
-	TimelockEndTime uint32
-	Deadline        uint32
-	Amount          *big.Int
-	FundingTxOut    uint32
-	TimelockTxOut   uint32
-	FundingTxHash   [32]byte
-	TimelockTxHash  [32]byte
-}, error) {
-	return _TaskManagerContract.Contract.Tasks(&_TaskManagerContract.CallOpts, arg0)
+// Solidity: function taskDeadline() view returns(uint32)
+func (_TaskManagerContract *TaskManagerContractSession) TaskDeadline() (uint32, error) {
+	return _TaskManagerContract.Contract.TaskDeadline(&_TaskManagerContract.CallOpts)
 }
 
-// Tasks is a free data retrieval call binding the contract method 0x8d977672.
+// TaskDeadline is a free data retrieval call binding the contract method 0x28ef4443.
 //
-// Solidity: function tasks(uint256 ) view returns(uint256 partnerId, address depositAddress, uint8 state, uint32 timelockEndTime, uint32 deadline, uint128 amount, uint32 fundingTxOut, uint32 timelockTxOut, bytes32 fundingTxHash, bytes32 timelockTxHash)
-func (_TaskManagerContract *TaskManagerContractCallerSession) Tasks(arg0 *big.Int) (struct {
-	PartnerId       *big.Int
-	DepositAddress  common.Address
-	State           uint8
-	TimelockEndTime uint32
-	Deadline        uint32
-	Amount          *big.Int
-	FundingTxOut    uint32
-	TimelockTxOut   uint32
-	FundingTxHash   [32]byte
-	TimelockTxHash  [32]byte
-}, error) {
-	return _TaskManagerContract.Contract.Tasks(&_TaskManagerContract.CallOpts, arg0)
+// Solidity: function taskDeadline() view returns(uint32)
+func (_TaskManagerContract *TaskManagerContractCallerSession) TaskDeadline() (uint32, error) {
+	return _TaskManagerContract.Contract.TaskDeadline(&_TaskManagerContract.CallOpts)
+}
+
+// TimelockDuration is a free data retrieval call binding the contract method 0x2bbca157.
+//
+// Solidity: function timelockDuration() view returns(uint32)
+func (_TaskManagerContract *TaskManagerContractCaller) TimelockDuration(opts *bind.CallOpts) (uint32, error) {
+	var out []interface{}
+	err := _TaskManagerContract.contract.Call(opts, &out, "timelockDuration")
+
+	if err != nil {
+		return *new(uint32), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint32)).(*uint32)
+
+	return out0, err
+
+}
+
+// TimelockDuration is a free data retrieval call binding the contract method 0x2bbca157.
+//
+// Solidity: function timelockDuration() view returns(uint32)
+func (_TaskManagerContract *TaskManagerContractSession) TimelockDuration() (uint32, error) {
+	return _TaskManagerContract.Contract.TimelockDuration(&_TaskManagerContract.CallOpts)
+}
+
+// TimelockDuration is a free data retrieval call binding the contract method 0x2bbca157.
+//
+// Solidity: function timelockDuration() view returns(uint32)
+func (_TaskManagerContract *TaskManagerContractCallerSession) TimelockDuration() (uint32, error) {
+	return _TaskManagerContract.Contract.TimelockDuration(&_TaskManagerContract.CallOpts)
 }
 
 // VerifyMerkleProof is a free data retrieval call binding the contract method 0x0491323b.
@@ -991,6 +1020,27 @@ func (_TaskManagerContract *TaskManagerContractTransactorSession) ReceiveFunds(_
 	return _TaskManagerContract.Contract.ReceiveFunds(&_TaskManagerContract.TransactOpts, _taskId, _amount, _fundingTxHash, _txOut)
 }
 
+// RegisterPartner is a paid mutator transaction binding the contract method 0xa38fb0c0.
+//
+// Solidity: function registerPartner(uint256 _partnerId, bytes _btcAddress, bytes _btcPubKey) returns()
+func (_TaskManagerContract *TaskManagerContractTransactor) RegisterPartner(opts *bind.TransactOpts, _partnerId *big.Int, _btcAddress []byte, _btcPubKey []byte) (*types.Transaction, error) {
+	return _TaskManagerContract.contract.Transact(opts, "registerPartner", _partnerId, _btcAddress, _btcPubKey)
+}
+
+// RegisterPartner is a paid mutator transaction binding the contract method 0xa38fb0c0.
+//
+// Solidity: function registerPartner(uint256 _partnerId, bytes _btcAddress, bytes _btcPubKey) returns()
+func (_TaskManagerContract *TaskManagerContractSession) RegisterPartner(_partnerId *big.Int, _btcAddress []byte, _btcPubKey []byte) (*types.Transaction, error) {
+	return _TaskManagerContract.Contract.RegisterPartner(&_TaskManagerContract.TransactOpts, _partnerId, _btcAddress, _btcPubKey)
+}
+
+// RegisterPartner is a paid mutator transaction binding the contract method 0xa38fb0c0.
+//
+// Solidity: function registerPartner(uint256 _partnerId, bytes _btcAddress, bytes _btcPubKey) returns()
+func (_TaskManagerContract *TaskManagerContractTransactorSession) RegisterPartner(_partnerId *big.Int, _btcAddress []byte, _btcPubKey []byte) (*types.Transaction, error) {
+	return _TaskManagerContract.Contract.RegisterPartner(&_TaskManagerContract.TransactOpts, _partnerId, _btcAddress, _btcPubKey)
+}
+
 // RenounceRole is a paid mutator transaction binding the contract method 0x36568abe.
 //
 // Solidity: function renounceRole(bytes32 role, address callerConfirmation) returns()
@@ -1033,25 +1083,88 @@ func (_TaskManagerContract *TaskManagerContractTransactorSession) RevokeRole(rol
 	return _TaskManagerContract.Contract.RevokeRole(&_TaskManagerContract.TransactOpts, role, account)
 }
 
-// SetupTask is a paid mutator transaction binding the contract method 0x04ef2a42.
+// SetTaskDeadline is a paid mutator transaction binding the contract method 0xf69902fa.
 //
-// Solidity: function setupTask(uint256 _partnerId, address _depositAddress, uint32 _timelockEndTime, uint32 _deadline, uint128 _amount, bytes _btcAddress, bytes _btcPubKey) returns()
-func (_TaskManagerContract *TaskManagerContractTransactor) SetupTask(opts *bind.TransactOpts, _partnerId *big.Int, _depositAddress common.Address, _timelockEndTime uint32, _deadline uint32, _amount *big.Int, _btcAddress []byte, _btcPubKey []byte) (*types.Transaction, error) {
-	return _TaskManagerContract.contract.Transact(opts, "setupTask", _partnerId, _depositAddress, _timelockEndTime, _deadline, _amount, _btcAddress, _btcPubKey)
+// Solidity: function setTaskDeadline(uint32 _taskDeadline) returns()
+func (_TaskManagerContract *TaskManagerContractTransactor) SetTaskDeadline(opts *bind.TransactOpts, _taskDeadline uint32) (*types.Transaction, error) {
+	return _TaskManagerContract.contract.Transact(opts, "setTaskDeadline", _taskDeadline)
 }
 
-// SetupTask is a paid mutator transaction binding the contract method 0x04ef2a42.
+// SetTaskDeadline is a paid mutator transaction binding the contract method 0xf69902fa.
 //
-// Solidity: function setupTask(uint256 _partnerId, address _depositAddress, uint32 _timelockEndTime, uint32 _deadline, uint128 _amount, bytes _btcAddress, bytes _btcPubKey) returns()
-func (_TaskManagerContract *TaskManagerContractSession) SetupTask(_partnerId *big.Int, _depositAddress common.Address, _timelockEndTime uint32, _deadline uint32, _amount *big.Int, _btcAddress []byte, _btcPubKey []byte) (*types.Transaction, error) {
-	return _TaskManagerContract.Contract.SetupTask(&_TaskManagerContract.TransactOpts, _partnerId, _depositAddress, _timelockEndTime, _deadline, _amount, _btcAddress, _btcPubKey)
+// Solidity: function setTaskDeadline(uint32 _taskDeadline) returns()
+func (_TaskManagerContract *TaskManagerContractSession) SetTaskDeadline(_taskDeadline uint32) (*types.Transaction, error) {
+	return _TaskManagerContract.Contract.SetTaskDeadline(&_TaskManagerContract.TransactOpts, _taskDeadline)
 }
 
-// SetupTask is a paid mutator transaction binding the contract method 0x04ef2a42.
+// SetTaskDeadline is a paid mutator transaction binding the contract method 0xf69902fa.
 //
-// Solidity: function setupTask(uint256 _partnerId, address _depositAddress, uint32 _timelockEndTime, uint32 _deadline, uint128 _amount, bytes _btcAddress, bytes _btcPubKey) returns()
-func (_TaskManagerContract *TaskManagerContractTransactorSession) SetupTask(_partnerId *big.Int, _depositAddress common.Address, _timelockEndTime uint32, _deadline uint32, _amount *big.Int, _btcAddress []byte, _btcPubKey []byte) (*types.Transaction, error) {
-	return _TaskManagerContract.Contract.SetupTask(&_TaskManagerContract.TransactOpts, _partnerId, _depositAddress, _timelockEndTime, _deadline, _amount, _btcAddress, _btcPubKey)
+// Solidity: function setTaskDeadline(uint32 _taskDeadline) returns()
+func (_TaskManagerContract *TaskManagerContractTransactorSession) SetTaskDeadline(_taskDeadline uint32) (*types.Transaction, error) {
+	return _TaskManagerContract.Contract.SetTaskDeadline(&_TaskManagerContract.TransactOpts, _taskDeadline)
+}
+
+// SetTimelockDuration is a paid mutator transaction binding the contract method 0xc9f2e0d9.
+//
+// Solidity: function setTimelockDuration(uint32 _timelockDuration) returns()
+func (_TaskManagerContract *TaskManagerContractTransactor) SetTimelockDuration(opts *bind.TransactOpts, _timelockDuration uint32) (*types.Transaction, error) {
+	return _TaskManagerContract.contract.Transact(opts, "setTimelockDuration", _timelockDuration)
+}
+
+// SetTimelockDuration is a paid mutator transaction binding the contract method 0xc9f2e0d9.
+//
+// Solidity: function setTimelockDuration(uint32 _timelockDuration) returns()
+func (_TaskManagerContract *TaskManagerContractSession) SetTimelockDuration(_timelockDuration uint32) (*types.Transaction, error) {
+	return _TaskManagerContract.Contract.SetTimelockDuration(&_TaskManagerContract.TransactOpts, _timelockDuration)
+}
+
+// SetTimelockDuration is a paid mutator transaction binding the contract method 0xc9f2e0d9.
+//
+// Solidity: function setTimelockDuration(uint32 _timelockDuration) returns()
+func (_TaskManagerContract *TaskManagerContractTransactorSession) SetTimelockDuration(_timelockDuration uint32) (*types.Transaction, error) {
+	return _TaskManagerContract.Contract.SetTimelockDuration(&_TaskManagerContract.TransactOpts, _timelockDuration)
+}
+
+// SetupTask is a paid mutator transaction binding the contract method 0x9a242e19.
+//
+// Solidity: function setupTask(uint256 _partnerId, address _depositAddress, uint128 _amount) returns()
+func (_TaskManagerContract *TaskManagerContractTransactor) SetupTask(opts *bind.TransactOpts, _partnerId *big.Int, _depositAddress common.Address, _amount *big.Int) (*types.Transaction, error) {
+	return _TaskManagerContract.contract.Transact(opts, "setupTask", _partnerId, _depositAddress, _amount)
+}
+
+// SetupTask is a paid mutator transaction binding the contract method 0x9a242e19.
+//
+// Solidity: function setupTask(uint256 _partnerId, address _depositAddress, uint128 _amount) returns()
+func (_TaskManagerContract *TaskManagerContractSession) SetupTask(_partnerId *big.Int, _depositAddress common.Address, _amount *big.Int) (*types.Transaction, error) {
+	return _TaskManagerContract.Contract.SetupTask(&_TaskManagerContract.TransactOpts, _partnerId, _depositAddress, _amount)
+}
+
+// SetupTask is a paid mutator transaction binding the contract method 0x9a242e19.
+//
+// Solidity: function setupTask(uint256 _partnerId, address _depositAddress, uint128 _amount) returns()
+func (_TaskManagerContract *TaskManagerContractTransactorSession) SetupTask(_partnerId *big.Int, _depositAddress common.Address, _amount *big.Int) (*types.Transaction, error) {
+	return _TaskManagerContract.Contract.SetupTask(&_TaskManagerContract.TransactOpts, _partnerId, _depositAddress, _amount)
+}
+
+// UpdateDepositAddress is a paid mutator transaction binding the contract method 0x1ba853d0.
+//
+// Solidity: function updateDepositAddress(address _depositAddress) returns()
+func (_TaskManagerContract *TaskManagerContractTransactor) UpdateDepositAddress(opts *bind.TransactOpts, _depositAddress common.Address) (*types.Transaction, error) {
+	return _TaskManagerContract.contract.Transact(opts, "updateDepositAddress", _depositAddress)
+}
+
+// UpdateDepositAddress is a paid mutator transaction binding the contract method 0x1ba853d0.
+//
+// Solidity: function updateDepositAddress(address _depositAddress) returns()
+func (_TaskManagerContract *TaskManagerContractSession) UpdateDepositAddress(_depositAddress common.Address) (*types.Transaction, error) {
+	return _TaskManagerContract.Contract.UpdateDepositAddress(&_TaskManagerContract.TransactOpts, _depositAddress)
+}
+
+// UpdateDepositAddress is a paid mutator transaction binding the contract method 0x1ba853d0.
+//
+// Solidity: function updateDepositAddress(address _depositAddress) returns()
+func (_TaskManagerContract *TaskManagerContractTransactorSession) UpdateDepositAddress(_depositAddress common.Address) (*types.Transaction, error) {
+	return _TaskManagerContract.Contract.UpdateDepositAddress(&_TaskManagerContract.TransactOpts, _depositAddress)
 }
 
 // Receive is a paid mutator transaction binding the contract receive function.
@@ -1278,15 +1391,16 @@ func (it *TaskManagerContractFundsReceivedIterator) Close() error {
 
 // TaskManagerContractFundsReceived represents a FundsReceived event raised by the TaskManagerContract contract.
 type TaskManagerContractFundsReceived struct {
-	TaskId        *big.Int
-	FundingTxHash [32]byte
-	TxOut         uint32
-	Raw           types.Log // Blockchain specific contextual infos
+	TaskId          *big.Int
+	FundingTxHash   [32]byte
+	TxOut           uint32
+	TimelockEndTime uint32
+	Raw             types.Log // Blockchain specific contextual infos
 }
 
-// FilterFundsReceived is a free log retrieval operation binding the contract event 0x6a5e8552bdc593fdffaf48e4035ee6c81433110d2c15809037dc72e130dcba7d.
+// FilterFundsReceived is a free log retrieval operation binding the contract event 0x5d92cfeb19eeb1bbc6fe2b6d9ef5f624461b25411a37bd5b3034179f2bf9ec5b.
 //
-// Solidity: event FundsReceived(uint256 taskId, bytes32 fundingTxHash, uint32 txOut)
+// Solidity: event FundsReceived(uint256 taskId, bytes32 fundingTxHash, uint32 txOut, uint32 timelockEndTime)
 func (_TaskManagerContract *TaskManagerContractFilterer) FilterFundsReceived(opts *bind.FilterOpts) (*TaskManagerContractFundsReceivedIterator, error) {
 
 	logs, sub, err := _TaskManagerContract.contract.FilterLogs(opts, "FundsReceived")
@@ -1296,9 +1410,9 @@ func (_TaskManagerContract *TaskManagerContractFilterer) FilterFundsReceived(opt
 	return &TaskManagerContractFundsReceivedIterator{contract: _TaskManagerContract.contract, event: "FundsReceived", logs: logs, sub: sub}, nil
 }
 
-// WatchFundsReceived is a free log subscription operation binding the contract event 0x6a5e8552bdc593fdffaf48e4035ee6c81433110d2c15809037dc72e130dcba7d.
+// WatchFundsReceived is a free log subscription operation binding the contract event 0x5d92cfeb19eeb1bbc6fe2b6d9ef5f624461b25411a37bd5b3034179f2bf9ec5b.
 //
-// Solidity: event FundsReceived(uint256 taskId, bytes32 fundingTxHash, uint32 txOut)
+// Solidity: event FundsReceived(uint256 taskId, bytes32 fundingTxHash, uint32 txOut, uint32 timelockEndTime)
 func (_TaskManagerContract *TaskManagerContractFilterer) WatchFundsReceived(opts *bind.WatchOpts, sink chan<- *TaskManagerContractFundsReceived) (event.Subscription, error) {
 
 	logs, sub, err := _TaskManagerContract.contract.WatchLogs(opts, "FundsReceived")
@@ -1333,9 +1447,9 @@ func (_TaskManagerContract *TaskManagerContractFilterer) WatchFundsReceived(opts
 	}), nil
 }
 
-// ParseFundsReceived is a log parse operation binding the contract event 0x6a5e8552bdc593fdffaf48e4035ee6c81433110d2c15809037dc72e130dcba7d.
+// ParseFundsReceived is a log parse operation binding the contract event 0x5d92cfeb19eeb1bbc6fe2b6d9ef5f624461b25411a37bd5b3034179f2bf9ec5b.
 //
-// Solidity: event FundsReceived(uint256 taskId, bytes32 fundingTxHash, uint32 txOut)
+// Solidity: event FundsReceived(uint256 taskId, bytes32 fundingTxHash, uint32 txOut, uint32 timelockEndTime)
 func (_TaskManagerContract *TaskManagerContractFilterer) ParseFundsReceived(log types.Log) (*TaskManagerContractFundsReceived, error) {
 	event := new(TaskManagerContractFundsReceived)
 	if err := _TaskManagerContract.contract.UnpackLog(event, "FundsReceived", log); err != nil {
