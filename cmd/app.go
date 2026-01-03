@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"os/signal"
 	"sync"
@@ -39,13 +40,33 @@ type Application struct {
 
 func NewApplication() *Application {
 	config.InitConfig()
+	// Allow BTC_RPC to be either host:port or full URL so TLS can be inferred.
+	rpcHost := config.AppConfig.BTCRPC
+	disableTLS := true
+	if parsed, err := url.Parse(rpcHost); err == nil && parsed.Host != "" {
+		rpcHost = parsed.Host
+		disableTLS = parsed.Scheme != "https"
+	}
+	var extraHeaders map[string]string
+	if config.AppConfig.BTCRPCApiKey != "" {
+		extraHeaders = map[string]string{
+			"x-api-key": config.AppConfig.BTCRPCApiKey,
+		}
+	}
+	rpcUser := config.AppConfig.BTCRPC_USER
+	rpcPass := config.AppConfig.BTCRPC_PASS
+	if config.AppConfig.BTCRPCApiKey != "" && rpcUser == "" && rpcPass == "" {
+		rpcUser = "api"
+		rpcPass = "api"
+	}
 	// create bitcoin client using btc module connection
 	connConfig := &rpcclient.ConnConfig{
-		Host:         config.AppConfig.BTCRPC,
-		User:         config.AppConfig.BTCRPC_USER,
-		Pass:         config.AppConfig.BTCRPC_PASS,
+		Host:         rpcHost,
+		User:         rpcUser,
+		Pass:         rpcPass,
 		HTTPPostMode: true,
-		DisableTLS:   true,
+		DisableTLS:   disableTLS,
+		ExtraHeaders: extraHeaders,
 	}
 	btcClient, err := rpcclient.New(connConfig, nil)
 	if err != nil {

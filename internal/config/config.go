@@ -26,6 +26,7 @@ func InitConfig() {
 	viper.SetDefault("BTC_RPC", "http://localhost:8332")
 	viper.SetDefault("BTC_RPC_USER", "")
 	viper.SetDefault("BTC_RPC_PASS", "")
+	viper.SetDefault("BTC_RPC_API_KEY", "")
 	viper.SetDefault("BTC_CONFIRMATIONS", 6)
 	viper.SetDefault("BTC_START_HEIGHT", 0)
 	viper.SetDefault("BTC_NETWORK_TYPE", "")
@@ -84,6 +85,7 @@ func InitConfig() {
 		BTCRPC:                 viper.GetString("BTC_RPC"),
 		BTCRPC_USER:            viper.GetString("BTC_RPC_USER"),
 		BTCRPC_PASS:            viper.GetString("BTC_RPC_PASS"),
+		BTCRPCApiKey:           viper.GetString("BTC_RPC_API_KEY"),
 		BTCStartHeight:         viper.GetInt("BTC_START_HEIGHT"),
 		BTCReindexBlocks:       viper.GetString("BTC_REINDEX_BLOCKS"),
 		BTCConfirmations:       viper.GetInt("BTC_CONFIRMATIONS"),
@@ -142,6 +144,7 @@ type Config struct {
 	BTCRPC                 string
 	BTCRPC_USER            string
 	BTCRPC_PASS            string
+	BTCRPCApiKey           string
 	BTCStartHeight         int
 	BTCConfirmations       int
 	BTCNetworkType         string
