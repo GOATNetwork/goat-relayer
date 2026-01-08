@@ -347,26 +347,58 @@ func (s *State) UpdateSafeboxTaskInitOK(taskId uint64, timelockTxid string, time
 		if err != nil {
 			return err
 		}
-		// update sendorder status to init
-		order, err := s.getOrderByTxid(tx, timelockTxid)
-		if err != nil && err != gorm.ErrRecordNotFound {
-			return err
-		}
-		if order == nil {
-			return nil
-		}
-		if order.Status == db.ORDER_STATUS_CONFIRMED || order.Status == db.ORDER_STATUS_PROCESSED || order.Status == db.ORDER_STATUS_CLOSED {
-			return nil
-		}
-		order.Status = db.ORDER_STATUS_INIT
-		order.UpdatedAt = time.Now()
-		err = s.saveOrder(tx, order)
+
+		// update sendorder status to init (allow recovery from closed state, like UpdateWithdrawInitialized)
+		orders, err := s.getAllOrdersByTxid(tx, timelockTxid)
 		if err != nil {
 			return err
 		}
-		err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_INIT, true)
-		if err != nil {
-			return err
+		if len(orders) == 0 {
+			return nil
+		}
+
+		// order found - recover from aggregating or closed status (matching UpdateWithdrawInitialized behavior)
+		for i, order := range orders {
+			// Skip if order is already in a finalized state (confirmed, processed)
+			// But allow recovery from closed state (this is the key fix)
+			if order.Status != db.ORDER_STATUS_AGGREGATING && order.Status != db.ORDER_STATUS_CLOSED {
+				continue
+			}
+
+			// the latest one is init, others stay closed
+			if i == 0 {
+				log.Infof("UpdateSafeboxTaskInitOK: recovering order %s from %s to init", order.OrderId, order.Status)
+				order.Status = db.ORDER_STATUS_INIT
+			} else {
+				order.Status = db.ORDER_STATUS_CLOSED
+			}
+			order.UpdatedAt = time.Now()
+			err = s.saveOrder(tx, order)
+			if err != nil {
+				return err
+			}
+
+			// update vin, vout to order status
+			err = s.updateOtherStatusByOrder(tx, order.OrderId, order.Status, true)
+			if err != nil {
+				return err
+			}
+
+			// For the order being recovered to init, update UTXO status to pending
+			if order.Status != db.ORDER_STATUS_INIT {
+				continue
+			}
+			vins, err := s.getVinsByOrderId(tx, order.OrderId)
+			if err != nil {
+				return err
+			}
+			for _, vin := range vins {
+				// update utxo to pending (recover from processed state if was closed)
+				err = s.updateUtxoStatusPending(tx, vin.Txid, vin.OutIndex)
+				if err != nil {
+					return err
+				}
+			}
 		}
 		return nil
 	})
