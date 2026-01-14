@@ -44,7 +44,8 @@ func NewApplication() *Application {
 	rpcHost := config.AppConfig.BTCRPC
 	disableTLS := true
 	if parsed, err := url.Parse(rpcHost); err == nil && parsed.Host != "" {
-		rpcHost = parsed.Host
+		// Preserve path for APIs like GetBlock that use URL path for API key
+		rpcHost = parsed.Host + parsed.Path
 		disableTLS = parsed.Scheme != "https"
 	}
 	var extraHeaders map[string]string
@@ -55,9 +56,12 @@ func NewApplication() *Application {
 	}
 	rpcUser := config.AppConfig.BTCRPC_USER
 	rpcPass := config.AppConfig.BTCRPC_PASS
-	if config.AppConfig.BTCRPCApiKey != "" && rpcUser == "" && rpcPass == "" {
-		rpcUser = "api"
-		rpcPass = "api"
+	// Default user/pass for APIs that don't require auth (e.g., GetBlock)
+	if rpcUser == "" {
+		rpcUser = "goat"
+	}
+	if rpcPass == "" {
+		rpcPass = "goat"
 	}
 	// create bitcoin client using btc module connection
 	connConfig := &rpcclient.ConnConfig{
