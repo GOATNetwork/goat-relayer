@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/goatnetwork/goat-relayer/internal/bls"
 	"github.com/goatnetwork/goat-relayer/internal/btc"
 	"github.com/goatnetwork/goat-relayer/internal/p2p"
@@ -40,12 +39,12 @@ type WalletServer struct {
 	rpcService *btc.BTCRPCService
 }
 
-func NewWalletServer(libp2p *p2p.LibP2PService, st *state.State, signer *bls.Signer, btcClient *rpcclient.Client, rpcService *btc.BTCRPCService) *WalletServer {
+func NewWalletServer(libp2p *p2p.LibP2PService, st *state.State, signer *bls.Signer, btcClient *btc.BTCRPCService) *WalletServer {
 	return &WalletServer{
 		libp2p:           libp2p,
 		state:            st,
 		signer:           signer,
-		depositProcessor: NewDepositProcessor(btcClient, st, rpcService),
+		depositProcessor: NewDepositProcessor(btcClient, st),
 		orderBroadcaster: NewOrderBroadcaster(btcClient, st),
 		blockCh:          make(chan interface{}, state.BTC_BLOCK_CHAN_LENGTH),
 
@@ -54,7 +53,7 @@ func NewWalletServer(libp2p *p2p.LibP2PService, st *state.State, signer *bls.Sig
 		withdrawSigFailChan:    make(chan interface{}, 10),
 		withdrawSigFinishChan:  make(chan interface{}, 10),
 		withdrawSigTimeoutChan: make(chan interface{}, 10),
-		rpcService:             rpcService,
+		rpcService:             btcClient,
 	}
 }
 
