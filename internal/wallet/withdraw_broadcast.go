@@ -92,51 +92,60 @@ func (c *BtcClient) SendRawTransaction(tx *wire.MsgTx, utxos []*db.Utxo, orderTy
 	return txid, false, nil
 }
 
-// sendRawTransactionBitcoind sends using Bitcoin Core format: sendrawtransaction "hex" [maxfeerate(number)]
-func sendRawTransactionBitcoind(client *rpcclient.Client, txHex string) error {
-	cmd := btcjson.NewBitcoindSendRawTransactionCmd(txHex, 0)
-	respChan := client.SendCmd(cmd)
-	_, err := rpcclient.ReceiveFuture(respChan)
-	return err
-}
-
-// sendRawTransactionBtcd sends using btcd format: sendrawtransaction "hex" [allowhighfees(bool)]
-func sendRawTransactionBtcd(client *rpcclient.Client, txHex string) error {
-	allowHighFees := false
-	cmd := btcjson.NewSendRawTransactionCmd(txHex, &allowHighFees)
-	respChan := client.SendCmd(cmd)
-	_, err := rpcclient.ReceiveFuture(respChan)
-	return err
-}
-
-// sendRawTransactionWithFallback tries multiple methods to send raw transaction:
-// 1. Standard method (uses BackendVersion detection)
-// 2. Bitcoin Core format (maxfeerate=0)
-// 3. btcd format (allowhighfees=false)
-func sendRawTransactionWithFallback(client *rpcclient.Client, tx *wire.MsgTx) error {
-	// Try standard method first
-	_, err := client.SendRawTransaction(tx, false)
-	if err == nil {
-		return nil
-	}
-	log.Warnf("SendRawTransaction standard method failed: %v, trying bitcoind format", err)
-
-	// Serialize tx for direct methods
+// sendRawTransaction sends a raw transaction using RawRequest.
+// This method is compatible with all Bitcoin RPC implementations (btcd, Bitcoin Core, GetBlock, etc.)
+// as it bypasses the rpcclient's BackendVersion detection which calls getinfo (often blocked by RPC providers).
+func sendRawTransaction(client *rpcclient.Client, tx *wire.MsgTx) error {
+	// Serialize tx to hex
 	var buf bytes.Buffer
-	if serErr := tx.Serialize(&buf); serErr != nil {
-		return fmt.Errorf("failed to serialize tx: %v", serErr)
+	if err := tx.Serialize(&buf); err != nil {
+		return fmt.Errorf("failed to serialize tx: %v", err)
 	}
 	txHex := hex.EncodeToString(buf.Bytes())
 
-	// Try Bitcoin Core format (maxfeerate=0)
-	err = sendRawTransactionBitcoind(client, txHex)
-	if err == nil {
-		return nil
+	// Use RawRequest with only hex parameter (most compatible format)
+	rawResp, err := client.RawRequest("sendrawtransaction", []json.RawMessage{
+		json.RawMessage(fmt.Sprintf("%q", txHex)),
+	})
+	if err != nil {
+		// RawRequest returns *btcjson.RPCError for JSON-RPC errors, return as-is for proper error handling
+		if _, ok := err.(*btcjson.RPCError); ok {
+			return err
+		}
+		// Fallback: string matching for non-standard error responses
+		errStr := err.Error()
+		// ErrRPCTxAlreadyInChain (-27): Transaction already in block chain
+		// Bitcoin Core < 28.0: "Transaction already in block chain"
+		// Bitcoin Core >= 28.0: "Transaction outputs already in utxo set"
+		// btcd: "transaction already exists in blockchain"
+		if strings.Contains(errStr, "already in block chain") ||
+			strings.Contains(errStr, "already exists in blockchain") ||
+			strings.Contains(errStr, "already in utxo set") {
+			return &btcjson.RPCError{Code: btcjson.ErrRPCTxAlreadyInChain, Message: errStr}
+		}
+		// ErrRPCVerifyRejected (-26): Transaction verification failed
+		if strings.Contains(errStr, "mandatory-script-verify-flag-failed") ||
+			strings.Contains(errStr, "non-mandatory-script-verify-flag") ||
+			strings.Contains(errStr, "bad-txns") ||
+			strings.Contains(errStr, "txn-mempool-conflict") ||
+			strings.Contains(errStr, "insufficient fee") ||
+			strings.Contains(errStr, "min relay fee not met") {
+			return &btcjson.RPCError{Code: btcjson.ErrRPCVerifyRejected, Message: errStr}
+		}
+		return err
 	}
-	log.Warnf("SendRawTransaction bitcoind format failed: %v, trying btcd format", err)
 
-	// Try btcd format (allowhighfees=false)
-	return sendRawTransactionBtcd(client, txHex)
+	// Handle empty response
+	if len(rawResp) == 0 || string(rawResp) == "null" || string(rawResp) == "" {
+		return fmt.Errorf("sendrawtransaction returned empty response")
+	}
+
+	var txid string
+	if err := json.Unmarshal(rawResp, &txid); err != nil {
+		return fmt.Errorf("unmarshal txid: %w, raw: %s", err, string(rawResp))
+	}
+	log.Infof("SendRawTransaction success, txid: %s", txid)
+	return nil
 }
 
 func (c *BtcClient) CheckPending(txid string, externalTxId string, updatedAt time.Time) (revert bool, confirmations uint64, blockHeight uint64, err error) {
@@ -269,7 +278,7 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 		if err != nil {
 			return false, 0, 0, fmt.Errorf("apply fireblocks signatures to tx error: %v, txid: %s", err, txid)
 		}
-		err = sendRawTransactionWithFallback(c.btcRpc, tx)
+		err = sendRawTransaction(c.btcRpc, tx)
 		if err != nil {
 			if rpcErr, ok := err.(*btcjson.RPCError); ok {
 				switch rpcErr.Code {
