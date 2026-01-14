@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -78,17 +79,52 @@ func (c *BtcClient) SendRawTransaction(tx *wire.MsgTx, utxos []*db.Utxo, orderTy
 	if err != nil {
 		return txid, false, fmt.Errorf("sign tx %s error: %v", txid, err)
 	}
+	// Try standard method first
 	_, err = c.client.SendRawTransaction(tx, false)
-	if err != nil {
-		if rpcErr, ok := err.(*btcjson.RPCError); ok {
-			switch rpcErr.Code {
-			case btcjson.ErrRPCTxAlreadyInChain:
-				return txid, true, err
-			}
-		}
-		return txid, false, err
+	if err == nil {
+		return txid, false, nil
 	}
-	return txid, false, nil
+	// Check if tx already in chain
+	if isTxAlreadyInChain(err) {
+		return txid, true, err
+	}
+	// Fallback to direct method for RPC providers that don't support getinfo (e.g., GetBlock)
+	log.Warnf("SendRawTransaction failed with standard method: %v, trying direct method", err)
+	err = c.sendRawTransactionDirect(tx)
+	if err == nil {
+		return txid, false, nil
+	}
+	if isTxAlreadyInChain(err) {
+		return txid, true, err
+	}
+	return txid, false, err
+}
+
+// isTxAlreadyInChain checks if the error indicates tx is already in blockchain
+func isTxAlreadyInChain(err error) bool {
+	if rpcErr, ok := err.(*btcjson.RPCError); ok {
+		return rpcErr.Code == btcjson.ErrRPCTxAlreadyInChain
+	}
+	return false
+}
+
+// sendRawTransactionDirect sends a raw transaction using SendCmd directly,
+// bypassing BackendVersion() detection which fails with some RPC providers (e.g., GetBlock)
+func (c *BtcClient) sendRawTransactionDirect(tx *wire.MsgTx) error {
+	// Serialize the transaction to hex
+	var buf bytes.Buffer
+	if err := tx.Serialize(&buf); err != nil {
+		return fmt.Errorf("failed to serialize tx: %v", err)
+	}
+	txHex := hex.EncodeToString(buf.Bytes())
+
+	// Create sendrawtransaction command (bitcoind format with maxfeerate=0 to disable fee check)
+	cmd := btcjson.NewSendRawTransactionCmd(txHex, nil)
+
+	// Send command directly without version detection
+	respChan := c.client.SendCmd(cmd)
+	_, err := rpcclient.ReceiveFuture(respChan)
+	return err
 }
 
 func (c *BtcClient) CheckPending(txid string, externalTxId string, updatedAt time.Time) (revert bool, confirmations uint64, blockHeight uint64, err error) {
