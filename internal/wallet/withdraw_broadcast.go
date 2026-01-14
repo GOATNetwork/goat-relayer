@@ -51,8 +51,9 @@ type BaseOrderBroadcaster struct {
 	remoteClient RemoteClient
 	state        *state.State
 
-	txBroadcastMu sync.Mutex
-	txBroadcastCh chan interface{}
+	txBroadcastMu    sync.Mutex
+	txBroadcastCh    chan interface{}
+	sendOrderRbfCh   chan interface{}
 	// txBroadcastStatus          bool
 	// txBroadcastFinishBtcHeight uint64
 }
@@ -345,13 +346,26 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 						})
 						if cleanupErr != nil {
 							log.Errorf("Failed to cleanup UTXOs: %v, txid: %s, orderId: %s", cleanupErr, txid, sendOrder.OrderId)
+						} else {
+							// Broadcast RBF cleanup to other nodes
+							p2p.PublishMessage(context.Background(), p2p.Message[any]{
+								MessageType: p2p.MessageTypeSendOrderRbf,
+								RequestId:   fmt.Sprintf("RBF:%s:%s", config.AppConfig.RelayerAddress, sendOrder.OrderId),
+								DataType:    "MsgSendOrderRbf",
+								Data: types.MsgSendOrderRbf{
+									Txid:      txid,
+									OrderId:   sendOrder.OrderId,
+									OrderType: orderType,
+									Reason:    "utxo-conflict",
+								},
+							})
+							log.Infof("Broadcasted RBF message for order %s, txid: %s, type: %s", sendOrder.OrderId, txid, orderType)
 						}
 
 						// For withdrawal orders, the order is now marked as RBF_REQUEST
 						// The RBF processor will pick it up and submit ReplaceWithdrawalV2
 						if orderType == db.ORDER_TYPE_WITHDRAWAL {
 							log.Infof("Withdrawal order %s marked for RBF, Pid: %d", sendOrder.OrderId, sendOrder.Pid)
-							// TODO: Trigger RBF signature process via event bus
 						}
 
 						return true, 0, 0, nil
@@ -389,8 +403,9 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 
 func NewOrderBroadcaster(btcClient *btc.BTCRPCService, state *state.State) OrderBroadcaster {
 	orderBroadcaster := &BaseOrderBroadcaster{
-		state:         state,
-		txBroadcastCh: make(chan interface{}, 100),
+		state:          state,
+		txBroadcastCh:  make(chan interface{}, 100),
+		sendOrderRbfCh: make(chan interface{}, 100),
 	}
 	if config.AppConfig.BTCNetworkType == "regtest" {
 		orderBroadcaster.remoteClient = &BtcClient{
@@ -411,6 +426,7 @@ func NewOrderBroadcaster(btcClient *btc.BTCRPCService, state *state.State) Order
 func (b *BaseOrderBroadcaster) Start(ctx context.Context) {
 	log.Debug("BaseOrderBroadcaster start")
 	b.state.EventBus.Subscribe(state.SendOrderBroadcasted, b.txBroadcastCh)
+	b.state.EventBus.Subscribe(state.SendOrderRbf, b.sendOrderRbfCh)
 
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -420,6 +436,8 @@ func (b *BaseOrderBroadcaster) Start(ctx context.Context) {
 		case <-ctx.Done():
 			b.Stop()
 			return
+		case msg := <-b.sendOrderRbfCh:
+			b.handleSendOrderRbf(msg)
 		case msg := <-b.txBroadcastCh:
 			msgOrder, ok := msg.(types.MsgSendOrderBroadcasted)
 			if !ok {
@@ -500,6 +518,53 @@ func (b *BaseOrderBroadcaster) Start(ctx context.Context) {
 }
 
 func (b *BaseOrderBroadcaster) Stop() {
+}
+
+// handleSendOrderRbf processes RBF messages from other nodes
+// When a node detects UTXO conflict, it broadcasts RBF cleanup to other nodes
+// Non-proposer nodes use this to clean up their local state
+func (b *BaseOrderBroadcaster) handleSendOrderRbf(msg interface{}) {
+	rbfMsg, ok := msg.(types.MsgSendOrderRbf)
+	if !ok {
+		log.Errorf("Invalid send order RBF message type")
+		return
+	}
+
+	log.Infof("Received send order RBF message: txid=%s, orderId=%s, orderType=%s, reason=%s",
+		rbfMsg.Txid, rbfMsg.OrderId, rbfMsg.OrderType, rbfMsg.Reason)
+
+	// Find the order by txid
+	sendOrder, err := b.state.GetSendOrderByTxIdOrExternalId(rbfMsg.Txid)
+	if err != nil {
+		log.Warnf("handleSendOrderRbf: failed to find order by txid %s: %v", rbfMsg.Txid, err)
+		return
+	}
+	if sendOrder == nil {
+		log.Warnf("handleSendOrderRbf: order not found for txid %s", rbfMsg.Txid)
+		return
+	}
+
+	// Verify orderId matches
+	if sendOrder.OrderId != rbfMsg.OrderId {
+		log.Warnf("handleSendOrderRbf: orderId mismatch, local=%s, received=%s", sendOrder.OrderId, rbfMsg.OrderId)
+		return
+	}
+
+	// Non-proposer nodes don't have BTC RPC access, so we do a simpler cleanup
+	// Trust the proposer's cleanup and mark UTXOs as spent
+	_, cleanupErr := b.state.CleanInitializedNeedRbfWithdrawByOrderId(sendOrder.OrderId, func(utxoTxid string, outIndex int) (bool, error) {
+		// For non-proposer nodes, assume all UTXOs in conflicting order are spent
+		// This is safe because:
+		// 1. The proposer already verified spent status via BTC RPC
+		// 2. If UTXO is not actually spent, it will be restored when we try to use it again
+		return true, nil
+	})
+	if cleanupErr != nil {
+		log.Errorf("handleSendOrderRbf: failed to cleanup order %s: %v", sendOrder.OrderId, cleanupErr)
+		return
+	}
+
+	log.Infof("handleSendOrderRbf: successfully cleaned up order %s, txid=%s", sendOrder.OrderId, rbfMsg.Txid)
 }
 
 // broadcastOrders is a function that broadcasts withdrawal and consolidation orders to the network
