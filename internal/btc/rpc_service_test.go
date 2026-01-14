@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,35 +69,23 @@ func newRPCClientFromEnv(t *testing.T, rpcEnv string) *rpcclient.Client {
 	return client
 }
 
-func fetchBlockHash(t *testing.T, client *rpcclient.Client) (*chainhash.Hash, int64) {
+func getEnvOrSkip(t *testing.T, key string) string {
 	t.Helper()
 
-	result, err := client.RawRequest("getblockcount", nil)
-	require.NoError(t, err)
-
-	var blockCount int64
-	require.NoError(t, json.Unmarshal(result, &blockCount))
-
-	testHeight := blockCount - 100
-	if testHeight < 1 {
-		testHeight = 1
+	value := os.Getenv(key)
+	if value == "" {
+		t.Skipf("Skipping: %s not set", key)
 	}
-
-	blockHash, err := client.GetBlockHash(testHeight)
-	require.NoError(t, err)
-
-	return blockHash, testHeight
+	return value
 }
 
-func fetchTxID(t *testing.T, client *rpcclient.Client) string {
+func getEnvInt64OrSkip(t *testing.T, key string) int64 {
 	t.Helper()
 
-	blockHash, _ := fetchBlockHash(t, client)
-	blockVerbose, err := client.GetBlockVerbose(blockHash)
-	require.NoError(t, err)
-	require.NotEmpty(t, blockVerbose.Tx)
-
-	return blockVerbose.Tx[0]
+	value := getEnvOrSkip(t, key)
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	require.NoError(t, err, "invalid %s", key)
+	return parsed
 }
 
 // TestRPC_RawRequest_GetBlockCount tests RawRequest("getblockcount") - used in notifier.go
@@ -115,16 +106,7 @@ func TestRPC_RawRequest_GetBlockCount(t *testing.T) {
 func TestRPC_GetBlockHash(t *testing.T) {
 	client := getTestClient(t)
 
-	result, err := client.RawRequest("getblockcount", nil)
-	require.NoError(t, err)
-
-	var blockCount int64
-	require.NoError(t, json.Unmarshal(result, &blockCount))
-
-	testHeight := blockCount - 100
-	if testHeight < 1 {
-		testHeight = 1
-	}
+	testHeight := getEnvInt64OrSkip(t, "BTC_RPC_HEIGHT")
 
 	// Test GetBlockHash - this is what business code uses
 	blockHash, err := client.GetBlockHash(testHeight)
@@ -139,17 +121,20 @@ func TestRPC_GetBlockHash(t *testing.T) {
 func TestRPC_GetBlock(t *testing.T) {
 	client := getTestClient(t)
 
-	blockHash, testHeight := fetchBlockHash(t, client)
+	blockHash := getEnvOrSkip(t, "BTC_RPC_BLOCK_HASH")
+	testHeight := getEnvInt64OrSkip(t, "BTC_RPC_HEIGHT")
+	parsedHash, err := chainhash.NewHashFromStr(blockHash)
+	require.NoError(t, err)
 
 	// Test GetBlock - returns *wire.MsgBlock
-	block, err := client.GetBlock(blockHash)
+	block, err := client.GetBlock(parsedHash)
 	require.NoError(t, err)
 	assert.NotNil(t, block)
 	assert.NotNil(t, block.Header)
 	assert.NotEmpty(t, block.Transactions)
 
 	// Verify block hash matches
-	assert.Equal(t, blockHash.String(), block.BlockHash().String())
+	assert.Equal(t, parsedHash.String(), block.BlockHash().String())
 
 	t.Logf("Block %d: hash=%s, tx_count=%d, version=%d",
 		testHeight, block.BlockHash().String(), len(block.Transactions), block.Header.Version)
@@ -159,11 +144,15 @@ func TestRPC_GetBlock(t *testing.T) {
 func TestRPC_GetBlockVerbose(t *testing.T) {
 	client := getTestClient(t)
 
-	blockHash, testHeight := fetchBlockHash(t, client)
-	blockVerbose, err := client.GetBlockVerbose(blockHash)
+	blockHash := getEnvOrSkip(t, "BTC_RPC_BLOCK_HASH")
+	testHeight := getEnvInt64OrSkip(t, "BTC_RPC_HEIGHT")
+	parsedHash, err := chainhash.NewHashFromStr(blockHash)
+	require.NoError(t, err)
+
+	blockVerbose, err := client.GetBlockVerbose(parsedHash)
 	require.NoError(t, err)
 	assert.NotNil(t, blockVerbose)
-	assert.Equal(t, blockHash.String(), blockVerbose.Hash)
+	assert.Equal(t, blockHash, blockVerbose.Hash)
 	assert.Equal(t, testHeight, blockVerbose.Height)
 	assert.Greater(t, blockVerbose.Confirmations, int64(0))
 	assert.NotEmpty(t, blockVerbose.Tx)
@@ -178,7 +167,7 @@ func TestRPC_GetBlockVerbose(t *testing.T) {
 func TestRPC_GetRawTransactionVerbose(t *testing.T) {
 	client := getTestClient(t)
 
-	txID := fetchTxID(t, client)
+	txID := getEnvOrSkip(t, "BTC_RPC_TXID")
 	txHash, err := chainhash.NewHashFromStr(txID)
 	require.NoError(t, err)
 
@@ -194,8 +183,62 @@ func TestRPC_GetRawTransactionVerbose(t *testing.T) {
 		txResult.Txid, txResult.BlockHash, txResult.Confirmations, txResult.Blocktime)
 }
 
+// TestRPC_GetBlockVerboseTx tests client.GetBlockVerboseTx - used in deposit.go
+func TestRPC_GetBlockVerboseTx(t *testing.T) {
+	client := getTestClient(t)
+
+	blockHash := getEnvOrSkip(t, "BTC_RPC_BLOCK_HASH")
+	parsedHash, err := chainhash.NewHashFromStr(blockHash)
+	require.NoError(t, err)
+
+	blockVerbose, err := client.GetBlockVerboseTx(parsedHash)
+	require.NoError(t, err)
+	assert.NotNil(t, blockVerbose)
+	assert.Equal(t, blockHash, blockVerbose.Hash)
+	assert.Greater(t, blockVerbose.Height, int64(0))
+	assert.NotEmpty(t, blockVerbose.Tx)
+}
+
+// TestRPC_GetRawTransaction tests client.GetRawTransaction - used in withdraw_strategy_test.go
+func TestRPC_GetRawTransaction(t *testing.T) {
+	client := getTestClient(t)
+
+	txID := getEnvOrSkip(t, "BTC_RPC_TXID")
+	txHash, err := chainhash.NewHashFromStr(txID)
+	require.NoError(t, err)
+
+	tx, err := client.GetRawTransaction(txHash)
+	require.NoError(t, err)
+	require.NotNil(t, tx)
+	assert.Equal(t, txID, tx.Hash().String())
+}
+
+// TestRPC_GetMempoolEntry tests client.GetMempoolEntry - used in withdraw_broadcast.go
+func TestRPC_GetMempoolEntry(t *testing.T) {
+	client := getTestClient(t)
+
+	txID := getEnvOrSkip(t, "BTC_RPC_MEMPOOL_TXID")
+	entry, err := client.GetMempoolEntry(txID)
+	require.NoError(t, err)
+	require.NotNil(t, entry)
+}
+
+// TestRPC_EstimateSmartFee tests client.EstimateSmartFee - used in fee.go
+func TestRPC_EstimateSmartFee(t *testing.T) {
+	client := getTestClient(t)
+
+	if os.Getenv("BTC_RPC_ENABLE_ESTIMATE_FEE") == "" {
+		t.Skip("Skipping: BTC_RPC_ENABLE_ESTIMATE_FEE not set")
+	}
+
+	feeEstimate, err := client.EstimateSmartFee(1, &btcjson.EstimateModeConservative)
+	require.NoError(t, err)
+	require.NotNil(t, feeEstimate)
+	require.NotNil(t, feeEstimate.FeeRate)
+}
+
 // TestRPC_SendRawTransaction tests client.SendRawTransaction error handling - used in withdraw_broadcast.go
-func TestRPC_SendRawTransaction(t *testing.T) {
+func TestRPC_RawRequest_SendRawTransaction(t *testing.T) {
 	client := getTestClient(t)
 
 	// Test with invalid transaction - should return error
@@ -217,4 +260,40 @@ func TestRPC_SendRawTransaction(t *testing.T) {
 		"Expected tx validation error, got: %s", errStr)
 
 	t.Logf("SendRawTransaction error (expected): %v", err)
+}
+
+func TestRPC_SendRawTransaction(t *testing.T) {
+	client := getTestClient(t)
+
+	invalidTx := &wire.MsgTx{}
+	_, err := client.SendRawTransaction(invalidTx, false)
+	require.Error(t, err)
+}
+
+// TestRPCService_GetBlockTimeFromTx tests BTCRPCService.GetBlockTimeFromTx - used in consensus_event.go
+func TestRPCService_GetBlockTimeFromTx(t *testing.T) {
+	client := getTestClient(t)
+	service := NewBTCRPCService(client)
+
+	txID := getEnvOrSkip(t, "BTC_RPC_TXID")
+	txHash, err := chainhash.NewHashFromStr(txID)
+	require.NoError(t, err)
+
+	blockTime, err := service.GetBlockTimeFromTx(*txHash)
+	require.NoError(t, err)
+	assert.Greater(t, blockTime, int64(0))
+}
+
+// TestRPCService_GetTxHashes tests BTCRPCService.GetTxHashes - used in consensus_event.go
+func TestRPCService_GetTxHashes(t *testing.T) {
+	client := getTestClient(t)
+	service := NewBTCRPCService(client)
+
+	blockHash := getEnvOrSkip(t, "BTC_RPC_BLOCK_HASH")
+	parsedHash, err := chainhash.NewHashFromStr(blockHash)
+	require.NoError(t, err)
+
+	txHashes, err := service.GetTxHashes(parsedHash)
+	require.NoError(t, err)
+	require.NotEmpty(t, txHashes)
 }
