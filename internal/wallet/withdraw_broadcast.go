@@ -92,34 +92,51 @@ func (c *BtcClient) SendRawTransaction(tx *wire.MsgTx, utxos []*db.Utxo, orderTy
 	return txid, false, nil
 }
 
-// sendRawTransactionDirect sends a raw transaction using SendCmd directly,
-// bypassing BackendVersion() detection which fails with some RPC providers (e.g., GetBlock)
-func sendRawTransactionDirect(client *rpcclient.Client, tx *wire.MsgTx) error {
-	// Serialize the transaction to hex
-	var buf bytes.Buffer
-	if err := tx.Serialize(&buf); err != nil {
-		return fmt.Errorf("failed to serialize tx: %v", err)
-	}
-	txHex := hex.EncodeToString(buf.Bytes())
-
-	// Create sendrawtransaction command (bitcoind format with maxfeerate=0 to disable fee check)
-	cmd := btcjson.NewSendRawTransactionCmd(txHex, nil)
-
-	// Send command directly without version detection
+// sendRawTransactionBitcoind sends using Bitcoin Core format: sendrawtransaction "hex" [maxfeerate(number)]
+func sendRawTransactionBitcoind(client *rpcclient.Client, txHex string) error {
+	cmd := btcjson.NewBitcoindSendRawTransactionCmd(txHex, 0)
 	respChan := client.SendCmd(cmd)
 	_, err := rpcclient.ReceiveFuture(respChan)
 	return err
 }
 
-// sendRawTransactionWithFallback tries standard method first, falls back to direct method
+// sendRawTransactionBtcd sends using btcd format: sendrawtransaction "hex" [allowhighfees(bool)]
+func sendRawTransactionBtcd(client *rpcclient.Client, txHex string) error {
+	allowHighFees := false
+	cmd := btcjson.NewSendRawTransactionCmd(txHex, &allowHighFees)
+	respChan := client.SendCmd(cmd)
+	_, err := rpcclient.ReceiveFuture(respChan)
+	return err
+}
+
+// sendRawTransactionWithFallback tries multiple methods to send raw transaction:
+// 1. Standard method (uses BackendVersion detection)
+// 2. Bitcoin Core format (maxfeerate=0)
+// 3. btcd format (allowhighfees=false)
 func sendRawTransactionWithFallback(client *rpcclient.Client, tx *wire.MsgTx) error {
+	// Try standard method first
 	_, err := client.SendRawTransaction(tx, false)
 	if err == nil {
 		return nil
 	}
-	// Fallback to direct method for RPC providers that don't support getinfo (e.g., GetBlock)
-	log.Warnf("SendRawTransaction failed with standard method: %v, trying direct method", err)
-	return sendRawTransactionDirect(client, tx)
+	log.Warnf("SendRawTransaction standard method failed: %v, trying bitcoind format", err)
+
+	// Serialize tx for direct methods
+	var buf bytes.Buffer
+	if serErr := tx.Serialize(&buf); serErr != nil {
+		return fmt.Errorf("failed to serialize tx: %v", serErr)
+	}
+	txHex := hex.EncodeToString(buf.Bytes())
+
+	// Try Bitcoin Core format (maxfeerate=0)
+	err = sendRawTransactionBitcoind(client, txHex)
+	if err == nil {
+		return nil
+	}
+	log.Warnf("SendRawTransaction bitcoind format failed: %v, trying btcd format", err)
+
+	// Try btcd format (allowhighfees=false)
+	return sendRawTransactionBtcd(client, txHex)
 }
 
 func (c *BtcClient) CheckPending(txid string, externalTxId string, updatedAt time.Time) (revert bool, confirmations uint64, blockHeight uint64, err error) {
