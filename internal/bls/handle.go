@@ -40,6 +40,8 @@ func (s *Signer) handleSigStart(ctx context.Context, event interface{}) {
 		log.Debugf("Event handleDepositReceive is of type MsgSignDeposit, request id %s", e.RequestId)
 		if err := s.handleSigStartNewDeposit(ctx, e); err != nil {
 			log.Errorf("Error handleSigStart MsgSignDeposit, %v", err)
+			// feedback SigFailed
+			s.state.EventBus.Publish(state.SigFailed, e)
 		}
 	case types.MsgSignSendOrder:
 		log.Debugf("Event handleSigStartSendOrder is of type MsgSignSendOrder, request id %s", e.RequestId)
@@ -66,11 +68,6 @@ func (s *Signer) handleSigStart(ctx context.Context, event interface{}) {
 		log.Debugf("Event handleSigStartNewVoter is of type MsgSignNewVoter, request id %s", e.RequestId)
 		if err := s.handleSigStartNewVoter(ctx, e); err != nil {
 			log.Errorf("Error handleSigStart MsgSignNewVoter, %v", err)
-		}
-	case types.MsgSignRbfOrder:
-		log.Debugf("Event handleSigStartRbfOrder is of type MsgSignRbfOrder, request id %s", e.RequestId)
-		if err := s.handleSigStartRbfOrder(ctx, e); err != nil {
-			log.Errorf("Error handleSigStart MsgSignRbfOrder, %v", err)
 			// feedback SigFailed
 			s.state.EventBus.Publish(state.SigFailed, e)
 		}
@@ -103,13 +100,6 @@ func (s *Signer) handleSigReceive(ctx context.Context, event interface{}) {
 		log.Debugf("Event handleSigReceive is of type MsgSignNewVoter, request id %s", e.RequestId)
 		if err := s.handleSigReceiveNewVoter(ctx, e); err != nil {
 			log.Errorf("Error handleSigReceive MsgSignNewVoter, %v", err)
-			// feedback SigFailed
-			s.state.EventBus.Publish(state.SigFailed, e)
-		}
-	case types.MsgSignRbfOrder:
-		log.Debugf("Event handleSigReceive is of type MsgSignRbfOrder, request id %s", e.RequestId)
-		if err := s.handleSigReceiveRbfOrder(ctx, e); err != nil {
-			log.Errorf("Error handleSigReceive MsgSignRbfOrder, %v", err)
 			// feedback SigFailed
 			s.state.EventBus.Publish(state.SigFailed, e)
 		}
