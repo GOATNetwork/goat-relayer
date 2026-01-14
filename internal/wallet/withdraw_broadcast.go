@@ -13,9 +13,9 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/goatnetwork/goat-relayer/internal/btc"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/http"
@@ -38,12 +38,12 @@ type RemoteClient interface {
 }
 
 type BtcClient struct {
-	client *rpcclient.Client
+	client *btc.BTCRPCService
 }
 
 type FireblocksClient struct {
 	client *http.FireblocksProposal
-	btcRpc *rpcclient.Client
+	btcRpc *btc.BTCRPCService
 	state  *state.State
 }
 
@@ -95,7 +95,7 @@ func (c *BtcClient) SendRawTransaction(tx *wire.MsgTx, utxos []*db.Utxo, orderTy
 // sendRawTransaction sends a raw transaction using RawRequest.
 // This method is compatible with all Bitcoin RPC implementations (btcd, Bitcoin Core, GetBlock, etc.)
 // as it bypasses the rpcclient's BackendVersion detection which calls getinfo (often blocked by RPC providers).
-func sendRawTransaction(client *rpcclient.Client, tx *wire.MsgTx) error {
+func sendRawTransaction(client *btc.BTCRPCService, tx *wire.MsgTx) error {
 	// Serialize tx to hex
 	var buf bytes.Buffer
 	if err := tx.Serialize(&buf); err != nil {
@@ -343,7 +343,7 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 	return false, uint64(block.Confirmations), uint64(block.Height), nil
 }
 
-func NewOrderBroadcaster(btcClient *rpcclient.Client, state *state.State) OrderBroadcaster {
+func NewOrderBroadcaster(btcClient *btc.BTCRPCService, state *state.State) OrderBroadcaster {
 	orderBroadcaster := &BaseOrderBroadcaster{
 		state:         state,
 		txBroadcastCh: make(chan interface{}, 100),

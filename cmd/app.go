@@ -58,10 +58,10 @@ func NewApplication() *Application {
 	rpcPass := config.AppConfig.BTCRPC_PASS
 	// Default user/pass for APIs that don't require auth (e.g., GetBlock)
 	if rpcUser == "" {
-		rpcUser = "goat"
+		rpcUser = "x"
 	}
 	if rpcPass == "" {
-		rpcPass = "goat"
+		rpcPass = "x"
 	}
 	// create bitcoin client using btc module connection
 	connConfig := &rpcclient.ConnConfig{
@@ -72,7 +72,7 @@ func NewApplication() *Application {
 		DisableTLS:   disableTLS,
 		ExtraHeaders: extraHeaders,
 	}
-	btcClient, err := rpcclient.New(connConfig, nil)
+	bclient, err := rpcclient.New(connConfig, nil)
 	if err != nil {
 		log.Fatalf("Failed to start bitcoin client: %v", err)
 	}
@@ -80,13 +80,13 @@ func NewApplication() *Application {
 	dbm := db.NewDatabaseManager()
 	state := state.InitializeState(dbm)
 	libP2PService := p2p.NewLibP2PService(state)
+	btcClient := btc.NewBTCRPCService(bclient)
 	layer2Listener := layer2.NewLayer2Listener(libP2PService, state, dbm, btcClient)
 	signer := bls.NewSigner(libP2PService, layer2Listener, state, btcClient)
 	httpServer := http.NewHTTPServer(libP2PService, state, dbm)
 	btcListener := btc.NewBTCListener(libP2PService, state, btcClient)
 	utxoService := rpc.NewUtxoServer(state, layer2Listener, btcClient)
-	btcRPCService := btc.NewBTCRPCService(btcClient)
-	walletService := wallet.NewWalletServer(libP2PService, state, signer, btcClient, btcRPCService)
+	walletService := wallet.NewWalletServer(libP2PService, state, signer, btcClient)
 	voterProcessor := voter.NewVoterProcessor(libP2PService, state, signer)
 
 	return &Application{

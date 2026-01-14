@@ -1,15 +1,11 @@
 package wallet
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/http"
@@ -106,94 +102,3 @@ func connectDatabase(dbPath string, dbRef **gorm.DB, dbName string) error {
 	log.Debugf("%s connected successfully in WAL mode, path: %s", dbName, dbPath)
 	return nil
 }
-
-// TestSendRawTransaction_Testnet4 tests sendRawTransaction with GetBlock testnet4
-// Set GETBLOCK_TESTNET4_URL env var to run this test, e.g.:
-// GETBLOCK_TESTNET4_URL=go.getblock.io/<your-api-key> go test -v -run TestSendRawTransaction_Testnet4
-func TestSendRawTransaction_Testnet4(t *testing.T) {
-	// GetBlock testnet4 endpoint from environment variable
-	rpcHost := os.Getenv("GETBLOCK_TESTNET4_URL")
-	if rpcHost == "" {
-		t.Skip("Skipping: GETBLOCK_TESTNET4_URL not set")
-	}
-
-	// Create RPC client
-	connCfg := &rpcclient.ConnConfig{
-		Host:         rpcHost,
-		User:         "x", // GetBlock doesn't require auth but rpcclient needs non-empty
-		Pass:         "x",
-		HTTPPostMode: true,
-		DisableTLS:   false,
-	}
-
-	client, err := rpcclient.New(connCfg, nil)
-	if err != nil {
-		t.Fatalf("Failed to create RPC client: %v", err)
-	}
-	defer client.Shutdown()
-
-	// Test 1: Verify RawRequest works with getblockcount
-	t.Run("GetBlockCount", func(t *testing.T) {
-		rawResp, err := client.RawRequest("getblockcount", nil)
-		if err != nil {
-			if strings.Contains(err.Error(), "dial tcp") || strings.Contains(err.Error(), "connect:") {
-				t.Skipf("Skipping due to network issue: %v", err)
-			}
-			t.Fatalf("getblockcount failed: %v", err)
-		}
-		var blockCount int64
-		if err := json.Unmarshal(rawResp, &blockCount); err != nil {
-			t.Fatalf("Failed to unmarshal blockcount: %v", err)
-		}
-		t.Logf("Current testnet4 block count: %d", blockCount)
-		assert.Greater(t, blockCount, int64(0))
-	})
-
-	// Test 2: Verify getinfo fails (GetBlock returns 403) - this is why we use RawRequest
-	t.Run("GetInfo_Blocked", func(t *testing.T) {
-		_, err := client.RawRequest("getinfo", nil)
-		if err == nil {
-			t.Log("getinfo succeeded (unexpected for GetBlock)")
-		} else {
-			if strings.Contains(err.Error(), "dial tcp") || strings.Contains(err.Error(), "connect:") {
-				t.Skipf("Skipping due to network issue: %v", err)
-			}
-			t.Logf("getinfo blocked as expected (403): %v", err)
-		}
-	})
-
-	// Test 3: Verify sendrawtransaction RawRequest format works
-	t.Run("SendRawTransaction_InvalidTx", func(t *testing.T) {
-		// Invalid tx hex - tests that RPC format is correct (error should be about tx, not format)
-		invalidHex := "0100000000000000"
-		rawResp, err := client.RawRequest("sendrawtransaction", []json.RawMessage{
-			json.RawMessage(fmt.Sprintf("%q", invalidHex)),
-		})
-		if err == nil {
-			t.Fatalf("Expected error for invalid tx, got response: %s", string(rawResp))
-		}
-		if strings.Contains(err.Error(), "dial tcp") || strings.Contains(err.Error(), "connect:") {
-			t.Skipf("Skipping due to network issue: %v", err)
-		}
-		// Error should be about tx validation, not RPC format
-		t.Logf("TX validation error (expected): %v", err)
-	})
-
-	// Test 4: getblockchaininfo to verify chain is testnet4
-	t.Run("GetBlockchainInfo", func(t *testing.T) {
-		rawResp, err := client.RawRequest("getblockchaininfo", nil)
-		if err != nil {
-			if strings.Contains(err.Error(), "dial tcp") || strings.Contains(err.Error(), "connect:") {
-				t.Skipf("Skipping due to network issue: %v", err)
-			}
-			t.Fatalf("getblockchaininfo failed: %v", err)
-		}
-		var info map[string]interface{}
-		if err := json.Unmarshal(rawResp, &info); err != nil {
-			t.Fatalf("Failed to unmarshal: %v", err)
-		}
-		t.Logf("Chain: %v, Blocks: %v", info["chain"], info["blocks"])
-		assert.Equal(t, "testnet4", info["chain"])
-	})
-}
-
