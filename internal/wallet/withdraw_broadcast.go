@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -89,6 +90,36 @@ func (c *BtcClient) SendRawTransaction(tx *wire.MsgTx, utxos []*db.Utxo, orderTy
 		return txid, false, err
 	}
 	return txid, false, nil
+}
+
+// sendRawTransactionDirect sends a raw transaction using SendCmd directly,
+// bypassing BackendVersion() detection which fails with some RPC providers (e.g., GetBlock)
+func sendRawTransactionDirect(client *rpcclient.Client, tx *wire.MsgTx) error {
+	// Serialize the transaction to hex
+	var buf bytes.Buffer
+	if err := tx.Serialize(&buf); err != nil {
+		return fmt.Errorf("failed to serialize tx: %v", err)
+	}
+	txHex := hex.EncodeToString(buf.Bytes())
+
+	// Create sendrawtransaction command (bitcoind format with maxfeerate=0 to disable fee check)
+	cmd := btcjson.NewSendRawTransactionCmd(txHex, nil)
+
+	// Send command directly without version detection
+	respChan := client.SendCmd(cmd)
+	_, err := rpcclient.ReceiveFuture(respChan)
+	return err
+}
+
+// sendRawTransactionWithFallback tries standard method first, falls back to direct method
+func sendRawTransactionWithFallback(client *rpcclient.Client, tx *wire.MsgTx) error {
+	_, err := client.SendRawTransaction(tx, false)
+	if err == nil {
+		return nil
+	}
+	// Fallback to direct method for RPC providers that don't support getinfo (e.g., GetBlock)
+	log.Warnf("SendRawTransaction failed with standard method: %v, trying direct method", err)
+	return sendRawTransactionDirect(client, tx)
 }
 
 func (c *BtcClient) CheckPending(txid string, externalTxId string, updatedAt time.Time) (revert bool, confirmations uint64, blockHeight uint64, err error) {
@@ -221,7 +252,7 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 		if err != nil {
 			return false, 0, 0, fmt.Errorf("apply fireblocks signatures to tx error: %v, txid: %s", err, txid)
 		}
-		_, err = c.btcRpc.SendRawTransaction(tx, false)
+		err = sendRawTransactionWithFallback(c.btcRpc, tx)
 		if err != nil {
 			if rpcErr, ok := err.(*btcjson.RPCError); ok {
 				switch rpcErr.Code {
