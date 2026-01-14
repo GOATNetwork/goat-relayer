@@ -665,28 +665,27 @@ func (w *WalletServer) initRbfWithdrawSig() {
 		return
 	}
 
-	// Extract receiver types from withdraws
+	// Extract receiver types from withdraws and find minimum MaxTxPrice
 	receiverTypes := make([]string, len(withdraws))
+	var minMaxTxPrice uint64 = ^uint64(0) // max uint64
 	for i, withdraw := range withdraws {
 		receiverTypes[i], _ = types.GetAddressType(withdraw.To, network)
+		if withdraw.TxPrice < minMaxTxPrice {
+			minMaxTxPrice = withdraw.TxPrice
+		}
 	}
 
-	// Calculate higher fee (increase by 50% or minimum increment)
 	oldTxFee := order.TxFee
-	newTxFee := oldTxFee + (oldTxFee / 2) // 50% increase
-	if newTxFee <= oldTxFee {
-		newTxFee = oldTxFee + 1000 // minimum 1000 satoshi increase
-	}
 
 	// Use actual network fee for UTXO selection
-	networkFee := int64(btcState.NetworkFee.FastestFee)
-	if networkFee == 0 {
-		networkFee = int64(newTxFee) / 200 // estimate based on typical tx size
+	networkFeeRate := int64(btcState.NetworkFee.FastestFee)
+	if networkFeeRate == 0 {
+		networkFeeRate = 10 // fallback to 10 sat/vB
 	}
 
 	// Select UTXOs for the new transaction
 	selectOptimalUTXOs, totalSelectedAmount, _, changeAmount, estimateFee, witnessSize, err := SelectOptimalUTXOs(
-		utxos, receiverTypes, totalWithdrawAmount, 0, networkFee, len(withdraws))
+		utxos, receiverTypes, totalWithdrawAmount, 0, networkFeeRate, len(withdraws))
 	if err != nil {
 		log.Errorf("WalletServer initRbfWithdrawSig SelectOptimalUTXOs error: %v", err)
 		return
@@ -704,7 +703,7 @@ func (w *WalletServer) initRbfWithdrawSig() {
 		ChangeAmount:   changeAmount,
 		EstimatedFee:   estimateFee,
 		WitnessSize:    witnessSize,
-		NetworkFee:     networkFee,
+		NetworkFee:     networkFeeRate,
 		Net:            network,
 		UtxoAmount:     totalSelectedAmount,
 		WithdrawAmount: totalWithdrawAmount,
@@ -715,18 +714,61 @@ func (w *WalletServer) initRbfWithdrawSig() {
 		return
 	}
 
-	// Ensure new fee is higher than old fee
-	if actualFee <= oldTxFee {
-		actualFee = oldTxFee + 1000
+	// Calculate vbytes for txPrice calculation
+	// vbytes = stripped_size + witness_size / 4
+	vbytes := float64(tx.SerializeSizeStripped()) + float64(witnessSize)/4.0
+
+	// Calculate maximum allowed fee based on minimum MaxTxPrice
+	// txPrice = fee / vbytes, so maxFee = minMaxTxPrice * vbytes
+	maxAllowedFee := uint64(float64(minMaxTxPrice) * vbytes)
+
+	// Calculate minimum required fee (just 1 satoshi more than old fee)
+	minRequiredFee := oldTxFee + 1
+
+	// Check if RBF is possible within MaxTxPrice constraint
+	if minRequiredFee > maxAllowedFee {
+		log.Warnf("WalletServer initRbfWithdrawSig cannot proceed: minRequiredFee(%d) > maxAllowedFee(%d), minMaxTxPrice: %d, vbytes: %.2f",
+			minRequiredFee, maxAllowedFee, minMaxTxPrice, vbytes)
+		return
 	}
 
-	log.Infof("WalletServer initRbfWithdrawSig CreateRawTransaction: tx: %s, actualFee: %d, witnessSize: %d, oldTxFee: %d",
-		tx.TxID(), actualFee, witnessSize, oldTxFee)
+	// Smart fee calculation:
+	// 1. Use network fee rate if available
+	// 2. Cap at maxAllowedFee
+	// 3. Ensure > oldTxFee
+	networkBasedFee := uint64(float64(networkFeeRate) * vbytes)
+
+	if actualFee <= oldTxFee {
+		// If CreateRawTransaction's fee is too low, recalculate
+		if networkBasedFee > oldTxFee && networkBasedFee <= maxAllowedFee {
+			// Use network-based fee
+			actualFee = networkBasedFee
+		} else if networkBasedFee > maxAllowedFee {
+			// Network fee exceeds max allowed, use max allowed
+			actualFee = maxAllowedFee
+		} else {
+			// Network fee is still too low, use minimum increment
+			actualFee = minRequiredFee
+		}
+	} else if actualFee > maxAllowedFee {
+		// Cap at max allowed fee
+		actualFee = maxAllowedFee
+	}
+
+	// Final sanity check
+	if actualFee <= oldTxFee {
+		log.Errorf("WalletServer initRbfWithdrawSig fee calculation error: actualFee(%d) <= oldTxFee(%d)", actualFee, oldTxFee)
+		return
+	}
+
+	newTxPrice := float64(actualFee) / vbytes
+	log.Infof("WalletServer initRbfWithdrawSig CreateRawTransaction: tx: %s, actualFee: %d, oldTxFee: %d, witnessSize: %d, vbytes: %.2f, newTxPrice: %.2f, minMaxTxPrice: %d, networkFeeRate: %d",
+		tx.TxID(), actualFee, oldTxFee, witnessSize, vbytes, newTxPrice, minMaxTxPrice, networkFeeRate)
 
 	// Create RBF order message using existing createSendOrder with pid > 0
 	// This will be recognized as RBF order in aggSigSendOrder and submitted via ReplaceWithdrawalV2
 	msgSignSendOrder, err := w.createSendOrder(tx, db.ORDER_TYPE_WITHDRAWAL, selectOptimalUTXOs, withdraws, nil,
-		totalSelectedAmount, actualFee, uint64(networkFee), uint64(witnessSize), epochVoter, network, order.Pid)
+		totalSelectedAmount, actualFee, uint64(networkFeeRate), uint64(witnessSize), epochVoter, network, order.Pid)
 	if err != nil {
 		log.Errorf("WalletServer initRbfWithdrawSig createSendOrder error: %v", err)
 		return
