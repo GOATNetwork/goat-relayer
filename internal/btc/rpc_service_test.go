@@ -297,3 +297,67 @@ func TestRPCService_GetTxHashes(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, txHashes)
 }
+
+// TestRPCService_GetBlockData tests BTCRPCService.GetBlockData - used in withdraw_finalize.go
+func TestRPCService_GetBlockData(t *testing.T) {
+	client := getTestClient(t)
+	service := NewBTCRPCService(client)
+
+	testHeight := getEnvInt64OrSkip(t, "BTC_RPC_HEIGHT")
+
+	blockData, err := service.GetBlockData(uint64(testHeight))
+	require.NoError(t, err)
+	require.NotNil(t, blockData)
+	assert.Equal(t, uint64(testHeight), blockData.BlockHeight)
+	assert.NotEmpty(t, blockData.BlockHash)
+	assert.NotEmpty(t, blockData.Header)
+	assert.NotEmpty(t, blockData.MerkleRoot)
+	assert.Greater(t, blockData.BlockTime, int64(0))
+	assert.NotEmpty(t, blockData.TxHashes)
+
+	t.Logf("Block %d data: hash=%s, merkleRoot=%s, time=%d, difficulty=%d",
+		blockData.BlockHeight, blockData.BlockHash, blockData.MerkleRoot, blockData.BlockTime, blockData.Difficulty)
+}
+
+// TestRPCService_GetBlockDataByHash tests BTCRPCService.GetBlockDataByHash - used in deposit.go
+func TestRPCService_GetBlockDataByHash(t *testing.T) {
+	client := getTestClient(t)
+	service := NewBTCRPCService(client)
+
+	blockHash := getEnvOrSkip(t, "BTC_RPC_BLOCK_HASH")
+	testHeight := getEnvInt64OrSkip(t, "BTC_RPC_HEIGHT")
+
+	blockData, err := service.GetBlockDataByHash(blockHash)
+	require.NoError(t, err)
+	require.NotNil(t, blockData)
+	assert.Equal(t, uint64(testHeight), blockData.BlockHeight)
+	assert.Equal(t, blockHash, blockData.BlockHash)
+	assert.NotEmpty(t, blockData.Header)
+	assert.NotEmpty(t, blockData.MerkleRoot)
+	assert.Greater(t, blockData.BlockTime, int64(0))
+	assert.NotEmpty(t, blockData.TxHashes)
+
+	t.Logf("Block %s data: height=%d, merkleRoot=%s, time=%d, difficulty=%d",
+		blockData.BlockHash, blockData.BlockHeight, blockData.MerkleRoot, blockData.BlockTime, blockData.Difficulty)
+}
+
+// TestRPCService_GetBlockHeader tests BTCRPCService.GetBlockHeader - for completeness
+func TestRPCService_GetBlockHeader(t *testing.T) {
+	client := getTestClient(t)
+	service := NewBTCRPCService(client)
+
+	blockHash := getEnvOrSkip(t, "BTC_RPC_BLOCK_HASH")
+	parsedHash, err := chainhash.NewHashFromStr(blockHash)
+	require.NoError(t, err)
+
+	header, err := service.GetBlockHeader(parsedHash)
+	require.NoError(t, err)
+	require.NotNil(t, header)
+	assert.Greater(t, header.Version, int32(0))
+	assert.NotEmpty(t, header.PrevBlock.String())
+	assert.NotEmpty(t, header.MerkleRoot.String())
+	assert.Greater(t, header.Timestamp.Unix(), int64(0))
+
+	t.Logf("Block %s header: version=%d, prevBlock=%s, merkleRoot=%s, time=%d",
+		blockHash, header.Version, header.PrevBlock.String(), header.MerkleRoot.String(), header.Timestamp.Unix())
+}
