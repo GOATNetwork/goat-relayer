@@ -79,38 +79,22 @@ func (c *BtcClient) SendRawTransaction(tx *wire.MsgTx, utxos []*db.Utxo, orderTy
 	if err != nil {
 		return txid, false, fmt.Errorf("sign tx %s error: %v", txid, err)
 	}
-	// Try standard method first
 	_, err = c.client.SendRawTransaction(tx, false)
-	if err == nil {
-		return txid, false, nil
+	if err != nil {
+		if rpcErr, ok := err.(*btcjson.RPCError); ok {
+			switch rpcErr.Code {
+			case btcjson.ErrRPCTxAlreadyInChain:
+				return txid, true, err
+			}
+		}
+		return txid, false, err
 	}
-	// Check if tx already in chain
-	if isTxAlreadyInChain(err) {
-		return txid, true, err
-	}
-	// Fallback to direct method for RPC providers that don't support getinfo (e.g., GetBlock)
-	log.Warnf("SendRawTransaction failed with standard method: %v, trying direct method", err)
-	err = c.sendRawTransactionDirect(tx)
-	if err == nil {
-		return txid, false, nil
-	}
-	if isTxAlreadyInChain(err) {
-		return txid, true, err
-	}
-	return txid, false, err
-}
-
-// isTxAlreadyInChain checks if the error indicates tx is already in blockchain
-func isTxAlreadyInChain(err error) bool {
-	if rpcErr, ok := err.(*btcjson.RPCError); ok {
-		return rpcErr.Code == btcjson.ErrRPCTxAlreadyInChain
-	}
-	return false
+	return txid, false, nil
 }
 
 // sendRawTransactionDirect sends a raw transaction using SendCmd directly,
 // bypassing BackendVersion() detection which fails with some RPC providers (e.g., GetBlock)
-func (c *BtcClient) sendRawTransactionDirect(tx *wire.MsgTx) error {
+func sendRawTransactionDirect(client *rpcclient.Client, tx *wire.MsgTx) error {
 	// Serialize the transaction to hex
 	var buf bytes.Buffer
 	if err := tx.Serialize(&buf); err != nil {
@@ -122,9 +106,20 @@ func (c *BtcClient) sendRawTransactionDirect(tx *wire.MsgTx) error {
 	cmd := btcjson.NewSendRawTransactionCmd(txHex, nil)
 
 	// Send command directly without version detection
-	respChan := c.client.SendCmd(cmd)
+	respChan := client.SendCmd(cmd)
 	_, err := rpcclient.ReceiveFuture(respChan)
 	return err
+}
+
+// sendRawTransactionWithFallback tries standard method first, falls back to direct method
+func sendRawTransactionWithFallback(client *rpcclient.Client, tx *wire.MsgTx) error {
+	_, err := client.SendRawTransaction(tx, false)
+	if err == nil {
+		return nil
+	}
+	// Fallback to direct method for RPC providers that don't support getinfo (e.g., GetBlock)
+	log.Warnf("SendRawTransaction failed with standard method: %v, trying direct method", err)
+	return sendRawTransactionDirect(client, tx)
 }
 
 func (c *BtcClient) CheckPending(txid string, externalTxId string, updatedAt time.Time) (revert bool, confirmations uint64, blockHeight uint64, err error) {
@@ -257,7 +252,7 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 		if err != nil {
 			return false, 0, 0, fmt.Errorf("apply fireblocks signatures to tx error: %v, txid: %s", err, txid)
 		}
-		_, err = c.btcRpc.SendRawTransaction(tx, false)
+		err = sendRawTransactionWithFallback(c.btcRpc, tx)
 		if err != nil {
 			if rpcErr, ok := err.(*btcjson.RPCError); ok {
 				switch rpcErr.Code {
