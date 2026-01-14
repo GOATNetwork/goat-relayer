@@ -19,8 +19,11 @@ import (
 
 	"github.com/go-errors/errors"
 	log "github.com/sirupsen/logrus"
+	"crypto/tls"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/ethereum/go-ethereum"
@@ -190,7 +193,20 @@ func DialCosmosClient() (*rpchttp.HTTP, *grpc.ClientConn, authtypes.QueryClient,
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	grpcConn, err := grpc.NewClient(config.AppConfig.GoatChainGRPCURI, grpc.WithTransportCredentials(insecure.NewCredentials()))
+
+	// Use TLS if port is 443, otherwise use insecure
+	var grpcConn *grpc.ClientConn
+	grpcURI := config.AppConfig.GoatChainGRPCURI
+	if strings.HasSuffix(grpcURI, ":443") {
+		// Use TLS for port 443
+		tlsConfig := &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+		grpcConn, err = grpc.NewClient(grpcURI, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	} else {
+		// Use insecure for other ports
+		grpcConn, err = grpc.NewClient(grpcURI, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
 	if err != nil {
 		return nil, nil, nil, err
 	}
