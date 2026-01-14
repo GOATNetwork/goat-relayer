@@ -801,6 +801,147 @@ func (s *State) CleanProcessingWithdraw() error {
 	return err
 }
 
+// UtxoSpentChecker is a callback function to check if a UTXO is spent on BTC chain
+// Returns true if the UTXO is spent, false if it's still unspent
+type UtxoSpentChecker func(txid string, outIndex int) (spent bool, err error)
+
+// CleanInitializedNeedRbfWithdrawByOrderId cleans a specific order by orderId when UTXO conflict is detected
+// It checks each UTXO's spent status via the callback:
+// - If spent → mark as UTXO_STATUS_SPENT
+// - If not spent → restore to UTXO_STATUS_PROCESSED
+// For safebox orders: resets safebox_task to received_ok for re-aggregation
+// For withdrawal orders: marks order as RBF_REQUEST for ReplaceWithdrawalV2 submission
+// Returns the order type so caller can trigger appropriate follow-up action
+func (s *State) CleanInitializedNeedRbfWithdrawByOrderId(orderId string, checkUtxoSpent UtxoSpentChecker) (orderType string, err error) {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	err = s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
+		order, err := s.getOrderByOrderId(tx, orderId)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		if order == nil {
+			log.Warnf("CleanInitializedNeedRbfWithdrawByOrderId order not found: %s", orderId)
+			return nil
+		}
+		if order.Status != db.ORDER_STATUS_INIT && order.Status != db.ORDER_STATUS_PENDING {
+			log.Warnf("CleanInitializedNeedRbfWithdrawByOrderId order %s status is %s, not init/pending, skip", orderId, order.Status)
+			return nil
+		}
+
+		orderType = order.OrderType
+		log.Infof("CleanInitializedNeedRbfWithdrawByOrderId processing order: %s, type: %s", order.OrderId, orderType)
+
+		// Check each UTXO's spent status and update accordingly
+		vins, err := s.getVinsByOrderId(tx, order.OrderId)
+		if err != nil {
+			return err
+		}
+
+		for _, vin := range vins {
+			var utxoInDb db.Utxo
+			if err = tx.Where("txid = ? and out_index = ?", vin.Txid, vin.OutIndex).First(&utxoInDb).Error; err != nil {
+				log.Warnf("CleanInitializedNeedRbfWithdrawByOrderId UTXO %s:%d not found in db, skip", vin.Txid, vin.OutIndex)
+				continue
+			}
+			// Skip UTXOs already marked as spent
+			if utxoInDb.Status == db.UTXO_STATUS_SPENT {
+				continue
+			}
+
+			// Check if UTXO is spent on BTC chain
+			spent, checkErr := checkUtxoSpent(vin.Txid, int(vin.OutIndex))
+			if checkErr != nil {
+				log.Warnf("CleanInitializedNeedRbfWithdrawByOrderId failed to check UTXO %s:%d spent status: %v", vin.Txid, vin.OutIndex, checkErr)
+				continue
+			}
+
+			if spent {
+				// UTXO is spent on chain, mark as spent
+				log.Infof("CleanInitializedNeedRbfWithdrawByOrderId UTXO %s:%d is spent, marking as spent", vin.Txid, vin.OutIndex)
+				err = tx.Model(&db.Utxo{}).Where("id = ?", utxoInDb.ID).Updates(&db.Utxo{
+					Status:    db.UTXO_STATUS_SPENT,
+					UpdatedAt: time.Now(),
+				}).Error
+			} else {
+				// UTXO is not spent, restore to processed
+				log.Infof("CleanInitializedNeedRbfWithdrawByOrderId UTXO %s:%d is not spent, restoring to processed", vin.Txid, vin.OutIndex)
+				err = tx.Model(&db.Utxo{}).Where("id = ?", utxoInDb.ID).Updates(&db.Utxo{
+					Status:    db.UTXO_STATUS_PROCESSED,
+					UpdatedAt: time.Now(),
+				}).Error
+			}
+			if err != nil {
+				log.Errorf("CleanInitializedNeedRbfWithdrawByOrderId update utxo txid %s - out %d error: %v", utxoInDb.Txid, utxoInDb.OutIndex, err)
+				return err
+			}
+		}
+
+		// Handle differently based on order type
+		if orderType == db.ORDER_TYPE_SAFEBOX {
+			// For safebox: close order and reset task for re-aggregation
+			order.Status = db.ORDER_STATUS_CLOSED
+			order.UpdatedAt = time.Now()
+			err = s.saveOrder(tx, order)
+			if err != nil {
+				return err
+			}
+
+			// Update vin/vout status to closed
+			err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_CLOSED, true)
+			if err != nil {
+				return err
+			}
+
+			// Reset safebox task from init/init_ok to received_ok for re-aggregation
+			err = s.updateSafeboxTaskStatusByOrderId(tx, db.TASK_STATUS_RECEIVED_OK, order.OrderId, db.TASK_STATUS_INIT, db.TASK_STATUS_INIT_OK)
+			if err != nil {
+				return err
+			}
+			log.Infof("CleanInitializedNeedRbfWithdrawByOrderId safebox order %s: closed, task reset to received_ok", order.OrderId)
+		} else if orderType == db.ORDER_TYPE_WITHDRAWAL {
+			// For withdrawal: mark order as RBF_REQUEST for ReplaceWithdrawalV2
+			// The order keeps its Pid so ReplaceWithdrawalV2 can reference it
+			order.Status = db.ORDER_STATUS_RBF_REQUEST
+			order.UpdatedAt = time.Now()
+			err = s.saveOrder(tx, order)
+			if err != nil {
+				return err
+			}
+
+			// Update vin/vout status to closed (old vins are no longer valid)
+			err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_CLOSED, true)
+			if err != nil {
+				return err
+			}
+
+			// Restore withdraws to aggregating status so they can be re-processed
+			err = s.updateWithdrawStatusByOrderId(tx, db.WITHDRAW_STATUS_AGGREGATING, order.OrderId, db.WITHDRAW_STATUS_PENDING)
+			if err != nil {
+				return err
+			}
+			log.Infof("CleanInitializedNeedRbfWithdrawByOrderId withdrawal order %s: marked as RBF_REQUEST, Pid: %d", order.OrderId, order.Pid)
+		} else {
+			// For consolidation or other types: just close
+			order.Status = db.ORDER_STATUS_CLOSED
+			order.UpdatedAt = time.Now()
+			err = s.saveOrder(tx, order)
+			if err != nil {
+				return err
+			}
+			err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_CLOSED, true)
+			if err != nil {
+				return err
+			}
+			log.Infof("CleanInitializedNeedRbfWithdrawByOrderId order %s type %s: closed", order.OrderId, orderType)
+		}
+
+		return nil
+	})
+	return orderType, err
+}
+
 func (s *State) GetWithdrawsCanStart() ([]*db.Withdraw, error) {
 	s.walletMu.RLock()
 	defer s.walletMu.RUnlock()
@@ -890,6 +1031,96 @@ func (s *State) GetSendOrderByTxIdOrExternalId(id string) (*db.SendOrder, error)
 		}
 	}
 	return sendOrder, nil
+}
+
+// GetSendOrdersNeedRbf returns orders with RBF_REQUEST status that need to be re-submitted
+// via ReplaceWithdrawalV2
+func (s *State) GetSendOrdersNeedRbf() ([]*db.SendOrder, error) {
+	s.walletMu.RLock()
+	defer s.walletMu.RUnlock()
+
+	var orders []*db.SendOrder
+	err := s.dbm.GetWalletDB().Where("status = ? AND order_type = ?",
+		db.ORDER_STATUS_RBF_REQUEST, db.ORDER_TYPE_WITHDRAWAL).
+		Order("id asc").Find(&orders).Error
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, err
+	}
+	return orders, nil
+}
+
+// GetSendOrderByOrderId returns a send order by its orderId
+func (s *State) GetSendOrderByOrderId(orderId string) (*db.SendOrder, error) {
+	s.walletMu.RLock()
+	defer s.walletMu.RUnlock()
+
+	return s.getOrderByOrderId(nil, orderId)
+}
+
+// CreateRbfSendOrder creates a new RBF send order, closes the original order, and updates UTXO statuses
+func (s *State) CreateRbfSendOrder(newOrder *db.SendOrder, originalOrderId string, selectedUtxos []*db.Utxo, vins []*db.Vin, vouts []*db.Vout) error {
+	s.walletMu.Lock()
+	defer s.walletMu.Unlock()
+
+	err := s.dbm.GetWalletDB().Transaction(func(tx *gorm.DB) error {
+		// Close the original order
+		err := tx.Model(&db.SendOrder{}).Where("order_id = ?", originalOrderId).Updates(&db.SendOrder{
+			Status:    db.ORDER_STATUS_CLOSED,
+			UpdatedAt: time.Now(),
+		}).Error
+		if err != nil {
+			return fmt.Errorf("failed to close original order: %v", err)
+		}
+
+		// Save new order
+		err = s.saveOrder(tx, newOrder)
+		if err != nil {
+			return err
+		}
+
+		// Save vins
+		if err = tx.Create(&vins).Error; err != nil {
+			return err
+		}
+
+		// Save vouts
+		if err = tx.Create(&vouts).Error; err != nil {
+			return err
+		}
+
+		// Update UTXO statuses to pending
+		for _, utxo := range selectedUtxos {
+			var utxoInDb db.Utxo
+			if err = tx.Where("txid = ? and out_index = ?", utxo.Txid, utxo.OutIndex).Order("id desc").First(&utxoInDb).Error; err != nil {
+				return err
+			}
+			// Only update if UTXO is in confirmed status
+			if utxoInDb.Status == db.UTXO_STATUS_CONFIRMED {
+				err = tx.Model(&db.Utxo{}).Where("id = ?", utxoInDb.ID).Updates(&db.Utxo{
+					Status:    db.UTXO_STATUS_PENDING,
+					UpdatedAt: time.Now(),
+				}).Error
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		// Update withdrawals to reference new order
+		err = tx.Model(&db.Withdraw{}).Where("order_id = ?", originalOrderId).Updates(&db.Withdraw{
+			OrderId:   newOrder.OrderId,
+			Txid:      newOrder.Txid,
+			Status:    db.WITHDRAW_STATUS_AGGREGATING,
+			UpdatedAt: time.Now(),
+		}).Error
+		if err != nil {
+			return fmt.Errorf("failed to update withdrawals for RBF: %v", err)
+		}
+
+		return nil
+	})
+
+	return err
 }
 
 // GetLatestWithdrawSendOrderConfirmed get latest confirmed withdraw send order

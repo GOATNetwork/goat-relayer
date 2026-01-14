@@ -312,6 +312,50 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 						log.Warnf("Transaction signature verification failed, error reason: %v, txid: %s", rpcErr, txid)
 						return false, 0, 0, fmt.Errorf("send raw transaction error: %v, txid: %s", err, txid)
 					}
+				case btcjson.ErrRPCVerify:
+					// Handle bad-txns-inputs-missingorspent (-25) and similar errors
+					// Error -25 means the transaction was REJECTED by the node (UTXOs already spent)
+					// Our transaction never went on chain - UTXOs were spent by a different tx
+					if strings.Contains(rpcErr.Message, "bad-txns-inputs-missingorspent") ||
+						strings.Contains(rpcErr.Message, "txn-mempool-conflict") ||
+						strings.Contains(rpcErr.Message, "missing-inputs") {
+						log.Warnf("UTXO conflict detected (tx rejected), cleaning up UTXOs: %v, txid: %s", rpcErr, txid)
+
+						// Get the send order to find orderId
+						sendOrder, orderErr := c.state.GetSendOrderByTxIdOrExternalId(txid)
+						if orderErr != nil {
+							log.Errorf("Failed to get send order for cleanup: %v, txid: %s", orderErr, txid)
+							return true, 0, 0, nil
+						}
+
+						// Use CleanInitializedNeedRbfWithdrawByOrderId to check UTXOs and handle based on order type
+						orderType, cleanupErr := c.state.CleanInitializedNeedRbfWithdrawByOrderId(sendOrder.OrderId, func(utxoTxid string, outIndex int) (bool, error) {
+							txHash, err := chainhash.NewHashFromStr(utxoTxid)
+							if err != nil {
+								return false, err
+							}
+							// GetTxOut returns nil if UTXO is spent
+							txOut, err := c.btcRpc.GetTxOut(txHash, uint32(outIndex), true)
+							if err != nil {
+								return false, err
+							}
+							// If txOut is nil, UTXO is spent.
+							// Return true to indicate UTXO should be cleaned up.
+							return txOut == nil, nil
+						})
+						if cleanupErr != nil {
+							log.Errorf("Failed to cleanup UTXOs: %v, txid: %s, orderId: %s", cleanupErr, txid, sendOrder.OrderId)
+						}
+
+						// For withdrawal orders, the order is now marked as RBF_REQUEST
+						// The RBF processor will pick it up and submit ReplaceWithdrawalV2
+						if orderType == db.ORDER_TYPE_WITHDRAWAL {
+							log.Infof("Withdrawal order %s marked for RBF, Pid: %d", sendOrder.OrderId, sendOrder.Pid)
+							// TODO: Trigger RBF signature process via event bus
+						}
+
+						return true, 0, 0, nil
+					}
 				}
 			}
 			return false, 0, 0, fmt.Errorf("send raw transaction error: %v, txid: %s", err, txid)

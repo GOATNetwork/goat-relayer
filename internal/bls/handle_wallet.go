@@ -605,3 +605,338 @@ func (s *Signer) submitSendOrderToContract(ctx context.Context, e types.MsgSignS
 
 	return nil
 }
+
+// handleSigStartRbfOrder handles the start of RBF order signature (proposer)
+func (s *Signer) handleSigStartRbfOrder(ctx context.Context, e types.MsgSignRbfOrder) error {
+	canSign := s.CanSign()
+	isProposer := s.IsProposer()
+	if !canSign || !isProposer {
+		log.Debugf("Ignore SigStart RbfOrder request id %s, canSign: %v, isProposer: %v", e.RequestId, canSign, isProposer)
+		return fmt.Errorf("cannot start sig %s in current l2 context, catching up: %v, is proposer: %v", e.RequestId, !canSign, isProposer)
+	}
+
+	// check if sig already exists
+	_, ok := s.sigExists(e.RequestId)
+	if ok {
+		return fmt.Errorf("sig RBF order exists: %s", e.RequestId)
+	}
+
+	var order db.SendOrder
+	err := json.Unmarshal(e.SendOrder, &order)
+	if err != nil {
+		log.Errorf("Signer handleSigStartRbfOrder - Cannot unmarshal send order from msg, request id: %s, err: %v", e.RequestId, err)
+		return err
+	}
+
+	// Build signature for ReplaceWithdrawalV2
+	sigData := s.makeSigRbfOrder(e.Pid, e.NewTxFee, e.WitnessSize, order.NoWitnessTx)
+
+	// Build sign message
+	newSign := &types.MsgSignRbfOrder{
+		MsgSign: types.MsgSign{
+			RequestId:    e.RequestId,
+			Sequence:     e.Sequence,
+			Epoch:        e.Epoch,
+			IsProposer:   true,
+			VoterAddress: s.address,
+			SigData:      sigData,
+			CreateTime:   e.CreateTime,
+		},
+		SendOrder:   e.SendOrder,
+		Utxos:       e.Utxos,
+		Vins:        e.Vins,
+		Vouts:       e.Vouts,
+		Pid:         e.Pid,
+		WithdrawIds: e.WithdrawIds,
+		NewTxFee:    e.NewTxFee,
+		WitnessSize: e.WitnessSize,
+	}
+
+	// p2p broadcast
+	p2pMsg := p2p.Message[any]{
+		MessageType: p2p.MessageTypeSigReq,
+		RequestId:   e.RequestId,
+		DataType:    "MsgSignRbfOrder",
+		Data:        *newSign,
+	}
+	if err := p2p.PublishMessage(ctx, p2pMsg); err != nil {
+		log.Errorf("SigStart public MsgSignRbfOrder to p2p error, request id: %s, err: %v", e.RequestId, err)
+		return err
+	}
+
+	s.sigMu.Lock()
+	s.sigMap[e.RequestId] = make(map[string]interface{})
+	s.sigMap[e.RequestId][s.address] = *newSign
+	timeoutDuration := config.AppConfig.BlsSigTimeout
+	s.sigTimeoutMap[e.RequestId] = time.Now().Add(timeoutDuration)
+	s.sigMu.Unlock()
+	log.Infof("SigStart broadcast MsgSignRbfOrder ok, request id: %s, Pid: %d", e.RequestId, e.Pid)
+
+	return nil
+}
+
+// handleSigReceiveRbfOrder handles receiving RBF order signature (voter or proposer collecting)
+func (s *Signer) handleSigReceiveRbfOrder(ctx context.Context, e types.MsgSignRbfOrder) error {
+	canSign := s.CanSign()
+	isProposer := s.IsProposer()
+	if !canSign {
+		log.Debugf("Ignore SigReceive RbfOrder request id %s, canSign: %v, isProposer: %v", e.RequestId, canSign, isProposer)
+		return fmt.Errorf("cannot handle receive sig %s in current l2 context, catching up: %v, is proposer: %v", e.RequestId, !canSign, isProposer)
+	}
+
+	epochVoter := s.state.GetEpochVoter()
+	if isProposer {
+		// Proposer collects signatures and submits to chain
+		err := s.submitRbfOrderToLayer2(ctx, e)
+		if err != nil {
+			s.removeSigMap(e.RequestId, false)
+			return err
+		}
+
+		s.removeSigMap(e.RequestId, false)
+
+		// feedback SigFinish
+		s.state.EventBus.Publish(state.SigFinish, e)
+
+		log.Infof("SigReceive RBF order proposer submit ReplaceWithdrawalV2 to RPC ok, request id: %s", e.RequestId)
+		return nil
+	} else {
+		// Voter: only accept proposer msg
+		if !e.IsProposer {
+			return nil
+		}
+
+		// verify proposer sig
+		if len(e.SigData) == 0 {
+			log.Infof("SigReceive MsgSignRbfOrder with empty sig data, request id %s", e.RequestId)
+			return nil
+		}
+
+		// validate epoch
+		if e.Epoch != epochVoter.Epoch {
+			log.Warnf("SigReceive MsgSignRbfOrder epoch does not match, request id %s, msg epoch: %d, current epoch: %d", e.RequestId, e.Epoch, epochVoter.Epoch)
+			return fmt.Errorf("cannot handle receive sig %s with epoch %d, expect: %d", e.RequestId, e.Epoch, epochVoter.Epoch)
+		}
+
+		// Extract order
+		var order db.SendOrder
+		var vins []*db.Vin
+		var vouts []*db.Vout
+		var utxos []*db.Utxo
+		var err error
+		if err = json.Unmarshal(e.SendOrder, &order); err != nil {
+			log.Errorf("SigReceive RbfOrder request id %s unmarshal order err: %v", e.RequestId, err)
+			return err
+		}
+		if err = json.Unmarshal(e.Vins, &vins); err != nil {
+			log.Errorf("SigReceive RbfOrder request id %s unmarshal vins err: %v", e.RequestId, err)
+			return err
+		}
+		if err = json.Unmarshal(e.Vouts, &vouts); err != nil {
+			log.Errorf("SigReceive RbfOrder request id %s unmarshal vouts err: %v", e.RequestId, err)
+			return err
+		}
+		if err = json.Unmarshal(e.Utxos, &utxos); err != nil {
+			log.Errorf("SigReceive RbfOrder request id %s unmarshal utxos err: %v", e.RequestId, err)
+			return err
+		}
+
+		// check txid
+		tx, err := types.DeserializeTransaction(order.NoWitnessTx)
+		if err != nil {
+			log.Errorf("SigReceive RbfOrder deserialize tx, request id %s, err: %v", e.RequestId, err)
+			return err
+		}
+		if tx.TxID() != order.Txid {
+			return fmt.Errorf("SigReceive RbfOrder deserialize txid %s not match order txid %s", tx.TxID(), order.Txid)
+		}
+
+		// Build signature for ReplaceWithdrawalV2
+		sigData := s.makeSigRbfOrder(e.Pid, e.NewTxFee, e.WitnessSize, order.NoWitnessTx)
+
+		newSign := &types.MsgSignRbfOrder{
+			MsgSign: types.MsgSign{
+				RequestId:    e.RequestId,
+				Sequence:     e.Sequence,
+				Epoch:        e.Epoch,
+				IsProposer:   false,
+				VoterAddress: s.address,
+				SigData:      sigData,
+				CreateTime:   e.CreateTime,
+			},
+			SendOrder:   e.SendOrder,
+			Utxos:       e.Utxos,
+			Vins:        e.Vins,
+			Vouts:       e.Vouts,
+			Pid:         e.Pid,
+			WithdrawIds: e.WithdrawIds,
+			NewTxFee:    e.NewTxFee,
+			WitnessSize: e.WitnessSize,
+		}
+
+		// p2p broadcast
+		p2pMsg := p2p.Message[any]{
+			MessageType: p2p.MessageTypeSigResp,
+			RequestId:   newSign.RequestId,
+			DataType:    "MsgSignRbfOrder",
+			Data:        *newSign,
+		}
+
+		if err := p2p.PublishMessage(ctx, p2pMsg); err != nil {
+			log.Errorf("SigReceive public RbfOrder to p2p error, request id: %s, err: %v", e.RequestId, err)
+			return err
+		}
+		log.Infof("SigReceive broadcast MsgSignRbfOrder ok, request id: %s", e.RequestId)
+		return nil
+	}
+}
+
+// makeSigRbfOrder creates the BLS signature for MsgReplaceWithdrawalV2
+func (s *Signer) makeSigRbfOrder(pid, newTxFee, witnessSize uint64, noWitnessTx []byte) []byte {
+	voters := make(bitmap.Bitmap, 5)
+	votes := &relayertypes.Votes{
+		Sequence:  0,
+		Epoch:     0,
+		Voters:    voters.ToBytes(),
+		Signature: nil,
+	}
+	epochVoter := s.state.GetEpochVoter()
+
+	msg := bitcointypes.MsgReplaceWithdrawalV2{
+		Proposer:       "",
+		Vote:           votes,
+		Pid:            pid,
+		NewNoWitnessTx: noWitnessTx,
+		NewTxFee:       newTxFee,
+		WitnessSize:    witnessSize,
+	}
+	sigDoc := relayertypes.VoteSignDoc(msg.MethodName(), config.AppConfig.GoatChainID, epochVoter.Proposer, epochVoter.Sequence, uint64(epochVoter.Epoch), msg.VoteSigDoc())
+	return goatcryp.Sign(s.sk, sigDoc)
+}
+
+// aggSigRbfOrder aggregates signatures for RBF order
+func (s *Signer) aggSigRbfOrder(requestId string) (*bitcointypes.MsgReplaceWithdrawalV2, error) {
+	epochVoter := s.state.GetEpochVoter()
+
+	voteMap, ok := s.sigExists(requestId)
+	if !ok {
+		return nil, fmt.Errorf("no sig found of RBF order, request id: %s", requestId)
+	}
+	voterAll := strings.Split(epochVoter.VoteAddrList, ",")
+	proposer := ""
+	var pid, newTxFee, witnessSize, epoch, sequence uint64
+	var noWitnessTx []byte
+	var bmp bitmap.Bitmap
+	var proposerSig []byte
+	voteSig := make([][]byte, 0)
+
+	for address, msg := range voteMap {
+		msgRbfOrder := msg.(types.MsgSignRbfOrder)
+		var order db.SendOrder
+		err := json.Unmarshal(msgRbfOrder.SendOrder, &order)
+		if err != nil {
+			log.Debug("Cannot unmarshal RBF order from vote msg")
+			return nil, err
+		}
+		if msgRbfOrder.IsProposer {
+			proposer = address
+			sequence = msgRbfOrder.Sequence
+			epoch = msgRbfOrder.Epoch
+			pid = msgRbfOrder.Pid
+			newTxFee = msgRbfOrder.NewTxFee
+			witnessSize = msgRbfOrder.WitnessSize
+			proposerSig = msgRbfOrder.SigData
+			noWitnessTx = order.NoWitnessTx
+		} else {
+			pos := types.IndexOfSlice(voterAll, address)
+			log.Debugf("Bitmap check, pos: %d, address: %s, all: %s", pos, address, epochVoter.VoteAddrList)
+			if pos >= 0 {
+				bmp.Set(uint32(pos))
+				voteSig = append(voteSig, msgRbfOrder.SigData)
+			}
+		}
+	}
+
+	if proposer == "" {
+		return nil, fmt.Errorf("missing proposer sig msg of RBF order, request id: %s", requestId)
+	}
+
+	if epoch != epochVoter.Epoch {
+		return nil, fmt.Errorf("incorrect epoch of RBF order, request id: %s, msg epoch: %d, current epoch: %d", requestId, epoch, epochVoter.Epoch)
+	}
+	if sequence != epochVoter.Sequence {
+		return nil, fmt.Errorf("incorrect sequence of RBF order, request id: %s, msg sequence: %d, current sequence: %d", requestId, sequence, epochVoter.Sequence)
+	}
+
+	voteSig = append([][]byte{proposerSig}, voteSig...)
+
+	// check threshold
+	threshold := types.Threshold(len(voterAll))
+	if len(voteSig) < threshold {
+		return nil, fmt.Errorf("threshold not reach of RBF order, request id: %s, has sig: %d, threshold: %d", requestId, len(voteSig), threshold)
+	}
+
+	// aggregate
+	aggSig, err := goatcryp.AggregateSignatures(voteSig)
+	if err != nil {
+		return nil, err
+	}
+
+	votes := &relayertypes.Votes{
+		Sequence:  sequence,
+		Epoch:     epoch,
+		Voters:    bmp.ToBytes(),
+		Signature: aggSig,
+	}
+
+	msgReplaceWithdrawal := bitcointypes.MsgReplaceWithdrawalV2{
+		Proposer:       proposer,
+		Vote:           votes,
+		Pid:            pid,
+		NewNoWitnessTx: noWitnessTx,
+		NewTxFee:       newTxFee,
+		WitnessSize:    witnessSize,
+	}
+	return &msgReplaceWithdrawal, nil
+}
+
+func (s *Signer) submitRbfOrderToLayer2(ctx context.Context, e types.MsgSignRbfOrder) error {
+	// collect voter sig
+	if e.IsProposer {
+		return nil
+	}
+
+	s.sigMu.Lock()
+	voteMap, ok := s.sigMap[e.RequestId]
+	if !ok {
+		s.sigMu.Unlock()
+		return fmt.Errorf("sig receive RBF order proposer process no sig found, request id: %s", e.RequestId)
+	}
+	_, ok = voteMap[e.VoterAddress]
+	if ok {
+		s.sigMu.Unlock()
+		log.Debugf("SigReceive RBF order proposer process voter multi receive, request id: %s, voter address: %s", e.RequestId, e.VoterAddress)
+		return nil
+	}
+	voteMap[e.VoterAddress] = e
+	s.sigMu.Unlock()
+
+	// aggregate signatures
+	msgReplaceWithdrawal, err := s.aggSigRbfOrder(e.RequestId)
+	if err != nil {
+		log.Warnf("SigReceive RBF order proposer process aggregate sig, request id: %s, err: %v", e.RequestId, err)
+		return nil
+	}
+
+	// submit to layer2
+	if msgReplaceWithdrawal != nil {
+		newProposal := layer2.NewProposal[*bitcointypes.MsgReplaceWithdrawalV2](s.layer2Listener)
+		err = newProposal.RetrySubmit(ctx, e.RequestId, msgReplaceWithdrawal, config.AppConfig.L2SubmitRetry)
+		if err != nil {
+			log.Errorf("SigReceive RBF order proposer submit ReplaceWithdrawalV2 to RPC error, request id: %s, err: %v", e.RequestId, err)
+			return err
+		}
+		log.Infof("SigReceive RBF order proposer submit ReplaceWithdrawalV2 to RPC ok, request id: %s, Pid: %d", e.RequestId, msgReplaceWithdrawal.Pid)
+	}
+	return nil
+}

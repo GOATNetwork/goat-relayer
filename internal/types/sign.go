@@ -139,6 +139,26 @@ type MsgSignSendOrder struct {
 	WitnessSize uint64 `json:"witness_size"`
 }
 
+// MsgSignRbfOrder is used for ReplaceWithdrawalV2 when UTXO conflict is detected
+// It references the original Processing ID (Pid) instead of withdrawal IDs
+type MsgSignRbfOrder struct {
+	MsgSign
+
+	SendOrder []byte `json:"send_order"`
+	Utxos     []byte `json:"utxos"`
+	Vins      []byte `json:"vins"`
+	Vouts     []byte `json:"vouts"`
+
+	// Pid is the Processing ID from the original ProcessWithdrawalV2
+	Pid uint64 `json:"pid"`
+	// WithdrawIds are the original withdrawal IDs (for reference, not for signature)
+	WithdrawIds []uint64 `json:"withdraw_ids"`
+	// NewTxFee is the new (higher) transaction fee
+	NewTxFee uint64 `json:"new_tx_fee"`
+	// WitnessSize is the witness data size
+	WitnessSize uint64 `json:"witness_size"`
+}
+
 type MsgSignFinalizeWithdraw struct {
 	MsgSign
 

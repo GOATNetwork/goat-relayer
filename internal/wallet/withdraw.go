@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -54,6 +55,7 @@ func (w *WalletServer) withdrawLoop(ctx context.Context) {
 			w.handleWithdrawSigFinish(sigFinish)
 		case <-ticker.C:
 			w.initWithdrawSig()
+			w.initRbfWithdrawSig()
 			w.finalizeWithdrawSig()
 			w.cancelWithdrawSig()
 		}
@@ -561,4 +563,321 @@ func (w *WalletServer) cleanWithdrawProcess() {
 	if err != nil {
 		log.Fatalf("WalletServer cleanWithdrawProcess unexpected error %v", err)
 	}
+}
+
+// initRbfWithdrawSig initiates RBF (Replace-By-Fee) for withdrawal orders that have UTXO conflicts
+// This creates a new transaction with the same withdrawals but different UTXOs and higher fee,
+// then triggers BLS signature for MsgReplaceWithdrawalV2
+func (w *WalletServer) initRbfWithdrawSig() {
+	log.Debug("WalletServer initRbfWithdrawSig")
+
+	// Check preconditions (similar to initWithdrawSig)
+	l2Info := w.state.GetL2Info()
+	if l2Info.Syncing {
+		log.Debugf("WalletServer initRbfWithdrawSig ignore, layer2 is catching up")
+		return
+	}
+
+	btcState := w.state.GetBtcHead()
+	if btcState.Syncing {
+		log.Debugf("WalletServer initRbfWithdrawSig ignore, btc is catching up")
+		return
+	}
+
+	epochVoter := w.state.GetEpochVoter()
+	if epochVoter.Proposer != config.AppConfig.RelayerAddress {
+		log.Debugf("WalletServer initRbfWithdrawSig ignore, self is not proposer")
+		return
+	}
+
+	w.sigMu.Lock()
+	if w.sigStatus {
+		w.sigMu.Unlock()
+		log.Debug("WalletServer initRbfWithdrawSig ignore, there is a sig in progress")
+		return
+	}
+	w.sigMu.Unlock()
+
+	// Get orders that need RBF
+	rbfOrders, err := w.state.GetSendOrdersNeedRbf()
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig GetSendOrdersNeedRbf error: %v", err)
+		return
+	}
+	if len(rbfOrders) == 0 {
+		log.Debug("WalletServer initRbfWithdrawSig no orders need RBF")
+		return
+	}
+
+	log.Infof("WalletServer initRbfWithdrawSig found %d orders need RBF", len(rbfOrders))
+
+	// Process first RBF order (one at a time)
+	order := rbfOrders[0]
+	if order.Pid == 0 {
+		log.Warnf("WalletServer initRbfWithdrawSig order %s has no Pid, cannot submit ReplaceWithdrawalV2", order.OrderId)
+		return
+	}
+
+	// Get the original withdrawals for this order
+	withdraws, err := w.state.GetWithdrawsByOrderId(order.OrderId)
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig GetWithdrawsByOrderId error: %v, orderId: %s", err, order.OrderId)
+		return
+	}
+	if len(withdraws) == 0 {
+		log.Warnf("WalletServer initRbfWithdrawSig no withdraws found for order %s", order.OrderId)
+		return
+	}
+
+	// Calculate total withdrawal amount
+	var totalWithdrawAmount int64
+	for _, withdraw := range withdraws {
+		totalWithdrawAmount += int64(withdraw.Amount)
+	}
+
+	// Get available UTXOs
+	utxos, err := w.state.GetUtxoCanSpend()
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig GetUtxoCanSpend error: %v", err)
+		return
+	}
+	if len(utxos) == 0 {
+		log.Warn("WalletServer initRbfWithdrawSig no utxos can spend")
+		return
+	}
+
+	// Get network and change address
+	network := types.GetBTCNetwork(config.AppConfig.BTCNetworkType)
+	pubkey, err := w.state.GetDepositKeyByBtcBlock(0)
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig GetDepositKeyByBtcBlock error: %v", err)
+		return
+	}
+	pubkeyBytes, err := base64.StdEncoding.DecodeString(pubkey.PubKey)
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig decode pubkey error: %v", err)
+		return
+	}
+	p2wpkhAddress, err := types.GenerateP2WPKHAddress(pubkeyBytes, network)
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig GenerateP2WPKHAddress error: %v", err)
+		return
+	}
+
+	// Extract receiver types from withdraws
+	receiverTypes := make([]string, len(withdraws))
+	for i, withdraw := range withdraws {
+		receiverTypes[i], _ = types.GetAddressType(withdraw.To, network)
+	}
+
+	// Calculate higher fee (increase by 50% or minimum increment)
+	oldTxFee := order.TxFee
+	newTxFee := oldTxFee + (oldTxFee / 2) // 50% increase
+	if newTxFee <= oldTxFee {
+		newTxFee = oldTxFee + 1000 // minimum 1000 satoshi increase
+	}
+
+	// Use actual network fee for UTXO selection
+	networkFee := int64(btcState.NetworkFee.FastestFee)
+	if networkFee == 0 {
+		networkFee = int64(newTxFee) / 200 // estimate based on typical tx size
+	}
+
+	// Select UTXOs for the new transaction
+	selectOptimalUTXOs, totalSelectedAmount, _, changeAmount, estimateFee, witnessSize, err := SelectOptimalUTXOs(
+		utxos, receiverTypes, totalWithdrawAmount, 0, networkFee, len(withdraws))
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig SelectOptimalUTXOs error: %v", err)
+		return
+	}
+
+	log.Infof("WalletServer initRbfWithdrawSig SelectOptimalUTXOs: totalSelectedAmount: %d, withdrawAmount: %d, changeAmount: %d, selectedUtxos: %d",
+		totalSelectedAmount, totalWithdrawAmount, changeAmount, len(selectOptimalUTXOs))
+
+	// Create new transaction
+	withdrawParams := &TransactionParams{
+		UTXOs:          selectOptimalUTXOs,
+		Withdrawals:    withdraws,
+		Tasks:          nil,
+		ChangeAddress:  p2wpkhAddress.EncodeAddress(),
+		ChangeAmount:   changeAmount,
+		EstimatedFee:   estimateFee,
+		WitnessSize:    witnessSize,
+		NetworkFee:     networkFee,
+		Net:            network,
+		UtxoAmount:     totalSelectedAmount,
+		WithdrawAmount: totalWithdrawAmount,
+	}
+	tx, actualFee, err := CreateRawTransaction(withdrawParams)
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig CreateRawTransaction error: %v", err)
+		return
+	}
+
+	// Ensure new fee is higher than old fee
+	if actualFee <= oldTxFee {
+		actualFee = oldTxFee + 1000
+	}
+
+	log.Infof("WalletServer initRbfWithdrawSig CreateRawTransaction: tx: %s, actualFee: %d, witnessSize: %d, oldTxFee: %d",
+		tx.TxID(), actualFee, witnessSize, oldTxFee)
+
+	// Create RBF order message
+	msgSignRbfOrder, err := w.createRbfOrder(order, withdraws, selectOptimalUTXOs, tx, actualFee, uint64(witnessSize), epochVoter)
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig createRbfOrder error: %v", err)
+		return
+	}
+
+	w.sigMu.Lock()
+	w.sigStatus = true
+	w.sigMu.Unlock()
+
+	// Publish to event bus for BLS signing
+	w.state.EventBus.Publish(state.SigStart, *msgSignRbfOrder)
+	log.Infof("WalletServer initRbfWithdrawSig send MsgSignRbfOrder to bus, requestId: %s, Pid: %d", msgSignRbfOrder.MsgSign.RequestId, msgSignRbfOrder.Pid)
+}
+
+// createRbfOrder creates a MsgSignRbfOrder for ReplaceWithdrawalV2
+func (w *WalletServer) createRbfOrder(
+	originalOrder *db.SendOrder,
+	withdraws []*db.Withdraw,
+	selectedUtxos []*db.Utxo,
+	tx *wire.MsgTx,
+	newTxFee uint64,
+	witnessSize uint64,
+	epochVoter db.EpochVoter,
+) (*types.MsgSignRbfOrder, error) {
+	// Serialize no-witness transaction
+	var buf bytes.Buffer
+	if err := tx.SerializeNoWitness(&buf); err != nil {
+		return nil, fmt.Errorf("failed to serialize no-witness tx: %v", err)
+	}
+	noWitnessTx := buf.Bytes()
+
+	// Create new order for RBF (updates the original order)
+	newOrderId := fmt.Sprintf("%s-rbf", originalOrder.OrderId)
+	requestId := fmt.Sprintf("RBFORDER:BLS:%s:%s", config.AppConfig.RelayerAddress, newOrderId)
+
+	// Build vins
+	vins := make([]*db.Vin, len(tx.TxIn))
+	for i, txIn := range tx.TxIn {
+		vins[i] = &db.Vin{
+			OrderId:      newOrderId,
+			BtcHeight:    0,
+			Txid:         txIn.PreviousOutPoint.Hash.String(),
+			OutIndex:     int(txIn.PreviousOutPoint.Index),
+			SigScript:    nil,
+			SubScript:    nil,
+			Sender:       "",
+			ReceiverType: db.WALLET_TYPE_UNKNOWN,
+			Source:       db.ORDER_TYPE_WITHDRAWAL,
+			Status:       db.ORDER_STATUS_AGGREGATING,
+			UpdatedAt:    time.Now(),
+		}
+	}
+
+	// Build vouts
+	network := types.GetBTCNetwork(config.AppConfig.BTCNetworkType)
+	vouts := make([]*db.Vout, len(tx.TxOut))
+	for i, txOut := range tx.TxOut {
+		_, addresses, _, err := txscript.ExtractPkScriptAddrs(txOut.PkScript, network)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract addresses: %v", err)
+		}
+		receiver := ""
+		if len(addresses) > 0 {
+			receiver = addresses[0].EncodeAddress()
+		}
+		withdrawId := ""
+		if i < len(withdraws) {
+			withdrawId = fmt.Sprintf("%d", withdraws[i].RequestId)
+		}
+		vouts[i] = &db.Vout{
+			OrderId:    newOrderId,
+			BtcHeight:  0,
+			Txid:       tx.TxID(),
+			OutIndex:   i,
+			WithdrawId: withdrawId,
+			Amount:     txOut.Value,
+			Receiver:   receiver,
+			Sender:     "",
+			Source:     db.ORDER_TYPE_WITHDRAWAL,
+			Status:     db.ORDER_STATUS_AGGREGATING,
+			UpdatedAt:  time.Now(),
+		}
+	}
+
+	// Calculate total amount
+	var totalAmount int64
+	for _, utxo := range selectedUtxos {
+		totalAmount += utxo.Amount
+	}
+
+	// Create new send order
+	newOrder := &db.SendOrder{
+		OrderId:     newOrderId,
+		Proposer:    epochVoter.Proposer,
+		Pid:         originalOrder.Pid, // Keep the same Pid for ReplaceWithdrawalV2
+		Amount:      uint64(totalAmount),
+		TxPrice:     uint64(newTxFee) / uint64(len(noWitnessTx)+int(witnessSize)/4),
+		Status:      db.ORDER_STATUS_AGGREGATING,
+		OrderType:   db.ORDER_TYPE_WITHDRAWAL,
+		BtcBlock:    0,
+		Txid:        tx.TxID(),
+		NoWitnessTx: noWitnessTx,
+		TxFee:       newTxFee,
+		UpdatedAt:   time.Now(),
+	}
+
+	// Serialize for message
+	orderBytes, err := json.Marshal(newOrder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal order: %v", err)
+	}
+	utxoBytes, err := json.Marshal(selectedUtxos)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal utxos: %v", err)
+	}
+	vinBytes, err := json.Marshal(vins)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal vins: %v", err)
+	}
+	voutBytes, err := json.Marshal(vouts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal vouts: %v", err)
+	}
+
+	// Get withdrawal IDs
+	withdrawIds := make([]uint64, len(withdraws))
+	for i, withdraw := range withdraws {
+		withdrawIds[i] = withdraw.RequestId
+	}
+
+	msgSignRbfOrder := &types.MsgSignRbfOrder{
+		MsgSign: types.MsgSign{
+			RequestId:    requestId,
+			Sequence:     epochVoter.Sequence,
+			Epoch:        epochVoter.Epoch,
+			IsProposer:   true,
+			VoterAddress: epochVoter.Proposer,
+			SigData:      nil,
+		},
+		SendOrder:   orderBytes,
+		Utxos:       utxoBytes,
+		Vins:        vinBytes,
+		Vouts:       voutBytes,
+		Pid:         originalOrder.Pid,
+		WithdrawIds: withdrawIds,
+		NewTxFee:    newTxFee,
+		WitnessSize: witnessSize,
+	}
+
+	// Save new order to database
+	err = w.state.CreateRbfSendOrder(newOrder, originalOrder.OrderId, selectedUtxos, vins, vouts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create RBF send order: %v", err)
+	}
+
+	return msgSignRbfOrder, nil
 }
