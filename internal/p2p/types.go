@@ -25,4 +25,5 @@ const (
 	MessageTypeNewVoter
 	MessageTypeSafeboxTask
 	MessageTypeHeartbeat
+	MessageTypeSendOrderRbf
 )

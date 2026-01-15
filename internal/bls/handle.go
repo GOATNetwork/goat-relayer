@@ -40,6 +40,8 @@ func (s *Signer) handleSigStart(ctx context.Context, event interface{}) {
 		log.Debugf("Event handleDepositReceive is of type MsgSignDeposit, request id %s", e.RequestId)
 		if err := s.handleSigStartNewDeposit(ctx, e); err != nil {
 			log.Errorf("Error handleSigStart MsgSignDeposit, %v", err)
+			// feedback SigFailed
+			s.state.EventBus.Publish(state.SigFailed, e)
 		}
 	case types.MsgSignSendOrder:
 		log.Debugf("Event handleSigStartSendOrder is of type MsgSignSendOrder, request id %s", e.RequestId)
@@ -66,6 +68,8 @@ func (s *Signer) handleSigStart(ctx context.Context, event interface{}) {
 		log.Debugf("Event handleSigStartNewVoter is of type MsgSignNewVoter, request id %s", e.RequestId)
 		if err := s.handleSigStartNewVoter(ctx, e); err != nil {
 			log.Errorf("Error handleSigStart MsgSignNewVoter, %v", err)
+			// feedback SigFailed
+			s.state.EventBus.Publish(state.SigFailed, e)
 		}
 	default:
 		log.Debug("Unknown event handleSigStart type")

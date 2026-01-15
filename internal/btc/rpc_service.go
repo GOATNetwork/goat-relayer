@@ -159,6 +159,11 @@ func (s *BTCRPCService) GetBlockVerbose(blockHash *chainhash.Hash) (*btcjson.Get
 	return s.client.GetBlockVerbose(blockHash)
 }
 
+// GetTxOut returns the transaction output info if it's unspent, or nil if spent
+func (s *BTCRPCService) GetTxOut(txHash *chainhash.Hash, index uint32, mempool bool) (*btcjson.GetTxOutResult, error) {
+	return s.client.GetTxOut(txHash, index, mempool)
+}
+
 // convertBlockToBlockData converts wire.MsgBlock to db.BtcBlockData
 func (s *BTCRPCService) convertBlockToBlockData(block *wire.MsgBlock, height uint64) (*db.BtcBlockData, error) {
 	blockHash := block.BlockHash().String()
