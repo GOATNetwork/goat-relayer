@@ -15,6 +15,9 @@ import (
 	"unsafe"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
+	"github.com/aws/aws-sdk-go/aws/session"
 	awsv4 "github.com/aws/aws-sdk-go/aws/signer/v4"
 	"github.com/btcsuite/btcd/rpcclient"
 )
@@ -57,26 +60,42 @@ func AttachSigV4Signer(client *rpcclient.Client, region, service, accessKey, sec
 }
 
 func loadStaticCredentials(accessKey, secretKey, sessionToken string) (*credentials.Credentials, error) {
+	// 1. Try static credentials if explicitly provided
 	if accessKey != "" && secretKey != "" {
 		return credentials.NewStaticCredentials(accessKey, secretKey, sessionToken), nil
 	}
 
+	// 2. Try environment credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
 	if creds := credentials.NewEnvCredentials(); creds != nil {
 		if value, err := creds.Get(); err == nil && value.AccessKeyID != "" && value.SecretAccessKey != "" {
 			return creds, nil
 		}
 	}
 
+	// 3. Try shared credentials file (~/.aws/credentials)
 	profile := os.Getenv("AWS_PROFILE")
 	if profile == "" {
 		profile = "default"
 	}
-	creds := credentials.NewSharedCredentials("", profile)
-	if value, err := creds.Get(); err == nil && value.AccessKeyID != "" && value.SecretAccessKey != "" {
-		return creds, nil
+	if creds := credentials.NewSharedCredentials("", profile); creds != nil {
+		if value, err := creds.Get(); err == nil && value.AccessKeyID != "" && value.SecretAccessKey != "" {
+			return creds, nil
+		}
 	}
 
-	return nil, fmt.Errorf("unable to find AWS credentials via environment variables or shared config")
+	// 4. Try EC2 instance role credentials (IAM role attached to EC2 instance)
+	sess, err := session.NewSession()
+	if err == nil {
+		metadataClient := ec2metadata.New(sess)
+		creds := credentials.NewCredentials(&ec2rolecreds.EC2RoleProvider{
+			Client: metadataClient,
+		})
+		if value, err := creds.Get(); err == nil && value.AccessKeyID != "" && value.SecretAccessKey != "" {
+			return creds, nil
+		}
+	}
+
+	return nil, fmt.Errorf("unable to find AWS credentials via environment variables, shared config, or EC2 instance role")
 }
 
 // PrimeBitcoindBackendVersion discovers the remote bitcoind version via
