@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/goatnetwork/goat-relayer/internal/btc"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/layer2"
@@ -45,7 +45,7 @@ type SafeboxProcessor struct {
 	state          *state.State
 	libp2p         *p2p.LibP2PService
 	layer2Listener *layer2.Layer2Listener
-	btcClient      *rpcclient.Client
+	btcClient      *btc.BTCRPCService
 	once           sync.Once
 	safeboxMu      sync.Mutex
 
@@ -59,7 +59,7 @@ type SafeboxProcessor struct {
 	tssSignCh  chan interface{}
 }
 
-func NewSafeboxProcessor(state *state.State, libp2p *p2p.LibP2PService, layer2Listener *layer2.Layer2Listener, btcClient *rpcclient.Client) *SafeboxProcessor {
+func NewSafeboxProcessor(state *state.State, libp2p *p2p.LibP2PService, layer2Listener *layer2.Layer2Listener, btcClient *btc.BTCRPCService) *SafeboxProcessor {
 	return &SafeboxProcessor{
 		state:          state,
 		libp2p:         libp2p,
@@ -571,7 +571,7 @@ func (s *SafeboxProcessor) process(ctx context.Context) {
 	for _, task := range tasks {
 		unsignTx, messageToSign, err := s.BuildUnsignedTx(ctx, task)
 		if err != nil {
-			s.logger.Errorf("Failed to build unsigned transaction: %v", err)
+			s.logger.Errorf("Failed to build unsigned transaction: %v, task %v", err, task)
 			return
 		}
 

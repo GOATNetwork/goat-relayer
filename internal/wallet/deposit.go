@@ -17,7 +17,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/goatnetwork/goat-relayer/internal/btc"
 	"github.com/goatnetwork/goat-relayer/internal/state"
 	bitcointypes "github.com/goatnetwork/goat/x/bitcoin/types"
@@ -47,21 +46,19 @@ type BaseDepositProcessor struct {
 	depositSigFinishChan  chan interface{}
 	depositSigTimeoutChan chan interface{}
 
-	btcClient     *rpcclient.Client
+	btcClient     *btc.BTCRPCService
 	nextUnfirmIdx uint64
-	rpcService    *btc.BTCRPCService
 }
 
 var (
 	_ DepositProcessor = (*BaseDepositProcessor)(nil)
 )
 
-func NewDepositProcessor(btcClient *rpcclient.Client, state *state.State, rpcService *btc.BTCRPCService) DepositProcessor {
+func NewDepositProcessor(btcClient *btc.BTCRPCService, state *state.State) DepositProcessor {
 	return &BaseDepositProcessor{
-		state:      state,
-		btcClient:  btcClient,
-		rpcService: rpcService,
-		depositCh:  make(chan interface{}, 100),
+		state:     state,
+		btcClient: btcClient,
+		depositCh: make(chan interface{}, 100),
 
 		depositSigFailChan:    make(chan interface{}, 10),
 		depositSigFinishChan:  make(chan interface{}, 10),
@@ -249,7 +246,7 @@ func (b *BaseDepositProcessor) initDepositSig() {
 	// 6. get block headers
 	msgBlockHeaders := make([]types.MsgBlockHeader, 0)
 	for _, blockHash := range verifiedBlockHashes {
-		blockData, err := b.rpcService.GetBlockDataByHash(blockHash)
+		blockData, err := b.btcClient.GetBlockDataByHash(blockHash)
 		if err != nil {
 			log.Errorf("GetBlockDataByHash error: %v", err)
 			continue

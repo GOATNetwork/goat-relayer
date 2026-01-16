@@ -9,7 +9,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/types"
 	log "github.com/sirupsen/logrus"
@@ -28,11 +27,11 @@ type MempoolFeesResp struct {
 }
 
 type MemPoolFeeFetcher struct {
-	btcClient  *rpcclient.Client
+	btcClient  *BTCRPCService
 	httpClient *http.Client
 }
 
-func NewMemPoolFeeFetcher(btcClient *rpcclient.Client) *MemPoolFeeFetcher {
+func NewMemPoolFeeFetcher(btcClient *BTCRPCService) *MemPoolFeeFetcher {
 	return &MemPoolFeeFetcher{btcClient: btcClient, httpClient: &http.Client{Timeout: 30 * time.Second}}
 }
 
@@ -87,7 +86,7 @@ func (f *MemPoolFeeFetcher) getFeeRate(url string) (*types.BtcNetworkFee, error)
 }
 
 // get fee rate from btc node
-func getFeeRateFromBtcNode(btcClient *rpcclient.Client) (*types.BtcNetworkFee, error) {
+func getFeeRateFromBtcNode(btcClient *BTCRPCService) (*types.BtcNetworkFee, error) {
 	feeEstimate, err := btcClient.EstimateSmartFee(1, &btcjson.EstimateModeConservative)
 	if err != nil || feeEstimate == nil || feeEstimate.FeeRate == nil {
 		return nil, fmt.Errorf("failed to estimate smart fee 1: %v", err)

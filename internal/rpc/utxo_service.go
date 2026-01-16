@@ -14,8 +14,8 @@ import (
 	"net"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/goatnetwork/goat-relayer/internal/btc"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/layer2"
 	"github.com/goatnetwork/goat-relayer/internal/p2p"
@@ -31,7 +31,7 @@ type UtxoServer struct {
 	pb.UnimplementedBitcoinLightWalletServer
 	state          *state.State
 	layer2Listener *layer2.Layer2Listener
-	btcClient      *rpcclient.Client
+	btcClient      *btc.BTCRPCService
 }
 
 func (s *UtxoServer) Start(ctx context.Context) {
@@ -51,7 +51,7 @@ func (s *UtxoServer) Start(ctx context.Context) {
 	}
 }
 
-func NewUtxoServer(state *state.State, layer2Listener *layer2.Layer2Listener, btcClient *rpcclient.Client) *UtxoServer {
+func NewUtxoServer(state *state.State, layer2Listener *layer2.Layer2Listener, btcClient *btc.BTCRPCService) *UtxoServer {
 	return &UtxoServer{
 		state:          state,
 		layer2Listener: layer2Listener,

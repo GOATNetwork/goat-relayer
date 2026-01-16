@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/wire"
@@ -23,6 +24,53 @@ func NewBTCRPCService(client *rpcclient.Client) *BTCRPCService {
 	return &BTCRPCService{
 		client: client,
 	}
+}
+
+// GetBlockCount retrieves block count using RawRequest to avoid BackendVersion detection.
+func (s *BTCRPCService) GetBlockCount() (int64, error) {
+	rawResp, err := s.client.RawRequest("getblockcount", nil)
+	if err != nil {
+		return 0, err
+	}
+	var blockCount int64
+	if err := json.Unmarshal(rawResp, &blockCount); err != nil {
+		return 0, fmt.Errorf("unmarshal blockcount: %w", err)
+	}
+	return blockCount, nil
+}
+
+func (s *BTCRPCService) RawRequest(method string, params []json.RawMessage) (json.RawMessage, error) {
+	return s.client.RawRequest(method, params)
+}
+
+func (s *BTCRPCService) SendRawTransaction(tx *wire.MsgTx, allowHighFees bool) (*chainhash.Hash, error) {
+	return s.client.SendRawTransaction(tx, allowHighFees)
+}
+
+func (s *BTCRPCService) EstimateSmartFee(confTarget int64, mode *btcjson.EstimateSmartFeeMode) (*btcjson.EstimateSmartFeeResult, error) {
+	return s.client.EstimateSmartFee(confTarget, mode)
+}
+
+func (s *BTCRPCService) GetMempoolEntry(txid string) (*btcjson.GetMempoolEntryResult, error) {
+	return s.client.GetMempoolEntry(txid)
+}
+
+func (s *BTCRPCService) GetRawTransaction(txHash *chainhash.Hash) (*btcutil.Tx, error) {
+	return s.client.GetRawTransaction(txHash)
+}
+
+func (s *BTCRPCService) GetBlockVerboseTx(blockHash *chainhash.Hash) (*btcjson.GetBlockVerboseTxResult, error) {
+	return s.client.GetBlockVerboseTx(blockHash)
+}
+
+// GetBlockHash retrieves block hash by height.
+func (s *BTCRPCService) GetBlockHash(height int64) (*chainhash.Hash, error) {
+	return s.client.GetBlockHash(height)
+}
+
+// GetBlock retrieves the block by hash.
+func (s *BTCRPCService) GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error) {
+	return s.client.GetBlock(blockHash)
 }
 
 // GetBlockData retrieves block data via RPC
@@ -92,23 +140,13 @@ func (s *BTCRPCService) GetTxHashes(blockHash *chainhash.Hash) ([]chainhash.Hash
 	return txHashes, nil
 }
 
-// GetBlockHashForTx retrieves the block hash by transaction hash
-func (s *BTCRPCService) GetBlockHashForTx(txHash chainhash.Hash) (*chainhash.Hash, error) {
+// GetBlockTimeFromTx retrieves the block time from transaction hash
+func (s *BTCRPCService) GetBlockTimeFromTx(txHash chainhash.Hash) (blockTime int64, err error) {
 	txRawResult, err := s.client.GetRawTransactionVerbose(&txHash)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get raw transaction: %v", err)
+		return 0, fmt.Errorf("failed to get raw transaction: %v", err)
 	}
-
-	if txRawResult.BlockHash == "" {
-		return nil, fmt.Errorf("transaction not in any block")
-	}
-
-	blockHash, err := chainhash.NewHashFromStr(txRawResult.BlockHash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse block hash: %v", err)
-	}
-
-	return blockHash, nil
+	return txRawResult.Blocktime, nil
 }
 
 // GetRawTransactionVerbose retrieves detailed information of a transaction
@@ -119,11 +157,6 @@ func (s *BTCRPCService) GetRawTransactionVerbose(txHash *chainhash.Hash) (*btcjs
 // GetBlockVerbose retrieves detailed information of a block
 func (s *BTCRPCService) GetBlockVerbose(blockHash *chainhash.Hash) (*btcjson.GetBlockVerboseResult, error) {
 	return s.client.GetBlockVerbose(blockHash)
-}
-
-// GetBlockVerboseTx retrieves detailed information of a block (including transactions)
-func (s *BTCRPCService) GetBlockVerboseTx(blockHash *chainhash.Hash) (*btcjson.GetBlockVerboseTxResult, error) {
-	return s.client.GetBlockVerboseTx(blockHash)
 }
 
 // convertBlockToBlockData converts wire.MsgBlock to db.BtcBlockData

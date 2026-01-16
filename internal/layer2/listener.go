@@ -4,23 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/big"
-	"strings"
-	"sync"
-	"time"
-
-	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/std"
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
 	bitcointypes "github.com/goatnetwork/goat/x/bitcoin/types"
 	relayertypes "github.com/goatnetwork/goat/x/relayer/types"
+	"math/big"
+	"strings"
+	"sync"
+	"time"
 
+	"crypto/tls"
 	"github.com/go-errors/errors"
 	log "github.com/sirupsen/logrus"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/ethereum/go-ethereum"
@@ -96,7 +97,7 @@ type Layer2Listener struct {
 	btcRPC    *btc.BTCRPCService
 }
 
-func NewLayer2Listener(libp2p *p2p.LibP2PService, state *state.State, db *db.DatabaseManager, btcClient *rpcclient.Client) *Layer2Listener {
+func NewLayer2Listener(libp2p *p2p.LibP2PService, state *state.State, db *db.DatabaseManager, btcRPC *btc.BTCRPCService) *Layer2Listener {
 	ethClient, err := DialEthClient()
 	if err != nil {
 		log.Fatalf("Error creating Layer2 EVM RPC client: %v", err)
@@ -133,9 +134,6 @@ func NewLayer2Listener(libp2p *p2p.LibP2PService, state *state.State, db *db.Dat
 
 	// Initialize TSS signer
 	tssSigner := tss.NewSigner(config.AppConfig.TssEndpoint, big.NewInt(config.AppConfig.L2ChainId.Int64()))
-
-	// Initialize BTC RPC service
-	btcRPC := btc.NewBTCRPCService(btcClient)
 
 	return &Layer2Listener{
 		libp2p:    libp2p,
@@ -190,7 +188,20 @@ func DialCosmosClient() (*rpchttp.HTTP, *grpc.ClientConn, authtypes.QueryClient,
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	grpcConn, err := grpc.NewClient(config.AppConfig.GoatChainGRPCURI, grpc.WithTransportCredentials(insecure.NewCredentials()))
+
+	// Use TLS if port is 443, otherwise use insecure
+	var grpcConn *grpc.ClientConn
+	grpcURI := config.AppConfig.GoatChainGRPCURI
+	if strings.HasSuffix(grpcURI, ":443") {
+		// Use TLS for port 443
+		tlsConfig := &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+		grpcConn, err = grpc.NewClient(grpcURI, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	} else {
+		// Use insecure for other ports
+		grpcConn, err = grpc.NewClient(grpcURI, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -432,7 +443,7 @@ func (lis *Layer2Listener) filterEvmEvents(ctx context.Context, hash string) err
 				log.Errorf("failed to unpack funds received event: %v", err)
 				return err
 			}
-			err = lis.handleFundsReceived(fundsReceivedEvent.TaskId, fundsReceivedEvent.FundingTxHash[:], uint64(fundsReceivedEvent.TxOut))
+			err = lis.handleFundsReceived(fundsReceivedEvent.TaskId, fundsReceivedEvent.FundingTxHash[:], uint64(fundsReceivedEvent.TxOut), uint64(fundsReceivedEvent.TimelockEndTime))
 			if err != nil {
 				log.Errorf("failed to handle funds received event: %v", err)
 				return err

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/types"
 	log "github.com/sirupsen/logrus"
@@ -346,26 +347,58 @@ func (s *State) UpdateSafeboxTaskInitOK(taskId uint64, timelockTxid string, time
 		if err != nil {
 			return err
 		}
-		// update sendorder status to init
-		order, err := s.getOrderByTxid(tx, timelockTxid)
-		if err != nil && err != gorm.ErrRecordNotFound {
-			return err
-		}
-		if order == nil {
-			return nil
-		}
-		if order.Status == db.ORDER_STATUS_CONFIRMED || order.Status == db.ORDER_STATUS_PROCESSED || order.Status == db.ORDER_STATUS_CLOSED {
-			return nil
-		}
-		order.Status = db.ORDER_STATUS_INIT
-		order.UpdatedAt = time.Now()
-		err = s.saveOrder(tx, order)
+
+		// update sendorder status to init (allow recovery from closed state, like UpdateWithdrawInitialized)
+		orders, err := s.getAllOrdersByTxid(tx, timelockTxid)
 		if err != nil {
 			return err
 		}
-		err = s.updateOtherStatusByOrder(tx, order.OrderId, db.ORDER_STATUS_INIT, true)
-		if err != nil {
-			return err
+		if len(orders) == 0 {
+			return nil
+		}
+
+		// order found - recover from aggregating or closed status (matching UpdateWithdrawInitialized behavior)
+		for i, order := range orders {
+			// Skip if order is already in a finalized state (confirmed, processed)
+			// But allow recovery from closed state (this is the key fix)
+			if order.Status != db.ORDER_STATUS_AGGREGATING && order.Status != db.ORDER_STATUS_CLOSED {
+				continue
+			}
+
+			// the latest one is init, others stay closed
+			if i == 0 {
+				log.Infof("UpdateSafeboxTaskInitOK: recovering order %s from %s to init", order.OrderId, order.Status)
+				order.Status = db.ORDER_STATUS_INIT
+			} else {
+				order.Status = db.ORDER_STATUS_CLOSED
+			}
+			order.UpdatedAt = time.Now()
+			err = s.saveOrder(tx, order)
+			if err != nil {
+				return err
+			}
+
+			// update vin, vout to order status
+			err = s.updateOtherStatusByOrder(tx, order.OrderId, order.Status, true)
+			if err != nil {
+				return err
+			}
+
+			// For the order being recovered to init, update UTXO status to pending
+			if order.Status != db.ORDER_STATUS_INIT {
+				continue
+			}
+			vins, err := s.getVinsByOrderId(tx, order.OrderId)
+			if err != nil {
+				return err
+			}
+			for _, vin := range vins {
+				// update utxo to pending (recover from processed state if was closed)
+				err = s.updateUtxoStatusPending(tx, vin.Txid, vin.OutIndex)
+				if err != nil {
+					return err
+				}
+			}
 		}
 		return nil
 	})
@@ -397,7 +430,7 @@ func (s *State) UpdateSafeboxTaskInit(timelockAddress string, timelockTxid strin
 }
 
 // UpdateSafeboxTaskReceivedOK update safebox task after received consensus event from contract
-func (s *State) UpdateSafeboxTaskReceivedOK(taskId uint64, fundingTxHash string, txOut uint64) error {
+func (s *State) UpdateSafeboxTaskReceivedOK(taskId uint64, fundingTxHash string, txOut, timelockEndTime uint64) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
@@ -412,8 +445,16 @@ func (s *State) UpdateSafeboxTaskReceivedOK(taskId uint64, fundingTxHash string,
 		if taskDeposit.Status != db.TASK_STATUS_RECEIVED && taskDeposit.Status != db.TASK_STATUS_CREATE {
 			return fmt.Errorf("task deposit status is not received or create")
 		}
+		timelockP2WSHAddress, witnessScript, err := types.GenerateTimeLockP2WSHAddress(taskDeposit.Pubkey, time.Unix(int64(timelockEndTime), 0), types.GetBTCNetwork(config.AppConfig.BTCNetworkType))
+		if err != nil {
+			return fmt.Errorf("task deposit generate timelock-P2WSH address from pubkey %s and timelock %d error: %v", taskDeposit.Pubkey, timelockEndTime, err)
+		}
+		timelockAddress := timelockP2WSHAddress.EncodeAddress()
 		taskDeposit.FundingTxid = fundingTxHash
 		taskDeposit.FundingOutIndex = txOut
+		taskDeposit.TimelockEndTime = timelockEndTime
+		taskDeposit.TimelockAddress = timelockAddress
+		taskDeposit.WitnessScript = witnessScript
 		taskDeposit.Status = db.TASK_STATUS_RECEIVED_OK
 		taskDeposit.UpdatedAt = time.Now()
 		return tx.Save(&taskDeposit).Error
@@ -421,7 +462,7 @@ func (s *State) UpdateSafeboxTaskReceivedOK(taskId uint64, fundingTxHash string,
 	return err
 }
 
-func (s *State) UpdateSafeboxTaskReceived(txid, evmAddr string, txout uint64, amount uint64) error {
+func (s *State) UpdateSafeboxTaskReceived(txid, evmAddr string, txout uint64, amount uint64, blockTime int64) error {
 	s.walletMu.Lock()
 	defer s.walletMu.Unlock()
 
@@ -445,7 +486,7 @@ func (s *State) UpdateSafeboxTaskReceived(txid, evmAddr string, txout uint64, am
 			return nil
 		}
 		// check if deadline is over
-		if time.Now().Unix() > int64(taskDeposit.Deadline) {
+		if blockTime > int64(taskDeposit.Deadline) {
 			// close it
 			taskDeposit.Status = db.TASK_STATUS_CLOSED
 			taskDeposit.UpdatedAt = time.Now()

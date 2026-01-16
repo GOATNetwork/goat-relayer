@@ -546,6 +546,8 @@ func (s *State) UpdateWithdrawInitialized(txid string, pid uint64) error {
 
 		// order found
 		for i, order := range orders {
+			// Skip if order is already in a finalized state (confirmed, processed)
+			// But allow recovery from closed state
 			if order.Status != db.ORDER_STATUS_AGGREGATING && order.Status != db.ORDER_STATUS_CLOSED {
 				continue
 			}
@@ -706,7 +708,8 @@ func (s *State) CleanProcessingWithdrawByOrderId(orderId string) error {
 			return err
 		}
 
-		// restore safebox task from received to init
+		// restore safebox task from init to received_ok
+		// Note: if on-chain event arrives later, UpdateSafeboxTaskInitOK will recover the order
 		err = s.updateSafeboxTaskStatusByOrderId(tx, db.TASK_STATUS_RECEIVED_OK, order.OrderId, db.TASK_STATUS_INIT)
 		if err != nil {
 			return err
@@ -772,7 +775,8 @@ func (s *State) CleanProcessingWithdraw() error {
 					return err
 				}
 
-				// restore safebox task from received to init
+				// restore safebox task from init to received_ok
+				// Note: if on-chain event arrives later, UpdateSafeboxTaskInitOK will recover the order
 				err = s.updateSafeboxTaskStatusByOrderId(tx, db.TASK_STATUS_RECEIVED_OK, order.OrderId, db.TASK_STATUS_INIT)
 				if err != nil {
 					return err
@@ -888,7 +892,7 @@ func (s *State) GetSendOrderByTxIdOrExternalId(id string) (*db.SendOrder, error)
 	return sendOrder, nil
 }
 
-// GetLatestSendOrderConfirmed get confirmed send order
+// GetLatestWithdrawSendOrderConfirmed get latest confirmed withdraw send order
 func (s *State) GetLatestWithdrawSendOrderConfirmed() (*db.SendOrder, error) {
 	s.walletMu.RLock()
 	defer s.walletMu.RUnlock()

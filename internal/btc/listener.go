@@ -3,7 +3,6 @@ package btc
 import (
 	"context"
 
-	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/goatnetwork/goat-relayer/internal/p2p"
 	"github.com/goatnetwork/goat-relayer/internal/state"
 	log "github.com/sirupsen/logrus"
@@ -16,11 +15,9 @@ type BTCListener struct {
 	notifier *BTCNotifier
 }
 
-func NewBTCListener(libp2p *p2p.LibP2PService, state *state.State, btcClient *rpcclient.Client) *BTCListener {
-	rpcService := NewBTCRPCService(btcClient)
+func NewBTCListener(libp2p *p2p.LibP2PService, state *state.State, rpcService *BTCRPCService) *BTCListener {
 	poller := NewBTCPoller(state, rpcService)
-
-	notifier := NewBTCNotifier(btcClient, poller)
+	notifier := NewBTCNotifier(rpcService, poller)
 
 	return &BTCListener{
 		libp2p:   libp2p,

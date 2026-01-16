@@ -15,14 +15,13 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	log "github.com/sirupsen/logrus"
 )
 
 type BTCNotifier struct {
-	client        *rpcclient.Client
+	rpcService    *BTCRPCService
 	confirmations int64
 	currentHeight uint64
 	reindexBlocks []string
@@ -34,12 +33,12 @@ type BTCNotifier struct {
 	feeFetcher NetworkFeeFetcher
 }
 
-func NewBTCNotifier(client *rpcclient.Client, poller *BTCPoller) *BTCNotifier {
+func NewBTCNotifier(rpcService *BTCRPCService, poller *BTCPoller) *BTCNotifier {
 	var maxBlockHeight int64 = -1
 	var reindexBlocks []string
 
 	// No longer retrieve the maximum block height from the cache database, switch to getting it from RPC
-	blockCount, err := client.GetBlockCount()
+	blockCount, err := rpcService.GetBlockCount()
 	if err != nil {
 		log.Fatalf("Failed to get block count from RPC, %v", err)
 	}
@@ -90,13 +89,13 @@ func NewBTCNotifier(client *rpcclient.Client, poller *BTCPoller) *BTCNotifier {
 	log.Infof("New btc notify sync status confirmed height is %d", syncStatus.ConfirmedHeight)
 
 	return &BTCNotifier{
-		client:        client,
+		rpcService:    rpcService,
 		confirmations: int64(config.AppConfig.BTCConfirmations),
 		currentHeight: uint64(maxBlockHeight + 1),
 		reindexBlocks: reindexBlocks,
 		syncStatus:    syncStatus,
 		poller:        poller,
-		feeFetcher:    NewMemPoolFeeFetcher(client),
+		feeFetcher:    NewMemPoolFeeFetcher(rpcService),
 	}
 }
 
@@ -118,7 +117,7 @@ func (bn *BTCNotifier) checkConfirmations(ctx context.Context, blockDoneCh chan 
 			return
 
 		case <-ticker.C:
-			bestHeight, err := bn.client.GetBlockCount()
+			bestHeight, err := bn.rpcService.GetBlockCount()
 			if err != nil {
 				log.Errorf("Error getting latest block height: %v", err)
 				continue
@@ -343,12 +342,12 @@ func (bn *BTCNotifier) handleP2WSHDeposit(tx *btcjson.TxRawResult, blockHeight i
 }
 
 func (bn *BTCNotifier) getBlockAtHeight(height int64) (*wire.MsgBlock, error) {
-	blockHash, err := bn.client.GetBlockHash(height)
+	blockHash, err := bn.rpcService.GetBlockHash(height)
 	if err != nil {
 		return nil, fmt.Errorf("error getting block hash at height %d: %v", height, err)
 	}
 
-	block, err := bn.client.GetBlock(blockHash)
+	block, err := bn.rpcService.GetBlock(blockHash)
 	if err != nil {
 		return nil, fmt.Errorf("error getting block at height %d: %v", height, err)
 	}

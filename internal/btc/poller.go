@@ -12,8 +12,6 @@ import (
 	"github.com/goatnetwork/goat-relayer/internal/types"
 	"gorm.io/gorm"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -119,33 +117,6 @@ func (p *BTCPoller) signLoop(ctx context.Context) {
 			p.initSig()
 		}
 	}
-}
-
-func (p *BTCPoller) GetBlockHashForTx(txHash chainhash.Hash) (*chainhash.Hash, error) {
-	var btcTxOutput db.BtcTXOutput
-
-	if err := p.db.Where("tx_hash = ?", txHash.String()).First(&btcTxOutput).Error; err != nil {
-		return nil, fmt.Errorf("failed to find the block hash for the transaction: %v", err)
-	}
-
-	blockHashBytes := btcTxOutput.PkScript[:32] // Assuming the block hash is the first 32 bytes of PkScript
-	blockHash, err := chainhash.NewHash(blockHashBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create hash from block hash bytes: %v", err)
-	}
-
-	return blockHash, nil
-}
-func (p *BTCPoller) GetBlockHeader(blockHash *chainhash.Hash) (*wire.BlockHeader, error) {
-	return p.rpcService.GetBlockHeader(blockHash)
-}
-
-func (p *BTCPoller) GetTxHashes(blockHash *chainhash.Hash) ([]chainhash.Hash, error) {
-	return p.rpcService.GetTxHashes(blockHash)
-}
-
-func (p *BTCPoller) GetBlock(height uint64) (*db.BtcBlockData, error) {
-	return p.rpcService.GetBlockData(height)
 }
 
 func (p *BTCPoller) handleConfirmedBlock(block *types.BtcBlockExt) {

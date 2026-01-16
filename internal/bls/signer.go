@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/rpcclient"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/goatnetwork/goat-relayer/internal/btc"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/layer2"
 	"github.com/goatnetwork/goat-relayer/internal/p2p"
@@ -39,7 +39,7 @@ type Signer struct {
 	sigMu         sync.RWMutex
 }
 
-func NewSigner(libp2p *p2p.LibP2PService, layer2Listener *layer2.Layer2Listener, state *state.State, btcClient *rpcclient.Client) *Signer {
+func NewSigner(libp2p *p2p.LibP2PService, layer2Listener *layer2.Layer2Listener, state *state.State, btcClient *btc.BTCRPCService) *Signer {
 	byt, err := hex.DecodeString(config.AppConfig.RelayerBlsSk)
 	if err != nil {
 		log.Fatalf("Decode bls sk error: %v", err)

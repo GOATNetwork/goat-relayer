@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -12,9 +13,9 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/goatnetwork/goat-relayer/internal/btc"
 	"github.com/goatnetwork/goat-relayer/internal/config"
 	"github.com/goatnetwork/goat-relayer/internal/db"
 	"github.com/goatnetwork/goat-relayer/internal/http"
@@ -37,12 +38,12 @@ type RemoteClient interface {
 }
 
 type BtcClient struct {
-	client *rpcclient.Client
+	client *btc.BTCRPCService
 }
 
 type FireblocksClient struct {
 	client *http.FireblocksProposal
-	btcRpc *rpcclient.Client
+	btcRpc *btc.BTCRPCService
 	state  *state.State
 }
 
@@ -89,6 +90,62 @@ func (c *BtcClient) SendRawTransaction(tx *wire.MsgTx, utxos []*db.Utxo, orderTy
 		return txid, false, err
 	}
 	return txid, false, nil
+}
+
+// sendRawTransaction sends a raw transaction using RawRequest.
+// This method is compatible with all Bitcoin RPC implementations (btcd, Bitcoin Core, GetBlock, etc.)
+// as it bypasses the rpcclient's BackendVersion detection which calls getinfo (often blocked by RPC providers).
+func sendRawTransaction(client *btc.BTCRPCService, tx *wire.MsgTx) error {
+	// Serialize tx to hex
+	var buf bytes.Buffer
+	if err := tx.Serialize(&buf); err != nil {
+		return fmt.Errorf("failed to serialize tx: %v", err)
+	}
+	txHex := hex.EncodeToString(buf.Bytes())
+
+	// Use RawRequest with only hex parameter (most compatible format)
+	rawResp, err := client.RawRequest("sendrawtransaction", []json.RawMessage{
+		json.RawMessage(fmt.Sprintf("%q", txHex)),
+	})
+	if err != nil {
+		// RawRequest returns *btcjson.RPCError for JSON-RPC errors, return as-is for proper error handling
+		if _, ok := err.(*btcjson.RPCError); ok {
+			return err
+		}
+		// Fallback: string matching for non-standard error responses
+		errStr := err.Error()
+		// ErrRPCTxAlreadyInChain (-27): Transaction already in block chain
+		// Bitcoin Core < 28.0: "Transaction already in block chain"
+		// Bitcoin Core >= 28.0: "Transaction outputs already in utxo set"
+		// btcd: "transaction already exists in blockchain"
+		if strings.Contains(errStr, "already in block chain") ||
+			strings.Contains(errStr, "already exists in blockchain") ||
+			strings.Contains(errStr, "already in utxo set") {
+			return &btcjson.RPCError{Code: btcjson.ErrRPCTxAlreadyInChain, Message: errStr}
+		}
+		// ErrRPCVerifyRejected (-26): Transaction verification failed
+		if strings.Contains(errStr, "mandatory-script-verify-flag-failed") ||
+			strings.Contains(errStr, "non-mandatory-script-verify-flag") ||
+			strings.Contains(errStr, "bad-txns") ||
+			strings.Contains(errStr, "txn-mempool-conflict") ||
+			strings.Contains(errStr, "insufficient fee") ||
+			strings.Contains(errStr, "min relay fee not met") {
+			return &btcjson.RPCError{Code: btcjson.ErrRPCVerifyRejected, Message: errStr}
+		}
+		return err
+	}
+
+	// Handle empty response
+	if len(rawResp) == 0 || string(rawResp) == "null" || string(rawResp) == "" {
+		return fmt.Errorf("sendrawtransaction returned empty response")
+	}
+
+	var txid string
+	if err := json.Unmarshal(rawResp, &txid); err != nil {
+		return fmt.Errorf("unmarshal txid: %w, raw: %s", err, string(rawResp))
+	}
+	log.Infof("SendRawTransaction success, txid: %s", txid)
+	return nil
 }
 
 func (c *BtcClient) CheckPending(txid string, externalTxId string, updatedAt time.Time) (revert bool, confirmations uint64, blockHeight uint64, err error) {
@@ -221,7 +278,7 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 		if err != nil {
 			return false, 0, 0, fmt.Errorf("apply fireblocks signatures to tx error: %v, txid: %s", err, txid)
 		}
-		_, err = c.btcRpc.SendRawTransaction(tx, false)
+		err = sendRawTransaction(c.btcRpc, tx)
 		if err != nil {
 			if rpcErr, ok := err.(*btcjson.RPCError); ok {
 				switch rpcErr.Code {
@@ -286,7 +343,7 @@ func (c *FireblocksClient) CheckPending(txid string, externalTxId string, update
 	return false, uint64(block.Confirmations), uint64(block.Height), nil
 }
 
-func NewOrderBroadcaster(btcClient *rpcclient.Client, state *state.State) OrderBroadcaster {
+func NewOrderBroadcaster(btcClient *btc.BTCRPCService, state *state.State) OrderBroadcaster {
 	orderBroadcaster := &BaseOrderBroadcaster{
 		state:         state,
 		txBroadcastCh: make(chan interface{}, 100),

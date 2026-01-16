@@ -61,12 +61,28 @@ jobs:
         env:
           MODULE_NAME: ${{ matrix.module }}
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY/$IMAGE_NAME:${{ env.VERSION }} -f ./Dockerfile .
+          docker build --build-arg GITHUB_TOKEN=${{ secrets.TOKEN }} -t $ECR_REGISTRY/$ECR_REPOSITORY/$IMAGE_NAME:${{ env.VERSION }} -f ./Dockerfile .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY/$IMAGE_NAME:${{ env.VERSION }}
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY/$IMAGE_NAME:${{ env.VERSION }}" >> $GITHUB_OUTPUT
           echo "image_name=$IMAGE_NAME" >>  $GITHUB_OUTPUT
           echo "image_tag=${{ env.VERSION }}" >>  $GITHUB_OUTPUT
+
+      - name: Build and push image to Docker Hub
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY/$IMAGE_NAME:${{ env.VERSION }} goatnetwork/$IMAGE_NAME:latest
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY/$IMAGE_NAME:${{ env.VERSION }} goatnetwork/$IMAGE_NAME:${{ env.VERSION }}
+
+          docker push goatnetwork/$IMAGE_NAME:latest
+          docker push goatnetwork/$IMAGE_NAME:${{ env.VERSION }}
+
       - name: Notify Telegram on Success
         if: success()
         uses: appleboy/telegram-action@master
@@ -77,14 +93,14 @@ jobs:
             ✅ Build succeeded!
             Repository: ${{ github.repository }}
             Commit: ${{ github.event.head_commit.message }}
-            Tag: ${{ github.ref}}
+            Tag: ${{ github.ref }}
             Branch: ${{ github.ref_name }}
             By: ${{ github.actor }}
             imageName: ${{ steps.build-image.outputs.image_name }}
             imageTag: ${{ steps.build-image.outputs.image_tag }}
             image: ${{ steps.build-image.outputs.image }}
             Time: ${{ github.event.head_commit.timestamp }}
-            
+
       - name: Notify Telegram on Failure  
         if: failure()
         uses: appleboy/telegram-action@master
@@ -95,7 +111,7 @@ jobs:
             ❌ Build failed!
             Repository: ${{ github.repository }}
             Commit: ${{ github.event.head_commit.message }}
-            Tag: ${{ github.ref}}
+            Tag: ${{ github.ref }}
             Branch: ${{ github.ref_name }}
             By: ${{ github.actor }}
             Time: ${{ github.event.head_commit.timestamp }}
