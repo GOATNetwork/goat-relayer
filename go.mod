@@ -5,6 +5,7 @@ go 1.23.8
 toolchain go1.24.3
 
 require (
+	github.com/aws/aws-sdk-go v1.40.45
 	github.com/btcsuite/btcd v0.25.0
 	github.com/btcsuite/btcd/btcutil v1.1.6
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
@@ -107,6 +108,7 @@ require (
 	github.com/iancoleman/strcase v0.3.0 // indirect
 	github.com/improbable-eng/grpc-web v0.15.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/jmhodges/levigo v1.0.0 // indirect
 	github.com/kelindar/simd v1.1.2 // indirect
 	github.com/libp2p/go-yamux/v5 v5.0.1 // indirect
