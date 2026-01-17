@@ -14,6 +14,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
@@ -84,14 +85,22 @@ func loadStaticCredentials(accessKey, secretKey, sessionToken string) (*credenti
 	}
 
 	// 4. Try EC2 instance role credentials (IAM role attached to EC2 instance)
-	sess, err := session.NewSession()
+	// The AWS SDK automatically handles IMDSv2 token acquisition
+	sess, err := session.NewSession(&aws.Config{
+		HTTPClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+	})
 	if err == nil {
 		metadataClient := ec2metadata.New(sess)
-		creds := credentials.NewCredentials(&ec2rolecreds.EC2RoleProvider{
-			Client: metadataClient,
-		})
-		if value, err := creds.Get(); err == nil && value.AccessKeyID != "" && value.SecretAccessKey != "" {
-			return creds, nil
+		// Check if we're running on EC2
+		if metadataClient.Available() {
+			creds := credentials.NewCredentials(&ec2rolecreds.EC2RoleProvider{
+				Client: metadataClient,
+			})
+			if value, err := creds.Get(); err == nil && value.AccessKeyID != "" && value.SecretAccessKey != "" {
+				return creds, nil
+			}
 		}
 	}
 
@@ -114,24 +123,33 @@ func PrimeBitcoindBackendVersion(client *rpcclient.Client) error {
 		return fmt.Errorf("getnetworkinfo request failed: %w", err)
 	}
 
+	// Handle empty response (e.g., AWS ManagedBlockchain doesn't support getnetworkinfo)
+	// Default to BitcoindPost25 in this case
+	if len(resp) == 0 {
+		return setBackendVersion(client, rpcclient.BitcoindPost25)
+	}
+
 	var networkInfo struct {
 		SubVersion string  `json:"subversion"`
 		Version    float64 `json:"version"`
 	}
 	if err := json.Unmarshal(resp, &networkInfo); err != nil {
-		return fmt.Errorf("failed to decode getnetworkinfo response: %w", err)
+		// If we can't decode the response, assume BitcoindPost25
+		return setBackendVersion(client, rpcclient.BitcoindPost25)
 	}
 
 	subVersion := networkInfo.SubVersion
 	if subVersion == "" {
 		if networkInfo.Version == 0 {
-			return fmt.Errorf("getnetworkinfo response missing subversion and version")
+			// Empty version info, assume BitcoindPost25
+			return setBackendVersion(client, rpcclient.BitcoindPost25)
 		}
 		subVersion = deriveSatoshiSubVersion(networkInfo.Version)
 	}
 
 	if subVersion == "" {
-		return fmt.Errorf("getnetworkinfo response missing subversion")
+		// No subversion, assume BitcoindPost25
+		return setBackendVersion(client, rpcclient.BitcoindPost25)
 	}
 
 	version := classifyBitcoindVersion(subVersion)
