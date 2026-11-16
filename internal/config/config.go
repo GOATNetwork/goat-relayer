@@ -15,6 +15,12 @@ import (
 
 var AppConfig Config
 
+const (
+	UtxoReconcileModeOff    = "off"
+	UtxoReconcileModeDryRun = "dryrun"
+	UtxoReconcileModeApply  = "apply"
+)
+
 func InitConfig() {
 	viper.AutomaticEnv()
 
@@ -61,10 +67,21 @@ func InitConfig() {
 	viper.SetDefault("RELAYER_PRIVATE_KEY", "")
 	viper.SetDefault("RELAYER_BLS_SK", "")
 	viper.SetDefault("BLS_SIG_TIMEOUT", "300s")
+	viper.SetDefault("UTXO_RECONCILE_MODE", UtxoReconcileModeDryRun)
+	viper.SetDefault("UTXO_RECONCILE_INTERVAL", "10m")
+	viper.SetDefault("UTXO_RECONCILE_MIN_AGE", "30m")
 
 	logLevel, err := logrus.ParseLevel(strings.ToLower(viper.GetString("LOG_LEVEL")))
 	if err != nil {
 		logrus.Fatalf("Invalid log level: %v", err)
+	}
+
+	utxoReconcileMode := strings.ToLower(strings.TrimSpace(viper.GetString("UTXO_RECONCILE_MODE")))
+	switch utxoReconcileMode {
+	case UtxoReconcileModeOff, UtxoReconcileModeDryRun, UtxoReconcileModeApply:
+	default:
+		logrus.Fatalf("Invalid UTXO_RECONCILE_MODE %q, expected one of: %s, %s, %s",
+			utxoReconcileMode, UtxoReconcileModeOff, UtxoReconcileModeDryRun, UtxoReconcileModeApply)
 	}
 
 	l2ChainId, err := strconv.ParseInt(viper.GetString("L2_CHAIN_ID"), 10, 64)
@@ -121,6 +138,16 @@ func InitConfig() {
 		RelayerAddress:         relayerAddress,
 		RelayerBlsSk:           viper.GetString("RELAYER_BLS_SK"),
 		BlsSigTimeout:          viper.GetDuration("BLS_SIG_TIMEOUT"),
+		UtxoReconcileMode:      utxoReconcileMode,
+		UtxoReconcileInterval:  viper.GetDuration("UTXO_RECONCILE_INTERVAL"),
+		UtxoReconcileMinAge:    viper.GetDuration("UTXO_RECONCILE_MIN_AGE"),
+	}
+
+	if AppConfig.UtxoReconcileInterval <= 0 {
+		logrus.Fatalf("Invalid UTXO_RECONCILE_INTERVAL %v, must be positive", AppConfig.UtxoReconcileInterval)
+	}
+	if AppConfig.UtxoReconcileMinAge <= 0 {
+		logrus.Fatalf("Invalid UTXO_RECONCILE_MIN_AGE %v, must be positive", AppConfig.UtxoReconcileMinAge)
 	}
 
 	if (AppConfig.BTCNetworkType == "" || AppConfig.BTCNetworkType == "mainnet") && AppConfig.BTCConfirmations < 6 {
@@ -180,4 +207,7 @@ type Config struct {
 	RelayerAddress         string
 	RelayerBlsSk           string
 	BlsSigTimeout          time.Duration
+	UtxoReconcileMode      string
+	UtxoReconcileInterval  time.Duration
+	UtxoReconcileMinAge    time.Duration
 }

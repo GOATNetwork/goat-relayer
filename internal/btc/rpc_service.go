@@ -43,6 +43,33 @@ func (s *BTCRPCService) RawRequest(method string, params []json.RawMessage) (jso
 	return s.client.RawRequest(method, params)
 }
 
+// GetTxOut returns the unspent output txid:vout, or nil when the node reports
+// no such unspent output (already spent, or unknown). With includeMempool, an
+// output spent by a mempool transaction is also reported as nil.
+func (s *BTCRPCService) GetTxOut(txid string, vout uint32, includeMempool bool) (*btcjson.GetTxOutResult, error) {
+	params := make([]json.RawMessage, 0, 3)
+	for _, param := range []interface{}{txid, vout, includeMempool} {
+		raw, err := json.Marshal(param)
+		if err != nil {
+			return nil, fmt.Errorf("marshal gettxout param: %w", err)
+		}
+		params = append(params, raw)
+	}
+	rawResp, err := s.client.RawRequest("gettxout", params)
+	if err != nil {
+		return nil, err
+	}
+	trimmed := bytes.TrimSpace(rawResp)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil, nil
+	}
+	var result btcjson.GetTxOutResult
+	if err := json.Unmarshal(trimmed, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal gettxout: %w", err)
+	}
+	return &result, nil
+}
+
 func (s *BTCRPCService) SendRawTransaction(tx *wire.MsgTx, allowHighFees bool) (*chainhash.Hash, error) {
 	return s.client.SendRawTransaction(tx, allowHighFees)
 }

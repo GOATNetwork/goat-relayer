@@ -75,3 +75,15 @@ Withdrawal
 - ==
 - Max Queue 10
 - Max Network Fee qurom 500 sat/vbyte
+
+## Pending UTXO Reconciliation
+A UTXO is set to `pending` when a send order reserves it as an input. If it stays `pending` while no in-flight send order (`aggregating`, `init`, `pending`, `rbf-request`, `unconfirm`) uses it, the node refuses every new order that selects it (`utxo status can not be make withdrawal or consolidation`), which can block withdrawals.
+
+The UTXO reconciler runs every `UTXO_RECONCILE_INTERVAL` and is skipped while BTC or L2 is syncing. For each such orphan `pending` UTXO older than `UTXO_RECONCILE_MIN_AGE`, it calls `gettxout` (mempool included):
+- unspent, at least `BTC_CONFIRMATIONS` confirmations and same amount: restore to `confirmed` (`processed` for a known deposit)
+- anything else (spent, unknown, too few confirmations, amount mismatch, RPC error): log only, leave for manual review
+
+`UTXO_RECONCILE_MODE`:
+- `dryrun` (default): log `would restore` lines, change nothing
+- `apply`: restore, logging each change with its on-chain evidence
+- `off`: disabled
