@@ -98,7 +98,7 @@ A finding is logged as a warning when first seen or when its reason changes; rep
 The reconciler only changes the local node's database. A withdrawal stays blocked while any voter needed for the signing threshold still holds the UTXO as `pending`, so a successful deployment alone does not mean the incident is resolved.
 1. Deploy every node with `dryrun`. After at least one interval, collect `UtxoReconciler` log lines from **every** node and list which nodes report `would restore` for the target outpoint.
 2. Before switching to `apply`, check each of those nodes' Bitcoin RPC: `getblockchaininfo` shows `blocks == headers` and `initialblockdownload: false`, and the tip is recent. Do not rely on the relayer's own `Syncing=false`, which only means it has caught up with its own RPC node.
-3. Switch only those nodes to `apply` and wait for `restored ... pending -> confirmed` on each of them.
-4. Verify on each of them that the UTXO is no longer `pending` in `wallet_order.db`, then verify the blocked withdrawal moves to `PROCESSING` and `PAID` on chain. Only then treat the incident as resolved.
+3. Switch only those nodes to `apply` and wait for `restored ... pending -> confirmed` (or `pending -> processed` for a known deposit UTXO) on each of them.
+4. Verify on each of them that the UTXO is now `confirmed` or `processed` in `wallet_order.db` (either is a successful restore), then verify the blocked withdrawal moves to `PROCESSING` and `PAID` on chain. Only then treat the incident as resolved.
 
 Not covered: a UTXO reserved by an order that stays in an in-flight status (for example an order whose other input is already spent on chain) counts as in use and is never restored by the reconciler; such orders need separate handling.
