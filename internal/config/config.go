@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"math/big"
 	"os"
@@ -19,6 +20,9 @@ const (
 	UtxoReconcileModeOff    = "off"
 	UtxoReconcileModeDryRun = "dryrun"
 	UtxoReconcileModeApply  = "apply"
+
+	UtxoReconcileMinInterval = time.Minute
+	UtxoReconcileMinMinAge   = 10 * time.Minute
 )
 
 func InitConfig() {
@@ -83,6 +87,14 @@ func InitConfig() {
 		logrus.Fatalf("Invalid UTXO_RECONCILE_MODE %q, expected one of: %s, %s, %s",
 			utxoReconcileMode, UtxoReconcileModeOff, UtxoReconcileModeDryRun, UtxoReconcileModeApply)
 	}
+	utxoReconcileInterval, err := parseDurationAtLeast("UTXO_RECONCILE_INTERVAL", viper.GetString("UTXO_RECONCILE_INTERVAL"), UtxoReconcileMinInterval)
+	if err != nil {
+		logrus.Fatal(err)
+	}
+	utxoReconcileMinAge, err := parseDurationAtLeast("UTXO_RECONCILE_MIN_AGE", viper.GetString("UTXO_RECONCILE_MIN_AGE"), UtxoReconcileMinMinAge)
+	if err != nil {
+		logrus.Fatal(err)
+	}
 
 	l2ChainId, err := strconv.ParseInt(viper.GetString("L2_CHAIN_ID"), 10, 64)
 	if err != nil {
@@ -139,15 +151,8 @@ func InitConfig() {
 		RelayerBlsSk:           viper.GetString("RELAYER_BLS_SK"),
 		BlsSigTimeout:          viper.GetDuration("BLS_SIG_TIMEOUT"),
 		UtxoReconcileMode:      utxoReconcileMode,
-		UtxoReconcileInterval:  viper.GetDuration("UTXO_RECONCILE_INTERVAL"),
-		UtxoReconcileMinAge:    viper.GetDuration("UTXO_RECONCILE_MIN_AGE"),
-	}
-
-	if AppConfig.UtxoReconcileInterval <= 0 {
-		logrus.Fatalf("Invalid UTXO_RECONCILE_INTERVAL %v, must be positive", AppConfig.UtxoReconcileInterval)
-	}
-	if AppConfig.UtxoReconcileMinAge <= 0 {
-		logrus.Fatalf("Invalid UTXO_RECONCILE_MIN_AGE %v, must be positive", AppConfig.UtxoReconcileMinAge)
+		UtxoReconcileInterval:  utxoReconcileInterval,
+		UtxoReconcileMinAge:    utxoReconcileMinAge,
 	}
 
 	if (AppConfig.BTCNetworkType == "" || AppConfig.BTCNetworkType == "mainnet") && AppConfig.BTCConfirmations < 6 {
@@ -210,4 +215,19 @@ type Config struct {
 	UtxoReconcileMode      string
 	UtxoReconcileInterval  time.Duration
 	UtxoReconcileMinAge    time.Duration
+}
+
+// parseDurationAtLeast parses a duration that must carry an explicit unit
+// ("10m", not "600", which would otherwise be read as nanoseconds) and must
+// not be shorter than min.
+func parseDurationAtLeast(key, raw string, min time.Duration) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s %q, expected a duration with a unit such as 10m: %v", key, raw, err)
+	}
+	if d < min {
+		return 0, fmt.Errorf("invalid %s %q, must be at least %v", key, raw, min)
+	}
+	return d, nil
 }
