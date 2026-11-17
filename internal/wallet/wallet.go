@@ -19,6 +19,7 @@ type WalletServer struct {
 
 	depositProcessor DepositProcessor
 	orderBroadcaster OrderBroadcaster
+	utxoReconciler   *UtxoReconciler
 
 	// after sig, it can start a new sig 2 blocks later
 	sigMu                        sync.Mutex
@@ -46,6 +47,7 @@ func NewWalletServer(libp2p *p2p.LibP2PService, st *state.State, signer *bls.Sig
 		signer:           signer,
 		depositProcessor: NewDepositProcessor(btcClient, st),
 		orderBroadcaster: NewOrderBroadcaster(btcClient, st),
+		utxoReconciler:   NewUtxoReconciler(st, btcClient),
 		blockCh:          make(chan interface{}, state.BTC_BLOCK_CHAN_LENGTH),
 
 		lastProposerAddress: "",
@@ -65,6 +67,7 @@ func (w *WalletServer) Start(ctx context.Context, blockDoneCh chan struct{}) {
 
 	go w.depositProcessor.Start(ctx)
 	go w.orderBroadcaster.Start(ctx)
+	go w.utxoReconciler.Start(ctx)
 
 	log.Info("WalletServer started.")
 
