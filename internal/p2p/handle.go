@@ -36,6 +36,8 @@ func convertMsgData(msg Message[json.RawMessage]) any {
 		return unmarshal[types.MsgSignNewVoter](msg.Data)
 	case "MsgSafeboxTask":
 		return unmarshal[types.MsgSignSafeboxTask](msg.Data)
+	case "MsgSendOrderRbf":
+		return unmarshal[types.MsgSendOrderRbf](msg.Data)
 	}
 	return unmarshal[any](msg.Data)
 }

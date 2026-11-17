@@ -54,6 +54,7 @@ func (w *WalletServer) withdrawLoop(ctx context.Context) {
 			w.handleWithdrawSigFinish(sigFinish)
 		case <-ticker.C:
 			w.initWithdrawSig()
+			w.initRbfWithdrawSig()
 			w.finalizeWithdrawSig()
 			w.cancelWithdrawSig()
 		}
@@ -273,7 +274,7 @@ func (w *WalletServer) initWithdrawSig() {
 		}
 		log.Infof("WalletServer initWithdrawSig CreateRawTransaction for consolidation, tx: %s", tx.TxID())
 
-		msgSignSendOrder, err = w.createSendOrder(tx, db.ORDER_TYPE_CONSOLIDATION, consolidationParams.UTXOs, nil, nil, consolidationParams.UtxoAmount, actualFee, uint64(consolidationParams.NetworkFee), uint64(consolidationParams.WitnessSize), epochVoter, network)
+		msgSignSendOrder, err = w.createSendOrder(tx, db.ORDER_TYPE_CONSOLIDATION, consolidationParams.UTXOs, nil, nil, consolidationParams.UtxoAmount, actualFee, uint64(consolidationParams.NetworkFee), uint64(consolidationParams.WitnessSize), epochVoter, network, 0)
 		if err != nil {
 			log.Errorf("WalletServer initWithdrawSig createSendOrder for consolidation error: %v", err)
 			return
@@ -319,7 +320,7 @@ func (w *WalletServer) initWithdrawSig() {
 		}
 		log.Infof("WalletServer initWithdrawSig CreateRawTransaction for safebox task, tx: %s", tx.TxID())
 
-		msgSignSendOrder, err = w.createSendOrder(tx, db.ORDER_TYPE_SAFEBOX, safeboxParams.UTXOs, nil, safeboxParams.Tasks, safeboxParams.UtxoAmount, actualFee, uint64(safeboxParams.NetworkFee), uint64(safeboxParams.WitnessSize), epochVoter, network)
+		msgSignSendOrder, err = w.createSendOrder(tx, db.ORDER_TYPE_SAFEBOX, safeboxParams.UTXOs, nil, safeboxParams.Tasks, safeboxParams.UtxoAmount, actualFee, uint64(safeboxParams.NetworkFee), uint64(safeboxParams.WitnessSize), epochVoter, network, 0)
 		if err != nil {
 			log.Errorf("WalletServer initWithdrawSig createSendOrder for safebox task error: %v", err)
 			return
@@ -388,7 +389,7 @@ func (w *WalletServer) initWithdrawSig() {
 		}
 		log.Infof("WalletServer initWithdrawSig CreateRawTransaction for withdraw, tx: %s, network fee rate: %d", tx.TxID(), actualPrice)
 
-		msgSignSendOrder, err = w.createSendOrder(tx, db.ORDER_TYPE_WITHDRAWAL, withdrawParams.UTXOs, withdrawParams.Withdrawals, nil, withdrawParams.UtxoAmount, actualFee, uint64(withdrawParams.NetworkFee), uint64(withdrawParams.WitnessSize), epochVoter, network)
+		msgSignSendOrder, err = w.createSendOrder(tx, db.ORDER_TYPE_WITHDRAWAL, withdrawParams.UTXOs, withdrawParams.Withdrawals, nil, withdrawParams.UtxoAmount, actualFee, uint64(withdrawParams.NetworkFee), uint64(withdrawParams.WitnessSize), epochVoter, network, 0)
 		if err != nil {
 			log.Errorf("WalletServer initWithdrawSig createSendOrder for withdraw error: %v", err)
 			return
@@ -406,7 +407,8 @@ func (w *WalletServer) initWithdrawSig() {
 }
 
 // createSendOrder, create send order for selected utxos and withdraws (if orderType is consolidation, selectedWithdraws is nil)
-func (w *WalletServer) createSendOrder(tx *wire.MsgTx, orderType string, selectedUtxos []*db.Utxo, selectedWithdraws []*db.Withdraw, safeboxTasks []*db.SafeboxTask, utxoAmount int64, txFee, networkTxPrice, witnessSize uint64, epochVoter db.EpochVoter, network *chaincfg.Params) (*types.MsgSignSendOrder, error) {
+// pid is optional - when pid > 0, it indicates this is an RBF order for ReplaceWithdrawalV2
+func (w *WalletServer) createSendOrder(tx *wire.MsgTx, orderType string, selectedUtxos []*db.Utxo, selectedWithdraws []*db.Withdraw, safeboxTasks []*db.SafeboxTask, utxoAmount int64, txFee, networkTxPrice, witnessSize uint64, epochVoter db.EpochVoter, network *chaincfg.Params, pid uint64) (*types.MsgSignSendOrder, error) {
 	noWitnessTx, err := types.SerializeTransactionNoWitness(tx)
 	if err != nil {
 		return nil, err
@@ -415,6 +417,7 @@ func (w *WalletServer) createSendOrder(tx *wire.MsgTx, orderType string, selecte
 	order := &db.SendOrder{
 		OrderId:     uuid.New().String(),
 		Proposer:    config.AppConfig.RelayerAddress,
+		Pid:         pid, // Set Pid for RBF orders (pid > 0 means ReplaceWithdrawalV2)
 		Amount:      uint64(utxoAmount),
 		TxPrice:     networkTxPrice,
 		Status:      db.ORDER_STATUS_AGGREGATING,
@@ -562,3 +565,221 @@ func (w *WalletServer) cleanWithdrawProcess() {
 		log.Fatalf("WalletServer cleanWithdrawProcess unexpected error %v", err)
 	}
 }
+
+// initRbfWithdrawSig initiates RBF (Replace-By-Fee) for withdrawal orders that have UTXO conflicts
+// This creates a new transaction with the same withdrawals but different UTXOs and higher fee,
+// then triggers BLS signature for MsgReplaceWithdrawalV2
+func (w *WalletServer) initRbfWithdrawSig() {
+	log.Debug("WalletServer initRbfWithdrawSig")
+
+	// Check preconditions (similar to initWithdrawSig)
+	l2Info := w.state.GetL2Info()
+	if l2Info.Syncing {
+		log.Debugf("WalletServer initRbfWithdrawSig ignore, layer2 is catching up")
+		return
+	}
+
+	btcState := w.state.GetBtcHead()
+	if btcState.Syncing {
+		log.Debugf("WalletServer initRbfWithdrawSig ignore, btc is catching up")
+		return
+	}
+
+	epochVoter := w.state.GetEpochVoter()
+	if epochVoter.Proposer != config.AppConfig.RelayerAddress {
+		log.Debugf("WalletServer initRbfWithdrawSig ignore, self is not proposer")
+		return
+	}
+
+	w.sigMu.Lock()
+	if w.sigStatus {
+		w.sigMu.Unlock()
+		log.Debug("WalletServer initRbfWithdrawSig ignore, there is a sig in progress")
+		return
+	}
+	w.sigMu.Unlock()
+
+	// Get orders that need RBF
+	rbfOrders, err := w.state.GetSendOrdersNeedRbf()
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig GetSendOrdersNeedRbf error: %v", err)
+		return
+	}
+	if len(rbfOrders) == 0 {
+		log.Debug("WalletServer initRbfWithdrawSig no orders need RBF")
+		return
+	}
+
+	log.Infof("WalletServer initRbfWithdrawSig found %d orders need RBF", len(rbfOrders))
+
+	// Process first RBF order (one at a time)
+	order := rbfOrders[0]
+	if order.Pid == 0 {
+		log.Warnf("WalletServer initRbfWithdrawSig order %s has no Pid, cannot submit ReplaceWithdrawalV2", order.OrderId)
+		return
+	}
+
+	// Get the original withdrawals for this order
+	withdraws, err := w.state.GetWithdrawsByOrderId(order.OrderId)
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig GetWithdrawsByOrderId error: %v, orderId: %s", err, order.OrderId)
+		return
+	}
+	if len(withdraws) == 0 {
+		log.Warnf("WalletServer initRbfWithdrawSig no withdraws found for order %s", order.OrderId)
+		return
+	}
+
+	// Calculate total withdrawal amount
+	var totalWithdrawAmount int64
+	for _, withdraw := range withdraws {
+		totalWithdrawAmount += int64(withdraw.Amount)
+	}
+
+	// Get available UTXOs
+	utxos, err := w.state.GetUtxoCanSpend()
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig GetUtxoCanSpend error: %v", err)
+		return
+	}
+	if len(utxos) == 0 {
+		log.Warn("WalletServer initRbfWithdrawSig no utxos can spend")
+		return
+	}
+
+	// Get network and change address
+	network := types.GetBTCNetwork(config.AppConfig.BTCNetworkType)
+	pubkey, err := w.state.GetDepositKeyByBtcBlock(0)
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig GetDepositKeyByBtcBlock error: %v", err)
+		return
+	}
+	pubkeyBytes, err := base64.StdEncoding.DecodeString(pubkey.PubKey)
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig decode pubkey error: %v", err)
+		return
+	}
+	p2wpkhAddress, err := types.GenerateP2WPKHAddress(pubkeyBytes, network)
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig GenerateP2WPKHAddress error: %v", err)
+		return
+	}
+
+	// Extract receiver types from withdraws and find minimum MaxTxPrice
+	receiverTypes := make([]string, len(withdraws))
+	var minMaxTxPrice uint64 = ^uint64(0) // max uint64
+	for i, withdraw := range withdraws {
+		receiverTypes[i], _ = types.GetAddressType(withdraw.To, network)
+		if withdraw.TxPrice < minMaxTxPrice {
+			minMaxTxPrice = withdraw.TxPrice
+		}
+	}
+
+	oldTxFee := order.TxFee
+
+	// Use actual network fee for UTXO selection
+	networkFeeRate := int64(btcState.NetworkFee.FastestFee)
+	if networkFeeRate == 0 {
+		networkFeeRate = 10 // fallback to 10 sat/vB
+	}
+
+	// Select UTXOs for the new transaction
+	selectOptimalUTXOs, totalSelectedAmount, _, changeAmount, estimateFee, witnessSize, err := SelectOptimalUTXOs(
+		utxos, receiverTypes, totalWithdrawAmount, 0, networkFeeRate, len(withdraws))
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig SelectOptimalUTXOs error: %v", err)
+		return
+	}
+
+	log.Infof("WalletServer initRbfWithdrawSig SelectOptimalUTXOs: totalSelectedAmount: %d, withdrawAmount: %d, changeAmount: %d, selectedUtxos: %d",
+		totalSelectedAmount, totalWithdrawAmount, changeAmount, len(selectOptimalUTXOs))
+
+	// Create new transaction
+	withdrawParams := &TransactionParams{
+		UTXOs:          selectOptimalUTXOs,
+		Withdrawals:    withdraws,
+		Tasks:          nil,
+		ChangeAddress:  p2wpkhAddress.EncodeAddress(),
+		ChangeAmount:   changeAmount,
+		EstimatedFee:   estimateFee,
+		WitnessSize:    witnessSize,
+		NetworkFee:     networkFeeRate,
+		Net:            network,
+		UtxoAmount:     totalSelectedAmount,
+		WithdrawAmount: totalWithdrawAmount,
+	}
+	tx, actualFee, err := CreateRawTransaction(withdrawParams)
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig CreateRawTransaction error: %v", err)
+		return
+	}
+
+	// Calculate vbytes for txPrice calculation
+	// vbytes = stripped_size + witness_size / 4
+	vbytes := float64(tx.SerializeSizeStripped()) + float64(witnessSize)/4.0
+
+	// Calculate maximum allowed fee based on minimum MaxTxPrice
+	// txPrice = fee / vbytes, so maxFee = minMaxTxPrice * vbytes
+	maxAllowedFee := uint64(float64(minMaxTxPrice) * vbytes)
+
+	// Calculate minimum required fee (just 1 satoshi more than old fee)
+	minRequiredFee := oldTxFee + 1
+
+	// Check if RBF is possible within MaxTxPrice constraint
+	if minRequiredFee > maxAllowedFee {
+		log.Warnf("WalletServer initRbfWithdrawSig cannot proceed: minRequiredFee(%d) > maxAllowedFee(%d), minMaxTxPrice: %d, vbytes: %.2f",
+			minRequiredFee, maxAllowedFee, minMaxTxPrice, vbytes)
+		return
+	}
+
+	// Smart fee calculation:
+	// 1. Use network fee rate if available
+	// 2. Cap at maxAllowedFee
+	// 3. Ensure > oldTxFee
+	networkBasedFee := uint64(float64(networkFeeRate) * vbytes)
+
+	if actualFee <= oldTxFee {
+		// If CreateRawTransaction's fee is too low, recalculate
+		if networkBasedFee > oldTxFee && networkBasedFee <= maxAllowedFee {
+			// Use network-based fee
+			actualFee = networkBasedFee
+		} else if networkBasedFee > maxAllowedFee {
+			// Network fee exceeds max allowed, use max allowed
+			actualFee = maxAllowedFee
+		} else {
+			// Network fee is still too low, use minimum increment
+			actualFee = minRequiredFee
+		}
+	} else if actualFee > maxAllowedFee {
+		// Cap at max allowed fee
+		actualFee = maxAllowedFee
+	}
+
+	// Final sanity check
+	if actualFee <= oldTxFee {
+		log.Errorf("WalletServer initRbfWithdrawSig fee calculation error: actualFee(%d) <= oldTxFee(%d)", actualFee, oldTxFee)
+		return
+	}
+
+	newTxPrice := float64(actualFee) / vbytes
+	log.Infof("WalletServer initRbfWithdrawSig CreateRawTransaction: tx: %s, actualFee: %d, oldTxFee: %d, witnessSize: %d, vbytes: %.2f, newTxPrice: %.2f, minMaxTxPrice: %d, networkFeeRate: %d",
+		tx.TxID(), actualFee, oldTxFee, witnessSize, vbytes, newTxPrice, minMaxTxPrice, networkFeeRate)
+
+	// Create RBF order message using existing createSendOrder with pid > 0
+	// This will be recognized as RBF order in aggSigSendOrder and submitted via ReplaceWithdrawalV2
+	msgSignSendOrder, err := w.createSendOrder(tx, db.ORDER_TYPE_WITHDRAWAL, selectOptimalUTXOs, withdraws, nil,
+		totalSelectedAmount, actualFee, uint64(networkFeeRate), uint64(witnessSize), epochVoter, network, order.Pid)
+	if err != nil {
+		log.Errorf("WalletServer initRbfWithdrawSig createSendOrder error: %v", err)
+		return
+	}
+
+	w.sigMu.Lock()
+	w.sigStatus = true
+	w.sigMu.Unlock()
+
+	// Publish to event bus for BLS signing (same as normal withdrawal)
+	w.state.EventBus.Publish(state.SigStart, *msgSignSendOrder)
+	log.Infof("WalletServer initRbfWithdrawSig send MsgSignSendOrder to bus, requestId: %s, Pid: %d (RBF)", msgSignSendOrder.MsgSign.RequestId, order.Pid)
+}
+

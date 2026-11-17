@@ -10,6 +10,15 @@ import (
 	"gorm.io/gorm"
 )
 
+// databaseProvider is the minimal DB interface State depends on.
+// Production uses *db.DatabaseManager; tests can inject a stub implementation.
+type databaseProvider interface {
+	GetL2InfoDB() *gorm.DB
+	GetBtcLightDB() *gorm.DB
+	GetBtcCacheDB() *gorm.DB
+	GetWalletDB() *gorm.DB
+}
+
 type StateLoader interface {
 	GetL2Info() db.L2Info
 	GetUtxo() db.Utxo
@@ -20,7 +29,7 @@ type StateLoader interface {
 type State struct {
 	EventBus *EventBus
 
-	dbm *db.DatabaseManager
+	dbm databaseProvider
 
 	// Separate mutexes for different sub-modules
 	layer2Mu  sync.RWMutex
@@ -43,7 +52,7 @@ var (
 )
 
 // InitializeState initializes the state by reading from the DB
-func InitializeState(dbm *db.DatabaseManager) *State {
+func InitializeState(dbm databaseProvider) *State {
 	// Load layer2State, btcHeadState, walletState, depositState from db when start up
 	var (
 		l2Info                db.L2Info

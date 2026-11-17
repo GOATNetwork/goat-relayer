@@ -46,6 +46,15 @@ type MsgSendOrderBroadcasted struct {
 	WithdrawIds []uint64 `json:"withdraw_ids"`
 }
 
+// MsgSendOrderRbf broadcasts RBF cleanup action for orders with UTXO conflicts
+// Other nodes receive this and perform the same cleanup by finding order via Txid
+type MsgSendOrderRbf struct {
+	Txid      string `json:"txid"`       // Transaction ID to find the order
+	OrderId   string `json:"order_id"`   // Order ID for verification
+	OrderType string `json:"order_type"` // Order type (withdrawal, consolidation, safebox)
+	Reason    string `json:"reason"`     // Reason for RBF (e.g., "utxo-conflict")
+}
+
 // MsgUtxoWithdraw defines withdraw UTXO broadcast to p2p which received in relayer rpc
 type MsgUtxoWithdraw struct {
 	TxId      string `json:"tx_id"`

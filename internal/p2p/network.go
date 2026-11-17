@@ -227,6 +227,8 @@ func (n *Network) handlePubSubMessages() {
 			n.state.EventBus.Publish(state.NewVoter, convertMsgData(receivedMsg))
 		case MessageTypeSafeboxTask:
 			n.state.EventBus.Publish(state.SafeboxTask, convertMsgData(receivedMsg))
+		case MessageTypeSendOrderRbf:
+			n.state.EventBus.Publish(state.SendOrderRbf, convertMsgData(receivedMsg))
 		case MessageTypeHeartbeat:
 			n.logger.Infof("💓 Received heartbeat from %s: %s", msg.GetFrom().String(), unmarshal[string](receivedMsg.Data))
 		default:

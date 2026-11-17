@@ -386,17 +386,17 @@ func (s *Signer) makeSigSendOrder(orderType string, withdrawIds []uint64, witnes
 	}
 }
 
-func (s *Signer) aggSigSendOrder(requestId string) (*bitcointypes.MsgProcessWithdrawalV2, *bitcointypes.MsgNewConsolidation, error) {
+func (s *Signer) aggSigSendOrder(requestId string) (*bitcointypes.MsgProcessWithdrawalV2, *bitcointypes.MsgNewConsolidation, *bitcointypes.MsgReplaceWithdrawalV2, error) {
 	epochVoter := s.state.GetEpochVoter()
 
 	voteMap, ok := s.sigExists(requestId)
 	if !ok {
-		return nil, nil, fmt.Errorf("no sig found of send order, request id: %s", requestId)
+		return nil, nil, nil, fmt.Errorf("no sig found of send order, request id: %s", requestId)
 	}
 	voterAll := strings.Split(epochVoter.VoteAddrList, ",")
 	proposer := ""
 	orderType := db.ORDER_TYPE_WITHDRAWAL
-	var txFee, epoch, sequence uint64
+	var txFee, epoch, sequence, pid uint64
 	var noWitnessTx []byte
 	var withdrawIds []uint64
 	var witnessSize uint64
@@ -410,7 +410,7 @@ func (s *Signer) aggSigSendOrder(requestId string) (*bitcointypes.MsgProcessWith
 		err := json.Unmarshal(msgSendOrder.SendOrder, &order)
 		if err != nil {
 			log.Debug("Cannot unmarshal send order from vote msg")
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if msgSendOrder.IsProposer {
 			proposer = address // proposer address
@@ -423,6 +423,7 @@ func (s *Signer) aggSigSendOrder(requestId string) (*bitcointypes.MsgProcessWith
 			txFee = order.TxFee
 			noWitnessTx = order.NoWitnessTx
 			orderType = order.OrderType
+			pid = order.Pid // Extract Pid to determine if this is RBF
 		} else {
 			pos := types.IndexOfSlice(voterAll, address) // voter address
 			log.Debugf("Bitmap check, pos: %d, address: %s, all: %s", pos, address, epochVoter.VoteAddrList)
@@ -434,14 +435,14 @@ func (s *Signer) aggSigSendOrder(requestId string) (*bitcointypes.MsgProcessWith
 	}
 
 	if proposer == "" {
-		return nil, nil, fmt.Errorf("missing proposer sig msg of send order, request id: %s", requestId)
+		return nil, nil, nil, fmt.Errorf("missing proposer sig msg of send order, request id: %s", requestId)
 	}
 
 	if epoch != epochVoter.Epoch {
-		return nil, nil, fmt.Errorf("incorrect epoch of send order, request id: %s, msg epoch: %d, current epoch: %d", requestId, epoch, epochVoter.Epoch)
+		return nil, nil, nil, fmt.Errorf("incorrect epoch of send order, request id: %s, msg epoch: %d, current epoch: %d", requestId, epoch, epochVoter.Epoch)
 	}
 	if sequence != epochVoter.Sequence {
-		return nil, nil, fmt.Errorf("incorrect sequence of send order, request id: %s, msg sequence: %d, current sequence: %d", requestId, sequence, epochVoter.Sequence)
+		return nil, nil, nil, fmt.Errorf("incorrect sequence of send order, request id: %s, msg sequence: %d, current sequence: %d", requestId, sequence, epochVoter.Sequence)
 	}
 
 	voteSig = append([][]byte{proposerSig}, voteSig...)
@@ -449,13 +450,13 @@ func (s *Signer) aggSigSendOrder(requestId string) (*bitcointypes.MsgProcessWith
 	// check threshold
 	threshold := types.Threshold(len(voterAll))
 	if len(voteSig) < threshold {
-		return nil, nil, fmt.Errorf("threshold not reach of send order, request id: %s, has sig: %d, threshold: %d", requestId, len(voteSig), threshold)
+		return nil, nil, nil, fmt.Errorf("threshold not reach of send order, request id: %s, has sig: %d, threshold: %d", requestId, len(voteSig), threshold)
 	}
 
 	// aggregate
 	aggSig, err := goatcryp.AggregateSignatures(voteSig)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	votes := &relayertypes.Votes{
@@ -466,6 +467,20 @@ func (s *Signer) aggSigSendOrder(requestId string) (*bitcointypes.MsgProcessWith
 	}
 
 	if orderType == db.ORDER_TYPE_WITHDRAWAL {
+		// Check if this is RBF (Pid > 0 means ReplaceWithdrawalV2)
+		if pid > 0 {
+			msgReplaceWithdrawal := bitcointypes.MsgReplaceWithdrawalV2{
+				Proposer:       proposer,
+				Vote:           votes,
+				Pid:            pid,
+				NewNoWitnessTx: noWitnessTx,
+				NewTxFee:       txFee,
+				WitnessSize:    witnessSize,
+			}
+			log.Infof("aggSigSendOrder: RBF order detected (Pid=%d), will use ReplaceWithdrawalV2", pid)
+			return nil, nil, &msgReplaceWithdrawal, nil
+		}
+		// Normal withdrawal (Pid == 0)
 		msgWithdrawal := bitcointypes.MsgProcessWithdrawalV2{
 			Proposer:    proposer,
 			Vote:        votes,
@@ -474,14 +489,14 @@ func (s *Signer) aggSigSendOrder(requestId string) (*bitcointypes.MsgProcessWith
 			TxFee:       txFee,
 			WitnessSize: witnessSize,
 		}
-		return &msgWithdrawal, nil, nil
+		return &msgWithdrawal, nil, nil, nil
 	} else {
 		msgConsolidation := bitcointypes.MsgNewConsolidation{
 			Proposer:    proposer,
 			Vote:        votes,
 			NoWitnessTx: noWitnessTx,
 		}
-		return nil, &msgConsolidation, nil
+		return nil, &msgConsolidation, nil, nil
 	}
 }
 
@@ -507,14 +522,24 @@ func (s *Signer) submitSendOrderToLayer2(ctx context.Context, e types.MsgSignSen
 	s.sigMu.Unlock()
 
 	// UNCHECK aggregate
-	msgWithdrawal, msgConsolidation, err := s.aggSigSendOrder(e.RequestId)
+	msgWithdrawal, msgConsolidation, msgReplaceWithdrawal, err := s.aggSigSendOrder(e.RequestId)
 	if err != nil {
 		log.Warnf("SigReceive send order proposer process aggregate sig, request id: %s, err: %v", e.RequestId, err)
 		return nil
 	}
 
-	// withdrawal && consolidation both submit to layer2, this
-	if msgWithdrawal != nil {
+	// Submit to layer2 based on message type
+	if msgReplaceWithdrawal != nil {
+		// RBF order (Pid > 0) - use ReplaceWithdrawalV2
+		newProposal := layer2.NewProposal[*bitcointypes.MsgReplaceWithdrawalV2](s.layer2Listener)
+		err = newProposal.RetrySubmit(ctx, e.RequestId, msgReplaceWithdrawal, config.AppConfig.L2SubmitRetry)
+		if err != nil {
+			log.Errorf("SigReceive send RBF withdrawal proposer submit to RPC error, request id: %s, pid: %d, err: %v", e.RequestId, msgReplaceWithdrawal.Pid, err)
+			return err
+		}
+		log.Infof("SigReceive send RBF withdrawal submitted successfully, request id: %s, pid: %d", e.RequestId, msgReplaceWithdrawal.Pid)
+	} else if msgWithdrawal != nil {
+		// Normal withdrawal (Pid == 0) - use ProcessWithdrawalV2
 		newProposal := layer2.NewProposal[*bitcointypes.MsgProcessWithdrawalV2](s.layer2Listener)
 		err = newProposal.RetrySubmit(ctx, e.RequestId, msgWithdrawal, config.AppConfig.L2SubmitRetry)
 		if err != nil {
@@ -605,3 +630,4 @@ func (s *Signer) submitSendOrderToContract(ctx context.Context, e types.MsgSignS
 
 	return nil
 }
+
